@@ -1,1 +1,4 @@
 /target
+*.dev
+m.circom
+*.json
