@@ -2,3 +2,4 @@
 *.dev
 m.circom
 *.json
+.idea
