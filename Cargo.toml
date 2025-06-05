@@ -1,5 +1,5 @@
 [workspace]
-members = [ "apps/node", "crates/rpc-server"]
+members = [ "apps/node", "crates/art", "crates/rpc-server"]
 resolver = "2"
 
 [workspace.dependencies]
