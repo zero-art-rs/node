@@ -1,6 +1,11 @@
-[package]
-name = "zk-messenger-node"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [ "apps/node", "crates/rpc-server"]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
+chrono = { version = "0.4", default-features = false }
+uuid = { version = "1.4", default-features = false }
+aes-gcm = { version = "0.10", default-features = false }
+rand = { version = "0.9.1", default-features = false }
+base64 = { version = "0.22.1", default-features = false }
+tonic = { version = "0.13.1", default-features = false }
