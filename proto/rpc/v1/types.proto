@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package rpc.v1;
+import "google/protobuf/timestamp.proto";
+
+message Art {
+  uint32 id = 1;
+  google.protobuf.Timestamp created_at = 6;
+}
