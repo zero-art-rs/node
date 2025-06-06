@@ -30,7 +30,6 @@ pub struct TlsConfig {
     pub key_path: PathBuf,
 }
 
-/// Runs LRC20 Node's RPC server.
 pub async fn run_server(
     ServerConfig {
         grpc_address,
