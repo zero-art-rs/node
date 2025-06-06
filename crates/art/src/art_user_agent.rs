@@ -121,7 +121,7 @@ impl ARTUserAgent {
     }
 
     pub fn public_key(&self) -> ART_G {
-        self.tree.public_key_from_lambda(self.lambda)
+        self.tree.public_key_of(self.lambda)
     }
 
     pub fn can_remove(&mut self, public_key: ART_G) -> bool {

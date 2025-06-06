@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
+use serde::{Deserialize, Serialize};
 
 use crate::helper_tools::{ark_de, ark_se};
 

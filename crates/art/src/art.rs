@@ -1,23 +1,15 @@
 // Asynchronous Ratchet Tree implementation
 
-use crate::helper_tools::{self, ark_de, ark_se};
-use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
-use ark_ff::{Field, Fp12, Fp12Config, Fp256, MontBackend, PrimeField, ToConstraintField};
+use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
+use ark_ec::{CurveGroup, pairing::Pairing};
+use ark_ff::PrimeField;
 use ark_std::iterable::Iterable;
-use ark_std::{One, UniformRand, Zero};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::cmp::max;
-use std::mem;
-use std::ops::{Add, DerefMut, Mul};
-
-use ark_bn254::{
-    Bn254, Config, Fq, Fq12Config, G1Projective as G1, G2Projective as ART_G, G2Projective as G2,
-    fr::Fr as ARTScalarField, fr::FrConfig,
-};
+use std::{cmp::max, mem, ops::Mul};
 
 use crate::art_node::{ARTNode, Direction};
+use crate::helper_tools::{ark_de, ark_se};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum BranchChangesType {
@@ -44,8 +36,6 @@ pub struct ARTRootKey {
     #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub key: ARTScalarField,
     #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub lambda: Option<ARTScalarField>,
-    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub generator: ART_G,
 }
 
@@ -59,7 +49,7 @@ pub struct ART {
 
 impl ART {
     pub fn iota_function(point: &ART_G) -> ARTScalarField {
-        // Convert into affine representation, so result will always be the same
+        // Convert into affine representation, so the result will always be the same
         ARTScalarField::from(point.into_affine().x.c0.into_bigint())
     }
 
@@ -78,19 +68,20 @@ impl ART {
 
             level_secrets.remove(0); // skip the first secret
 
-            let common_secret = left_node.public_key.mul(level_secrets.remove(0));
-            let secret_hash = Self::iota_function(&common_secret);
+            let common_secret =
+                Self::iota_function(&left_node.public_key.mul(level_secrets.remove(0)));
 
             let node = ARTNode::new(
-                generator.mul(&secret_hash),
+                generator.mul(&common_secret),
                 Some(Box::new(left_node)),
                 Some(Box::new(right_node)),
             );
 
             upper_level_nodes.push(node);
-            upper_level_secrets.push(secret_hash);
+            upper_level_secrets.push(common_secret);
         }
 
+        // if one have an odd number of nodes, the last one will be added to the next level
         if level_nodes.len() == 1 {
             let first_node = level_nodes.remove(0);
             upper_level_nodes.push(first_node);
@@ -125,7 +116,6 @@ impl ART {
         let root = level_nodes.remove(0);
         let root_key = ARTRootKey {
             key: level_secrets.remove(0),
-            lambda: None,
             generator: generator.clone(),
         };
 
@@ -213,26 +203,24 @@ impl ART {
         Err("Can't find a path.".to_string())
     }
 
-    pub fn recompute_root_key(&self, lambda: ARTScalarField) -> ARTRootKey {
-        let mut secret_key = lambda.clone();
+    pub fn recompute_root_key(&self, leaf_secret: ARTScalarField) -> ARTRootKey {
+        let co_path_values = self
+            .get_co_path_values(self.generator.mul(leaf_secret))
+            .unwrap();
 
-        let user_public_key = self.generator.mul(secret_key);
-        let co_path_values = self.get_co_path_values(user_public_key).unwrap();
-
+        let mut secret = leaf_secret.clone();
         for public_key in co_path_values.iter() {
-            secret_key = Self::iota_function(&public_key.mul(secret_key));
+            secret = Self::iota_function(&public_key.mul(secret));
         }
 
         ARTRootKey {
-            key: secret_key,
-            lambda: Some(lambda),
+            key: secret,
             generator: self.generator.clone(),
         }
     }
 
-    pub fn public_key_from_lambda(&self, lambda: ARTScalarField) -> ART_G {
-        let secret_key = lambda.clone();
-        self.generator.mul(secret_key)
+    pub fn public_key_of(&self, secret: ARTScalarField) -> ART_G {
+        self.generator.mul(secret)
     }
 
     pub fn height(&self) -> usize {
@@ -244,9 +232,9 @@ impl ART {
 
     pub fn update_branch_public_keys(
         &mut self,
-        lambda: ARTScalarField,
+        leaf_secret: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
-        let (_, mut next) = self.get_path_to_leaf(self.public_key_from_lambda(lambda))?;
+        let (_, mut next) = self.get_path_to_leaf(self.generator.mul(leaf_secret))?;
 
         let mut changes = BranchChanges {
             change_type: BranchChangesType::UpdateKeys,
@@ -254,7 +242,7 @@ impl ART {
             next: next.clone(),
         };
 
-        let mut secret_key = lambda.clone();
+        let mut secret_key = leaf_secret.clone();
         let mut public_key = self.generator.mul(secret_key);
 
         while !next.is_empty() {
@@ -283,7 +271,6 @@ impl ART {
 
         let key = ARTRootKey {
             key: secret_key,
-            lambda: Some(lambda),
             generator: self.generator.clone(),
         };
 
@@ -292,16 +279,16 @@ impl ART {
 
     pub fn change_lambda(
         &mut self,
-        old_lambda: ARTScalarField,
-        new_lambda: ARTScalarField,
+        old_leaf_secret: ARTScalarField,
+        new_leaf_secret: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
-        let (_, mut next) = self.get_path_to_leaf(self.public_key_from_lambda(old_lambda))?;
-        let new_public_key = self.public_key_from_lambda(new_lambda);
+        let (_, next) = self.get_path_to_leaf(self.public_key_of(old_leaf_secret))?;
+        let new_public_key = self.public_key_of(new_leaf_secret);
 
         let mut user_node = self.get_to_node(next)?;
         user_node.set_public_key(new_public_key);
 
-        self.update_branch_public_keys(new_lambda)
+        self.update_branch_public_keys(new_leaf_secret)
     }
 
     pub fn find_path_to_possible_leaf_for_insertion(&self) -> Result<Vec<Direction>, String> {
@@ -315,7 +302,7 @@ impl ART {
             let last_node = path.last().unwrap();
 
             if last_node.is_leaf() {
-                // there is <=, because next contains additional NoDirection
+                // there is <=, because "next" contains additional NoDirection
                 if next.len() <= height || last_node.is_temporal {
                     return Ok(next);
                 } else {
@@ -425,7 +412,7 @@ impl ART {
         changes: &BranchChanges,
     ) -> Result<(), String> {
         let mut current_node = self.root.as_mut();
-        for i in (0..changes.public_keys.len() - 1) {
+        for i in 0..changes.public_keys.len() - 1 {
             current_node.set_public_key(changes.public_keys[i].clone());
             current_node = current_node.get_mut_child(changes.next.get(i).unwrap())?;
         }
@@ -445,7 +432,7 @@ impl ART {
     }
 
     pub fn can_remove(&mut self, lambda: ARTScalarField, public_key: ART_G) -> bool {
-        let users_public_key = self.public_key_from_lambda(lambda);
+        let users_public_key = self.public_key_of(lambda);
 
         if users_public_key == public_key {
             return false;
