@@ -1,6 +1,4 @@
-use crate::art::{
-    ART, ARTCiphertext, ARTRootKey, BranchChanges, BranchChangesType, MasterSecretKey, SecretKey,
-};
+use crate::art::{ART, ARTRootKey, BranchChanges};
 use crate::helper_tools;
 use ark_bn254::{
     Bn254, Config, Fq, Fq12Config, G1Projective as G1, G2Projective as ART_G,
@@ -15,11 +13,11 @@ use rand;
 pub struct ARTUserAgent {
     pub root_key: ARTRootKey,
     pub tree: ART,
-    pub lambda: Fp12<Fq12Config>,
+    pub lambda: ARTScalarField,
 }
 
 impl ARTUserAgent {
-    pub fn new(tree: ART, lambda: Fp12<Fq12Config>) -> Self {
+    pub fn new(tree: ART, lambda: ARTScalarField) -> Self {
         let root_key = tree.recompute_root_key(lambda);
 
         Self {
@@ -39,7 +37,7 @@ impl ARTUserAgent {
 
     pub fn append_node(
         &mut self,
-        lambda: Fp12<Fq12Config>,
+        lambda: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
         match self.tree.append_node_by_lambda(lambda) {
             Ok((root_key, changes)) => {
@@ -52,7 +50,7 @@ impl ARTUserAgent {
 
     pub fn change_lambda(
         &mut self,
-        new_lambda: Fp12<Fq12Config>,
+        new_lambda: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
         match self.tree.change_lambda(self.lambda, new_lambda) {
             Ok((root_key, changes)) => {
@@ -68,7 +66,7 @@ impl ARTUserAgent {
         &mut self,
         public_key: ART_G,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
-        let temporal_lambda = Fp12::<Fq12Config>::rand(&mut ark_std::rand::thread_rng());
+        let temporal_lambda = ARTScalarField::rand(&mut ark_std::rand::thread_rng());
 
         match self
             .tree

@@ -1,4 +1,3 @@
-use crate::art::UserIdentity;
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -50,18 +49,6 @@ pub fn compute_polynomial_coefficients(roots: &Vec<ScalarField>) -> Vec<ScalarFi
     }
 
     coefs
-}
-
-pub fn crete_set_of_identities(number_of_users: usize) -> Vec<UserIdentity<String>> {
-    let mut set_of_users = Vec::new();
-
-    for id in 0..number_of_users {
-        set_of_users.push(UserIdentity {
-            identity: String::from(id.to_string()),
-        });
-    }
-
-    set_of_users
 }
 
 pub fn hkdf(ikm: &Vec<u8>, salt: Option<&[u8]>, info: &[u8]) -> Vec<u8> {

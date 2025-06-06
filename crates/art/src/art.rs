@@ -2,7 +2,7 @@
 
 use crate::helper_tools::{self, ark_de, ark_se};
 use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ec::{CurveGroup, PrimeGroup};
+use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
 use ark_ff::{Field, Fp12, Fp12Config, Fp256, MontBackend, PrimeField, ToConstraintField};
 use ark_std::iterable::Iterable;
 use ark_std::{One, UniformRand, Zero};
@@ -11,81 +11,19 @@ use serde_json;
 use std::cmp::max;
 use std::mem;
 use std::ops::{Add, DerefMut, Mul};
-// use zk::curve::g2::Fr as ARTScalarField;
-// use zk::curve::g2::G2Projective as ART_G;
 
 use ark_bn254::{
     Bn254, Config, Fq, Fq12Config, G1Projective as G1, G2Projective as ART_G, G2Projective as G2,
-    fr::Fr as ARTScalarField, fr::Fr as ScalarField, fr::FrConfig,
+    fr::Fr as ARTScalarField, fr::FrConfig,
 };
 
 use crate::art_node::{ARTNode, Direction};
-
-#[derive(Hash, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct UserIdentity<T> {
-    pub identity: T,
-}
-
-impl<T: Into<Vec<u8>> + Clone + PartialEq> UserIdentity<T> {
-    pub fn new(identity: T) -> Self {
-        Self { identity }
-    }
-    pub fn hash_to_scalar_field(&self) -> Fp256<MontBackend<FrConfig, 4>> {
-        let byte_repr = self.identity.clone().into();
-        ScalarField::from_le_bytes_mod_order(helper_tools::sha512_from_bytes(&byte_repr).as_slice())
-    }
-
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.identity.eq(&other.identity)
-    }
-
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        self.identity.ne(&other.identity)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PublicKey {
-    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub w: G2,
-    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub v: Fp12<Fq12Config>,
-    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub powers_of_h: Vec<G1>,
-}
-
-impl PublicKey {
-    pub fn get_h(&self) -> &G1 {
-        // for use instead of pk.powers_of_h[0]
-        &self.powers_of_h[0]
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct SecretKey {
-    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub sk: ART_G,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct MasterSecretKey {
-    pub g: ART_G,
-    pub gamma: ScalarField,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-pub struct ARTCiphertext {
-    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub c: G1,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum BranchChangesType {
     MakeTemporal(
         #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")] ART_G,
-        #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")] Fp12<Fq12Config>,
+        #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")] ARTScalarField,
     ),
     AppendNode(ARTNode),
     UpdateKeys,
@@ -106,7 +44,7 @@ pub struct ARTRootKey {
     #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub key: ARTScalarField,
     #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    pub lambda: Option<Fp12<Fq12Config>>,
+    pub lambda: Option<ARTScalarField>,
     #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub generator: ART_G,
 }
@@ -121,14 +59,8 @@ pub struct ART {
 
 impl ART {
     pub fn iota_function(point: &ART_G) -> ARTScalarField {
-        // ARTScalarField::from(point.into_affine().x)
-        ARTScalarField::rand(&mut rand::thread_rng())
-    }
-
-    pub fn convert_lambda_to_scalar_field(element: &Fp12<Fq12Config>) -> ARTScalarField {
-        ARTScalarField::from_le_bytes_mod_order(
-            helper_tools::sha512_from_bytes(&element.to_string().into_bytes()).as_slice(),
-        )
+        // Convert into affine representation, so result will always be the same
+        ARTScalarField::from(point.into_affine().x.c0.into_bigint())
     }
 
     fn compute_next_layer_of_tree(
@@ -170,7 +102,7 @@ impl ART {
     }
 
     pub fn new_art_from_secrets(
-        secrets: &Vec<Fp12<Fq12Config>>,
+        secrets: &Vec<ARTScalarField>,
         generator: &ART_G,
     ) -> (Self, ARTRootKey) {
         let mut level_nodes = Vec::new();
@@ -178,13 +110,10 @@ impl ART {
 
         // leaves of the tree
         for leaf_secret in secrets {
-            // compute as hash to resolve type conflict
-            let secret = Self::convert_lambda_to_scalar_field(leaf_secret);
-
-            let node = ARTNode::new(generator.mul(secret), None, None);
+            let node = ARTNode::new(generator.mul(leaf_secret), None, None);
 
             level_nodes.push(node);
-            level_secrets.push(secret);
+            level_secrets.push(leaf_secret.clone());
         }
 
         // iterate by levels. Go from current level to upper level
@@ -284,18 +213,14 @@ impl ART {
         Err("Can't find a path.".to_string())
     }
 
-    pub fn recompute_root_key(&self, lambda: Fp12<Fq12Config>) -> ARTRootKey {
-        let mut secret_key = Self::convert_lambda_to_scalar_field(&lambda);
+    pub fn recompute_root_key(&self, lambda: ARTScalarField) -> ARTRootKey {
+        let mut secret_key = lambda.clone();
 
         let user_public_key = self.generator.mul(secret_key);
         let co_path_values = self.get_co_path_values(user_public_key).unwrap();
 
-        //initialize with zero, to resolve compile error
-        let mut upper_level_public_key = ART_G::zero();
-
-        for public_keys in co_path_values.iter() {
-            secret_key = Self::iota_function(&public_keys.mul(secret_key));
-            upper_level_public_key = self.generator.mul(secret_key);
+        for public_key in co_path_values.iter() {
+            secret_key = Self::iota_function(&public_key.mul(secret_key));
         }
 
         ARTRootKey {
@@ -305,8 +230,8 @@ impl ART {
         }
     }
 
-    pub fn public_key_from_lambda(&self, lambda: Fp12<Fq12Config>) -> ART_G {
-        let secret_key = Self::convert_lambda_to_scalar_field(&lambda);
+    pub fn public_key_from_lambda(&self, lambda: ARTScalarField) -> ART_G {
+        let secret_key = lambda.clone();
         self.generator.mul(secret_key)
     }
 
@@ -319,7 +244,7 @@ impl ART {
 
     pub fn update_branch_public_keys(
         &mut self,
-        lambda: Fp12<Fq12Config>,
+        lambda: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
         let (_, mut next) = self.get_path_to_leaf(self.public_key_from_lambda(lambda))?;
 
@@ -329,7 +254,7 @@ impl ART {
             next: next.clone(),
         };
 
-        let mut secret_key = Self::convert_lambda_to_scalar_field(&lambda);
+        let mut secret_key = lambda.clone();
         let mut public_key = self.generator.mul(secret_key);
 
         while !next.is_empty() {
@@ -367,8 +292,8 @@ impl ART {
 
     pub fn change_lambda(
         &mut self,
-        old_lambda: Fp12<Fq12Config>,
-        new_lambda: Fp12<Fq12Config>,
+        old_lambda: ARTScalarField,
+        new_lambda: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
         let (_, mut next) = self.get_path_to_leaf(self.public_key_from_lambda(old_lambda))?;
         let new_public_key = self.public_key_from_lambda(new_lambda);
@@ -453,9 +378,9 @@ impl ART {
 
     pub fn append_node_by_lambda(
         &mut self,
-        lambda: Fp12<Fq12Config>,
+        lambda: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
-        let secret_key = Self::convert_lambda_to_scalar_field(&lambda);
+        let secret_key = lambda.clone();
         let new_public_key = self.generator.mul(secret_key);
 
         let new_node = ARTNode::new(new_public_key, None, None);
@@ -475,9 +400,9 @@ impl ART {
     pub fn change_node_to_temporal(
         &mut self,
         public_key: ART_G,
-        temporal_lambda: Fp12<Fq12Config>,
+        temporal_lambda: ARTScalarField,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
-        let temporal_secret_key = Self::convert_lambda_to_scalar_field(&temporal_lambda);
+        let temporal_secret_key = temporal_lambda.clone();
         let new_public_key = self.generator.mul(temporal_secret_key);
 
         let (_, mut next) = self.get_path_to_leaf(public_key)?;
@@ -519,7 +444,7 @@ impl ART {
         Ok(target_node)
     }
 
-    pub fn can_remove(&mut self, lambda: Fp12<Fq12Config>, public_key: ART_G) -> bool {
+    pub fn can_remove(&mut self, lambda: ARTScalarField, public_key: ART_G) -> bool {
         let users_public_key = self.public_key_from_lambda(lambda);
 
         if users_public_key == public_key {
@@ -555,7 +480,7 @@ impl ART {
 
     pub fn remove_node(
         &mut self,
-        lambda: Fp12<Fq12Config>,
+        lambda: ARTScalarField,
         public_key: ART_G,
     ) -> Result<(ARTRootKey, BranchChanges), String> {
         if !self.can_remove(lambda, public_key) {

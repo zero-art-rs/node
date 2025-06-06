@@ -1,4 +1,4 @@
-use crate::art::{ART, ARTCiphertext, ARTRootKey, UserIdentity};
+use crate::art::{ART, ARTRootKey};
 use crate::helper_tools;
 use ark_bn254::{
     Bn254, Config, Fq, Fq12Config, G1Projective as G1, G2Projective as ART_G,
@@ -10,38 +10,29 @@ use ark_ff::{Field, Fp12, PrimeField};
 use std::ops::{Add, Mul};
 
 pub struct ARTTrustedAgent {
-    pub gamma: ScalarField,
-    pub g2: ART_G,
-    pub secret_keys: Option<Vec<Fp12<Fq12Config>>>,
-    pub art_generator: ART_G,
-    pub base_generator: G1,
+    pub secret_keys: Option<Vec<ARTScalarField>>,
+    pub generator: ART_G,
 }
 
 impl ARTTrustedAgent {
-    pub fn new(gamma: ScalarField, g2: ART_G) -> Self {
-        let art_generator = ART_G::generator();
-        let base_generator = G1::generator();
-
+    pub fn new(generator: ART_G) -> Self {
         ARTTrustedAgent {
-            gamma,
-            g2,
             secret_keys: None,
-            art_generator,
-            base_generator,
+            generator,
         }
     }
 
     pub fn compute_art_and_ciphertexts(
         &mut self,
-        secret_keys: &Vec<Fp12<Fq12Config>>,
+        secret_keys: &Vec<ARTScalarField>,
     ) -> (ART, ARTRootKey) {
         self.secret_keys = Some(secret_keys.clone());
-        let (tree, root_key) = ART::new_art_from_secrets(&secret_keys, &self.art_generator);
+        let (tree, root_key) = ART::new_art_from_secrets(&secret_keys, &self.generator);
 
         (tree, root_key)
     }
 
     pub fn get_recomputed_art(&self) -> ART {
-        ART::new_art_from_secrets(&self.secret_keys.clone().unwrap(), &self.art_generator).0
+        ART::new_art_from_secrets(&self.secret_keys.clone().unwrap(), &self.generator).0
     }
 }
