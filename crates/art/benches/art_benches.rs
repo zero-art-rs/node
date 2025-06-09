@@ -1,26 +1,24 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use std::time::{Duration, Instant};
 use std::hint::black_box;
+use std::time::{Duration, Instant};
 
-use ark_bn254::{
-    Bn254, Fq12, Fq12Config, G1Projective as G1, G2Projective as ART_G, fq::Fq, fq2::Fq2,
-    fr::Fr as ScalarField, fr::FrConfig, fr::Fr as ARTScalarField,
-};
-use ark_ec::PrimeGroup;
-use ark_ec::pairing::Pairing;
-use ark_ff::{BigInt, Field, Fp, Fp12, Fp256, MontBackend, PrimeField};
+use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
+use ark_ec::{CurveGroup, PrimeGroup, pairing::Pairing};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::UniformRand;
 use art::helper_tools::create_random_secrets;
 use art::{art::ART, art_user_agent::ARTUserAgent};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 // hardcoded number of leaves in a tree for testing
 // pub const TEST_SAMPLES: [usize; 5] = [100, 200, 300, 400, 500];
 pub const TEST_SAMPLES: [usize; 3] = [5, 10, 15];
 
-pub fn get_two_user_agents(group_size: usize) -> (ARTUserAgent, ARTUserAgent) {
+pub fn get_two_user_agents<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize>(
+    group_size: usize,
+) -> (ARTUserAgent<G>, ARTUserAgent<G>) {
     let secrets = create_random_secrets(group_size);
-    let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
+    let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &G::generator());
 
     let user_agent1 = ARTUserAgent::new(tree.clone(), secrets[0]);
     let user_agent2 = ARTUserAgent::new(tree.clone(), secrets[1]);
@@ -28,10 +26,13 @@ pub fn get_two_user_agents(group_size: usize) -> (ARTUserAgent, ARTUserAgent) {
     (user_agent1, user_agent2)
 }
 
-pub fn get_several_user_agents(group_size: usize, number_of_agents: usize) -> Vec<ARTUserAgent> {
+pub fn get_several_user_agents<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize>(
+    group_size: usize,
+    number_of_agents: usize,
+) -> Vec<ARTUserAgent<G>> {
     let secrets = create_random_secrets(group_size);
 
-    let mut tree = ART::new_art_from_secrets(&secrets, &ART_G::generator()).0;
+    let mut tree = ART::new_art_from_secrets(&secrets, &G::generator()).0;
 
     let mut agents = Vec::new();
     for i in 0..number_of_agents {
@@ -41,20 +42,20 @@ pub fn get_several_user_agents(group_size: usize, number_of_agents: usize) -> Ve
     agents
 }
 
-pub fn iter_with_revert<F1, F2>(
+pub fn iter_with_revert<G, F1, F2>(
     iters: u64,
-    user: &mut ARTUserAgent,
+    user: &mut ARTUserAgent<G>,
     f_run: F1,
     f_rev: F2,
 ) -> Duration
 where
-    F1: Fn(&mut ARTUserAgent) -> (),
-    F2: Fn(&mut ARTUserAgent) -> (),
+    G: CurveGroup + CanonicalSerialize + CanonicalDeserialize,
+    F1: Fn(&mut ARTUserAgent<G>) -> (),
+    F2: Fn(&mut ARTUserAgent<G>) -> (),
 {
     let mut revert_time = Duration::new(0, 0);
     let start = Instant::now();
     for _i in 0..iters {
-        // black_box(user_agent1.remove_node(user_agent2.public_key()).unwrap());
         black_box(f_run(user));
 
         let start_revert = Instant::now();
@@ -65,7 +66,7 @@ where
 }
 
 pub fn compute_art_and_ciphertexts_benchmark(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ARTTrustedAgent: compute_art_and_ciphertexts");
+    let mut group = c.benchmark_group("ART creation From secrets");
     for group_size in TEST_SAMPLES.iter() {
         group.throughput(Throughput::Elements(*group_size as u64));
         group.bench_with_input(
@@ -109,7 +110,7 @@ pub fn art_serialise_benchmark(c: &mut Criterion) {
                 let mut tree = ART::new_art_from_secrets(&secrets, &ART_G::generator()).0;
                 let art_json = tree.serialise().unwrap();
 
-                b.iter(|| ART::from_json(&art_json))
+                b.iter(|| ART::<ART_G>::from_json(&art_json))
             },
         );
     }
@@ -129,7 +130,9 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
                 let secrets = create_random_secrets(group_size);
                 let mut tree = ART::new_art_from_secrets(&secrets, &ART_G::generator()).0;
 
-                b.iter(|| ARTUserAgent::new(tree.clone(), secrets[thread_rng().gen_range(0..group_size)]));
+                b.iter(|| {
+                    ARTUserAgent::new(tree.clone(), secrets[thread_rng().gen_range(0..group_size)])
+                });
             },
         );
     }
@@ -143,7 +146,8 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
                 let secrets = create_random_secrets(group_size);
                 let tree = ART::new_art_from_secrets(&secrets, &ART_G::generator()).0;
 
-                let mut user_agent = ARTUserAgent::new(tree, secrets[thread_rng().gen_range(0..group_size)]);
+                let mut user_agent =
+                    ARTUserAgent::new(tree, secrets[thread_rng().gen_range(0..group_size)]);
 
                 b.iter(|| user_agent.update_key().unwrap())
             },
@@ -156,7 +160,7 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
             BenchmarkId::new("update_branch after update_key", group_size),
             group_size,
             |b, &group_size| {
-                let (mut user_agent1, mut user_agent2) = get_two_user_agents(group_size);
+                let (mut user_agent1, mut user_agent2) = get_two_user_agents::<ART_G>(group_size);
 
                 let (_, changes) = user_agent1.update_key().unwrap();
 
@@ -174,7 +178,7 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
                 let secrets = create_random_secrets(group_size);
                 let tree = ART::new_art_from_secrets(&secrets, &ART_G::generator()).0;
 
-                let mut user_agent1 = ARTUserAgent::new(tree.clone(),secrets[0]);
+                let mut user_agent1 = ARTUserAgent::new(tree.clone(), secrets[0]);
                 let mut user_agent2 = ARTUserAgent::new(tree, secrets[1]);
 
                 b.iter_custom(move |iters| {
@@ -200,18 +204,9 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
                 let secrets = create_random_secrets(group_size);
                 let tree = ART::new_art_from_secrets(&secrets, &ART_G::generator()).0;
 
-                let mut user_agent1 = ARTUserAgent::new(
-                    tree.clone(),
-                    secrets[0],
-                );
-                let mut user_agent2 = ARTUserAgent::new(
-                    tree.clone(),
-                    secrets[1],
-                );
-                let mut user_agent3 = ARTUserAgent::new(
-                    tree.clone(),
-                    secrets[2],
-                );
+                let mut user_agent1 = ARTUserAgent::new(tree.clone(), secrets[0]);
+                let mut user_agent2 = ARTUserAgent::new(tree.clone(), secrets[1]);
+                let mut user_agent3 = ARTUserAgent::new(tree.clone(), secrets[2]);
 
                 let (_, remove_changes) =
                     user_agent1.remove_node(user_agent2.public_key()).unwrap();
@@ -236,9 +231,8 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
             BenchmarkId::new("make_temporal", group_size),
             group_size,
             |b, &group_size| {
-                let (mut user_agent1, mut user_agent2) = get_two_user_agents(group_size);
+                let (mut user_agent1, mut user_agent2) = get_two_user_agents::<ART_G>(group_size);
 
-                // b.iter(|| user_agent1.make_temporal(user_agent2.public_key()).unwrap())
                 b.iter_custom(move |iters| {
                     iter_with_revert(
                         iters,
@@ -259,7 +253,7 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
             BenchmarkId::new("update_branch after make_temporal", group_size),
             group_size,
             |b, &group_size| {
-                let mut users = get_several_user_agents(group_size, 3);
+                let mut users = get_several_user_agents::<ART_G>(group_size, 3);
                 let mut user1 = users.pop().unwrap();
                 let mut user2 = users.pop().unwrap();
                 let mut user3 = users.pop().unwrap();
@@ -288,7 +282,7 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
             BenchmarkId::new("append_node", group_size),
             group_size,
             |b, &group_size| {
-                let mut agent = get_several_user_agents(group_size, 1).remove(0);
+                let mut agent = get_several_user_agents::<ART_G>(group_size, 1).remove(0);
 
                 let lambda = ARTScalarField::rand(&mut thread_rng());
 
@@ -303,16 +297,11 @@ pub fn art_user_agent_benchmark(c: &mut Criterion) {
             BenchmarkId::new("update_branch after append_node", group_size),
             group_size,
             |b, &group_size| {
-                let mut agents = get_several_user_agents(group_size, 2);
+                let mut agents = get_several_user_agents::<ART_G>(group_size, 2);
 
                 let lambda = ARTScalarField::rand(&mut thread_rng());
                 let public_key = agents[0].tree.public_key_of(lambda);
 
-                // b.iter(|| {
-                //     let mut agents = get_several_user_agents(group_size, 2);
-                //     let (_, changes) = agents[0].append_node(lambda).unwrap();
-                //     agents[1].update_branch(&changes)
-                // });
                 let (_, append_changes) = agents[0].append_node(lambda).unwrap();
                 let (_, make_temporal_changes) = agents[0].make_temporal(public_key).unwrap();
 

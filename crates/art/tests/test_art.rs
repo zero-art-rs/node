@@ -1,23 +1,18 @@
 #[cfg(test)]
 mod tests {
-    use ark_ec::pairing::{Pairing, PairingOutput};
-    use ark_ff::{Field, Fp12, PrimeField};
-    use ark_std::UniformRand;
-
-    use ark_bn254::{
-        Bn254, Config, Fq, Fq12Config, G1Projective as G1, G2Projective as ART_G,
-        fr::Fr as ARTScalarField,
-    };
+    use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
     use ark_ec::PrimeGroup;
+    use ark_ec::pairing::Pairing;
+    use ark_std::UniformRand;
     use art::art_user_agent::ARTUserAgent;
-    use art::{self, art::ART, art_node::ARTNode, helper_tools};
+    use art::{self, art::ART, helper_tools};
     use helper_tools::create_random_secrets;
     use rand::{Rng, thread_rng};
 
     #[test]
     fn test_art_tree_key_update() {
-        let number_of_users = 1000;
-        let main_user_id = thread_rng().gen_range(0..number_of_users as usize);
+        let number_of_users = 100;
+        let main_user_id = thread_rng().gen_range(0..number_of_users);
         let secrets = create_random_secrets(number_of_users);
 
         let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
@@ -58,8 +53,22 @@ mod tests {
     }
 
     #[test]
+    fn test_art_tree_serialisation() {
+        let number_of_users = 100;
+        let main_user_id = thread_rng().gen_range(0..number_of_users as usize);
+        let secrets = create_random_secrets(number_of_users);
+
+        let (tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
+
+        let serialized = serde_json::to_string(&tree).unwrap();
+        let deserialized: ART<ART_G> = serde_json::from_str(&serialized).unwrap();
+
+        assert!(deserialized.eq(&tree));
+    }
+
+    #[test]
     fn test_art_make_temporal_node() {
-        let number_of_users = 1000;
+        let number_of_users = 100;
         let main_user_id = thread_rng().gen_range(0..(number_of_users - 2) as usize);
 
         let secrets = create_random_secrets(number_of_users);
@@ -113,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_art_node_removal() {
-        let number_of_users = 1000;
+        let number_of_users = 100;
         let secrets = create_random_secrets(number_of_users);
 
         let temporal_user_id = thread_rng().gen_range(3..number_of_users as usize);

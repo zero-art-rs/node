@@ -1,23 +1,19 @@
 use crate::art::{ART, ARTRootKey, BranchChanges};
 use crate::helper_tools;
-use ark_bn254::{
-    Bn254, Config, Fq, Fq12Config, G1Projective as G1, G2Projective as ART_G,
-    fr::Fr as ScalarField, fr::Fr as ARTScalarField, fr::FrConfig,
-};
-use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ff::{Field, Fp12, Fp12Config, Fp256, MontBackend, PrimeField, ToConstraintField};
-use ark_std::{One, UniformRand};
+use ark_ec::{CurveGroup, pairing::Pairing};
+use ark_ff::{Field, PrimeField};
+use ark_std::UniformRand;
 use rand;
 
 #[derive(Debug, Clone)]
-pub struct ARTUserAgent {
-    pub root_key: ARTRootKey,
-    pub tree: ART,
-    pub lambda: ARTScalarField,
+pub struct ARTUserAgent<G: CurveGroup> {
+    pub root_key: ARTRootKey<G>,
+    pub tree: ART<G>,
+    pub lambda: G::ScalarField,
 }
 
-impl ARTUserAgent {
-    pub fn new(tree: ART, lambda: ARTScalarField) -> Self {
+impl<G: CurveGroup> ARTUserAgent<G> {
+    pub fn new(tree: ART<G>, lambda: G::ScalarField) -> Self {
         let root_key = tree.recompute_root_key(lambda);
 
         Self {
@@ -27,8 +23,8 @@ impl ARTUserAgent {
         }
     }
 
-    pub fn update_key(&mut self) -> Result<(ARTRootKey, BranchChanges), String> {
-        let r = helper_tools::random_non_neutral_scalar_field_element();
+    pub fn update_key(&mut self) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
+        let r = helper_tools::random_non_neutral_scalar_field_element::<G::ScalarField>();
 
         let new_lambda = self.lambda.pow(&r.into_bigint());
 
@@ -37,8 +33,8 @@ impl ARTUserAgent {
 
     pub fn append_node(
         &mut self,
-        lambda: ARTScalarField,
-    ) -> Result<(ARTRootKey, BranchChanges), String> {
+        lambda: G::ScalarField,
+    ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
         match self.tree.append_node_by_lambda(lambda) {
             Ok((root_key, changes)) => {
                 self.root_key = root_key.clone();
@@ -50,8 +46,8 @@ impl ARTUserAgent {
 
     pub fn change_lambda(
         &mut self,
-        new_lambda: ARTScalarField,
-    ) -> Result<(ARTRootKey, BranchChanges), String> {
+        new_lambda: G::ScalarField,
+    ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
         match self.tree.change_lambda(self.lambda, new_lambda) {
             Ok((root_key, changes)) => {
                 self.lambda = new_lambda;
@@ -64,9 +60,9 @@ impl ARTUserAgent {
 
     pub fn make_temporal(
         &mut self,
-        public_key: ART_G,
-    ) -> Result<(ARTRootKey, BranchChanges), String> {
-        let temporal_lambda = ARTScalarField::rand(&mut ark_std::rand::thread_rng());
+        public_key: G,
+    ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
+        let temporal_lambda = G::ScalarField::rand(&mut ark_std::rand::thread_rng());
 
         match self
             .tree
@@ -82,8 +78,8 @@ impl ARTUserAgent {
 
     pub fn remove_node(
         &mut self,
-        public_key: ART_G,
-    ) -> Result<(ARTRootKey, BranchChanges), String> {
+        public_key: G,
+    ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
         match self.tree.remove_node(self.lambda, public_key) {
             Ok((root_key, changes)) => {
                 self.root_key = root_key;
@@ -93,14 +89,14 @@ impl ARTUserAgent {
         }
     }
 
-    pub fn update_branch(&mut self, changes: &BranchChanges) -> Result<(), String> {
+    pub fn update_branch(&mut self, changes: &BranchChanges<G>) -> Result<(), String> {
         let res = self.tree.update_branch(changes);
         self.root_key = self.tree.recompute_root_key(self.lambda);
 
         res
     }
 
-    pub fn get_root_key(&self) -> ARTRootKey {
+    pub fn get_root_key(&self) -> ARTRootKey<G> {
         self.root_key
     }
 
@@ -111,8 +107,8 @@ impl ARTUserAgent {
         }
     }
 
-    pub fn deserialize_art(&self, canonical_json: String) -> Result<ART, String> {
-        let tree: ART = match serde_json::from_str(&canonical_json) {
+    pub fn deserialize_art(&self, canonical_json: String) -> Result<ART<G>, String> {
+        let tree: ART<G> = match serde_json::from_str(&canonical_json) {
             Ok(tree) => tree,
             Err(e) => return Err(format!("Failed to deserialize: {:?}", e)),
         };
@@ -120,11 +116,11 @@ impl ARTUserAgent {
         Ok(tree)
     }
 
-    pub fn public_key(&self) -> ART_G {
+    pub fn public_key(&self) -> G {
         self.tree.public_key_of(self.lambda)
     }
 
-    pub fn can_remove(&mut self, public_key: ART_G) -> bool {
+    pub fn can_remove(&mut self, public_key: G) -> bool {
         self.tree.can_remove(self.lambda, public_key)
     }
 }
