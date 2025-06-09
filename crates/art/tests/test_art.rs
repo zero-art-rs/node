@@ -3,16 +3,18 @@ mod tests {
     use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
     use ark_ec::PrimeGroup;
     use ark_ec::pairing::Pairing;
+    use ark_std::rand::prelude::StdRng;
+    use ark_std::rand::SeedableRng;
     use ark_std::UniformRand;
     use art::art_user_agent::ARTUserAgent;
     use art::{self, art::ART, helper_tools};
     use helper_tools::create_random_secrets;
-    use rand::{Rng, thread_rng};
+    use rand::{Rng, rng};
 
     #[test]
     fn test_art_tree_key_update() {
         let number_of_users = 100;
-        let main_user_id = thread_rng().gen_range(0..number_of_users);
+        let main_user_id = rng().random_range(0..number_of_users);
         let secrets = create_random_secrets(number_of_users);
 
         let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
@@ -55,7 +57,7 @@ mod tests {
     #[test]
     fn test_art_tree_serialisation() {
         let number_of_users = 100;
-        let main_user_id = thread_rng().gen_range(0..number_of_users as usize);
+        let main_user_id = rng().random_range(0..number_of_users as usize);
         let secrets = create_random_secrets(number_of_users);
 
         let (tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
@@ -68,15 +70,16 @@ mod tests {
 
     #[test]
     fn test_art_make_temporal_node() {
+        let mut rng = rng();
         let number_of_users = 100;
-        let main_user_id = thread_rng().gen_range(0..(number_of_users - 2) as usize);
+        let main_user_id = rng.random_range(0..(number_of_users - 2) as usize);
 
         let secrets = create_random_secrets(number_of_users);
         let generator = ART_G::generator();
 
-        let mut temporal_user_id = thread_rng().gen_range(0..(number_of_users - 3) as usize);
+        let mut temporal_user_id = rng.random_range(0..(number_of_users - 3) as usize);
         while temporal_user_id >= main_user_id && temporal_user_id <= main_user_id + 2 {
-            temporal_user_id = thread_rng().gen_range(0..(number_of_users - 3) as usize);
+            temporal_user_id = rng.random_range(0..(number_of_users - 3) as usize);
         }
 
         let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
@@ -107,7 +110,7 @@ mod tests {
             assert_eq!(user_agent.tree.size(), (number_of_users - 1) as usize);
         }
 
-        let mut rng = thread_rng();
+        let mut rng = StdRng::seed_from_u64(rand::random());
         let new_lambda = ARTScalarField::rand(&mut rng);
 
         let (root_key, changes) = main_user_agent.append_node(new_lambda).unwrap();
@@ -125,7 +128,7 @@ mod tests {
         let number_of_users = 100;
         let secrets = create_random_secrets(number_of_users);
 
-        let temporal_user_id = thread_rng().gen_range(3..number_of_users as usize);
+        let temporal_user_id = rng().random_range(3..number_of_users as usize);
 
         let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
 

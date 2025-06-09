@@ -2,6 +2,8 @@ use crate::art::{ART, ARTRootKey, BranchChanges};
 use crate::helper_tools;
 use ark_ec::{CurveGroup, pairing::Pairing};
 use ark_ff::{Field, PrimeField};
+use ark_std::rand::prelude::StdRng;
+use ark_std::rand::SeedableRng;
 use ark_std::UniformRand;
 use rand;
 
@@ -62,7 +64,7 @@ impl<G: CurveGroup> ARTUserAgent<G> {
         &mut self,
         public_key: G,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let temporal_lambda = G::ScalarField::rand(&mut ark_std::rand::thread_rng());
+        let temporal_lambda = G::ScalarField::rand(&mut StdRng::seed_from_u64(rand::random()));
 
         match self
             .tree

@@ -2,11 +2,13 @@ use ark_bn254::fr::Fr as ARTScalarField;
 use ark_ff::Field;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use ark_std::{One, UniformRand, Zero};
-use rand::thread_rng;
+use rand::prelude::*;
+use ark_std::rand::{Rng, SeedableRng};
+use ark_std::rand::rngs::StdRng;
 
 // return random ScalarField element, which isn't zero or one
 pub fn random_non_neutral_scalar_field_element<F: Field>() -> F {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(rand::random());
 
     let mut k = F::zero();
     while k.is_one() || k.is_zero() {
@@ -38,9 +40,11 @@ where
 }
 
 pub fn create_random_secrets<F: Field>(size: usize) -> Vec<F> {
+    let mut rng = &mut StdRng::seed_from_u64(rand::random());
+
     let mut secrets = Vec::new();
     for x in 0..size {
-        secrets.push(F::rand(&mut thread_rng()));
+        secrets.push(F::rand(&mut rng));
     }
 
     secrets
