@@ -236,7 +236,8 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         }
     }
 
-    pub fn update_branch_public_keys(
+    /// Change all public keys on path from the root to node corresponding to the given secret key
+    pub fn update_branch_using_secret_key(
         &mut self,
         leaf_secret: G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
@@ -294,118 +295,88 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         let mut user_node = self.get_to_node(next)?;
         user_node.set_public_key(new_public_key);
 
-        self.update_branch_public_keys(new_leaf_secret)
+        self.update_branch_using_secret_key(new_leaf_secret)
     }
 
-    pub fn find_path_to_possible_leaf_for_insertion(&self) -> Result<Vec<Direction>, String> {
-        let root = self.get_root();
-        let height = self.height();
+    /// Searches for the closest leaf to the root. Assume that the required leaf is in a subtree,
+    /// with the smallest weight.
+    pub fn find_path_to_possible_leaf_for_insertion(&self) -> Vec<Direction> {
+        let mut candidate = self.get_root();
+        let mut next = vec![];
 
-        let mut path = vec![root.as_ref()];
-        let mut next = vec![Direction::NoDirection];
+        while !candidate.is_leaf() {
+            let l = candidate.get_left();
+            let r = candidate.get_right();
 
-        while !path.is_empty() {
-            let last_node = path.last().unwrap();
-
-            if last_node.is_leaf() {
-                // there is <=, because "next" contains additional NoDirection
-                if next.len() <= height || last_node.is_temporal {
-                    return Ok(next);
-                } else {
-                    path.pop();
-                    next.pop();
+            match l.weight < r.weight {
+                true => {
+                    next.push(Direction::Left);
+                    candidate = candidate.get_left();
                 }
-            } else {
-                match next.pop().unwrap() {
-                    Direction::Left => {
-                        path.push(last_node.get_right().as_ref());
-
-                        next.push(Direction::Right);
-                        next.push(Direction::NoDirection);
-                    }
-                    Direction::Right => {
-                        path.pop();
-                    }
-                    Direction::NoDirection => {
-                        path.push(last_node.get_left().as_ref());
-
-                        next.push(Direction::Left);
-                        next.push(Direction::NoDirection);
-                    }
+                false => {
+                    next.push(Direction::Right);
+                    candidate = candidate.get_right();
                 }
             }
         }
 
-        Err("Can't find a place for insertion.".into())
-    }
-
-    pub fn is_full_binary_tree(&self) -> bool {
-        self.size.is_power_of_two()
+        next
     }
 
     fn find_place_and_append_node(&mut self, node: ARTNode<G>) -> Result<(), String> {
-        match self.is_full_binary_tree() {
-            true => {
-                self.root.extend(node);
-            }
-            false => {
-                let mut next = self.find_path_to_possible_leaf_for_insertion()?;
+        let next = self.find_path_to_possible_leaf_for_insertion();
 
-                let mut node_for_extension = self.root.as_mut();
-                for direction in &next {
-                    if node_for_extension.have_child(direction) {
-                        node_for_extension = node_for_extension.get_mut_child(direction)?;
-                    } else {
-                        break;
-                    }
-                }
+        let mut node_for_extension = self.root.as_mut();
+        for direction in &next {
+            node_for_extension.weight += 1;
+            node_for_extension = node_for_extension.get_mut_child(direction)?;
+        }
 
-                node_for_extension.extend_or_replace(node);
-            }
-        };
+        node_for_extension.extend_or_replace(node);
 
         self.size += 1;
 
         Ok(())
     }
 
-    pub fn append_node_by_lambda(
+    pub fn append_node_by_secret_key(
         &mut self,
-        lambda: G::ScalarField,
+        secret_key: G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let secret_key = lambda.clone();
         let new_public_key = self.generator.mul(secret_key);
-
         let new_node = ARTNode::new(new_public_key, None, None);
 
         self.find_place_and_append_node(new_node.clone())?;
 
-        match self.update_branch_public_keys(lambda) {
-            Ok((root_key, mut changes)) => {
+        self.update_branch_using_secret_key(secret_key)
+            .map(|(root_key, mut changes)| {
                 changes.change_type = BranchChangesType::AppendNode(new_node);
-
-                Ok((root_key, changes))
-            }
-            Err(msg) => Err(msg),
-        }
+                (root_key, changes)
+            })
     }
 
     pub fn change_node_to_temporal(
         &mut self,
         public_key: G,
-        temporal_lambda: G::ScalarField,
+        temporal_secret_key: G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let temporal_secret_key = temporal_lambda.clone();
         let new_public_key = self.generator.mul(temporal_secret_key);
 
-        let (_, mut next) = self.get_path_to_leaf(public_key)?;
+        let (_, next) = self.get_path_to_leaf(public_key)?;
 
-        self.get_to_node(next)?.make_temporal(new_public_key);
+        let mut target_node = self.root.as_mut();
+        for direction in &next {
+            target_node.weight -= 1;
+            target_node = target_node.get_mut_child(direction)?;
+        }
+        target_node.make_temporal(new_public_key);
+
         self.size -= 1;
 
-        match self.update_branch_public_keys(temporal_lambda) {
+        match self.update_branch_using_secret_key(temporal_secret_key) {
             Ok((root_key, mut changes)) => {
-                changes.change_type = BranchChangesType::MakeTemporal(public_key, temporal_lambda);
+                changes.change_type =
+                    BranchChangesType::MakeTemporal(public_key, temporal_secret_key);
 
                 Ok((root_key, changes))
             }
@@ -428,6 +399,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         Ok(())
     }
 
+    /// Returns mut node by the given path to it
     pub fn get_to_node(&mut self, next: Vec<Direction>) -> Result<&mut ARTNode<G>, String> {
         let mut target_node = self.root.as_mut();
         for direction in &next {
@@ -462,10 +434,15 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
     pub fn remove_node_from_tree(&mut self, neighbour_public_key: G) -> Result<(), String> {
         let (_, mut next) = self.get_path_to_leaf(neighbour_public_key)?;
-        let for_deletion = next.pop().unwrap();
-        let parent = self.get_to_node(next)?;
+        let node_for_deletion = next.pop().unwrap();
 
-        parent.shrink_to_other(for_deletion)?;
+        let mut target_node = self.root.as_mut();
+        for direction in &next {
+            target_node.weight -= 1;
+            target_node = target_node.get_mut_child(direction)?;
+        }
+
+        target_node.shrink_to_other(node_for_deletion)?;
         self.size -= 1;
 
         Ok(())
@@ -482,7 +459,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
         self.remove_node_from_tree(public_key)?;
 
-        match self.update_branch_public_keys(lambda) {
+        match self.update_branch_using_secret_key(lambda) {
             Ok((root_key, mut changes)) => {
                 changes.change_type = BranchChangesType::RemoveNode(public_key);
 

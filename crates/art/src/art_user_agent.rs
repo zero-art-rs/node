@@ -2,9 +2,9 @@ use crate::art::{ART, ARTRootKey, BranchChanges};
 use crate::helper_tools;
 use ark_ec::{CurveGroup, pairing::Pairing};
 use ark_ff::{Field, PrimeField};
-use ark_std::rand::prelude::StdRng;
-use ark_std::rand::SeedableRng;
 use ark_std::UniformRand;
+use ark_std::rand::SeedableRng;
+use ark_std::rand::prelude::StdRng;
 use rand;
 
 #[derive(Debug, Clone)]
@@ -37,13 +37,11 @@ impl<G: CurveGroup> ARTUserAgent<G> {
         &mut self,
         lambda: G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        match self.tree.append_node_by_lambda(lambda) {
-            Ok((root_key, changes)) => {
+        self.tree.append_node_by_secret_key(lambda)
+            .map(|(root_key, changes)|{
                 self.root_key = root_key.clone();
-                Ok((root_key, changes))
-            }
-            Err(e) => Err(e),
-        }
+                (root_key, changes)
+            })
     }
 
     pub fn change_lambda(

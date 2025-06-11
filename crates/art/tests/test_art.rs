@@ -3,9 +3,9 @@ mod tests {
     use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
     use ark_ec::PrimeGroup;
     use ark_ec::pairing::Pairing;
-    use ark_std::rand::prelude::StdRng;
-    use ark_std::rand::SeedableRng;
     use ark_std::UniformRand;
+    use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
     use art::art_user_agent::ARTUserAgent;
     use art::{self, art::ART, helper_tools};
     use helper_tools::create_random_secrets;
