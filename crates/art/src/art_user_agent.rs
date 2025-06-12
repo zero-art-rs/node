@@ -1,6 +1,7 @@
 use crate::art::{ART, ARTRootKey, BranchChanges};
+use crate::art_node::ARTNode;
 use crate::helper_tools;
-use ark_ec::{CurveGroup, pairing::Pairing};
+use ark_ec::CurveGroup;
 use ark_ff::{Field, PrimeField};
 use ark_std::UniformRand;
 use ark_std::rand::SeedableRng;
@@ -35,10 +36,14 @@ impl<G: CurveGroup> ARTUserAgent<G> {
 
     pub fn append_node(
         &mut self,
-        lambda: G::ScalarField,
+        lambda: &G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        self.tree.append_node_by_secret_key(lambda)
-            .map(|(root_key, changes)|{
+        let new_public_key = self.tree.public_key_of(lambda);
+        let new_node = ARTNode::new_leaf(new_public_key);
+        let path = self.tree.find_path_to_possible_leaf_for_insertion();
+        self.tree
+            .append_node_and_update_tree(new_node, &path, lambda)
+            .map(|(root_key, changes)| {
                 self.root_key = root_key.clone();
                 (root_key, changes)
             })
@@ -48,7 +53,7 @@ impl<G: CurveGroup> ARTUserAgent<G> {
         &mut self,
         new_lambda: G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        match self.tree.change_lambda(self.lambda, new_lambda) {
+        match self.tree.change_lambda(&self.lambda, &new_lambda) {
             Ok((root_key, changes)) => {
                 self.lambda = new_lambda;
                 self.root_key = root_key.clone();
@@ -60,13 +65,13 @@ impl<G: CurveGroup> ARTUserAgent<G> {
 
     pub fn make_temporal(
         &mut self,
-        public_key: G,
+        public_key: &G,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
         let temporal_lambda = G::ScalarField::rand(&mut StdRng::seed_from_u64(rand::random()));
 
         match self
             .tree
-            .change_node_to_temporal(public_key, temporal_lambda)
+            .make_node_temporal_and_update(public_key, &temporal_lambda)
         {
             Ok((root_key, changes)) => {
                 self.root_key = root_key;
@@ -78,9 +83,12 @@ impl<G: CurveGroup> ARTUserAgent<G> {
 
     pub fn remove_node(
         &mut self,
-        public_key: G,
+        public_key: &G,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        match self.tree.remove_node(self.lambda, public_key) {
+        match self
+            .tree
+            .remove_node_and_update_tree(&self.lambda, public_key)
+        {
             Ok((root_key, changes)) => {
                 self.root_key = root_key;
                 Ok((root_key, changes))
@@ -117,10 +125,10 @@ impl<G: CurveGroup> ARTUserAgent<G> {
     }
 
     pub fn public_key(&self) -> G {
-        self.tree.public_key_of(self.lambda)
+        self.tree.public_key_of(&self.lambda)
     }
 
-    pub fn can_remove(&mut self, public_key: G) -> bool {
-        self.tree.can_remove(self.lambda, public_key)
+    pub fn can_remove(&mut self, public_key: &G) -> bool {
+        self.tree.can_remove(&self.lambda, public_key)
     }
 }

@@ -1,5 +1,4 @@
-use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
-use ark_ec::{AffineRepr, CurveGroup, short_weierstrass::SWCurveConfig};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -28,16 +27,29 @@ impl<G: CurveGroup> ARTNode<G> {
         public_key: G,
         l: Option<Box<ARTNode<G>>>,
         r: Option<Box<ARTNode<G>>>,
-    ) -> ARTNode<G> {
+    ) -> Result<ARTNode<G>, String> {
         let weight = match (&l, &r) {
-            (Some(l), Some(r)) => l.weight + r.weight,
-            _ => 1, // the node is a nonempty leaf, other cases are impossible
+            (Some(l), Some(r)) => l.weight + r.weight, //internal node
+            (None, None) => 1,                         // leaf node
+            _ => return Err("Cannot create a node with only one child".to_string()),
         };
 
-        ARTNode {
+        Ok(ARTNode {
             public_key,
             l,
             r,
+            is_temporal: false,
+            weight,
+        })
+    }
+
+    pub fn new_internal_node(public_key: G, l: Box<ARTNode<G>>, r: Box<ARTNode<G>>) -> ARTNode<G> {
+        let weight = l.weight + r.weight;
+
+        ARTNode {
+            public_key,
+            l: Some(l),
+            r: Some(r),
             is_temporal: false,
             weight,
         }
@@ -64,9 +76,9 @@ impl<G: CurveGroup> ARTNode<G> {
         }
     }
 
-    pub fn make_temporal(&mut self, temporal_public_key: G) {
+    pub fn make_temporal(&mut self, temporal_public_key: &G) {
         if self.is_leaf() {
-            self.set_public_key(temporal_public_key);
+            self.set_public_key(temporal_public_key.clone());
             self.is_temporal = true;
             self.weight = 0;
         }
@@ -186,7 +198,7 @@ impl<G: CurveGroup> ARTNode<G> {
 
     /// Change current node with child. Other child is removed. The result is other child
     pub fn shrink_to(&mut self, child: Direction) -> Result<Option<Box<ARTNode<G>>>, String> {
-        let (mut new_self, mut other_child) = match child {
+        let (mut new_self, other_child) = match child {
             Direction::Left => (self.l.take(), self.r.take()),
             Direction::Right => (self.r.take(), self.l.take()),
             _ => return Err("Unexpected direction".into()),
@@ -219,6 +231,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> PartialEq for AR
             || self.l != other.l
             || self.r != other.r
             || self.is_temporal != other.is_temporal
+            || self.weight != other.weight
         {
             true => false,
             false => true,

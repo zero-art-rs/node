@@ -2,13 +2,13 @@
 
 use crate::art_node::{ARTNode, Direction};
 use crate::helper_tools::{ark_de, ark_se};
-use ark_ec::{AffineRepr, CurveGroup, pairing::Pairing};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, Field, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::iterable::Iterable;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::{cmp::max, mem, ops::Mul};
+use std::{cmp::max, mem};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(bound = "")]
@@ -44,10 +44,9 @@ pub struct ARTRootKey<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize>
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(bound = "")]
 pub struct ART<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> {
-    root: Box<ARTNode<G>>,
+    pub root: Box<ARTNode<G>>,
     #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
-    generator: G,
-    size: usize,
+    pub generator: G,
 }
 
 impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
@@ -77,10 +76,10 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
             let common_secret =
                 Self::iota_function(&left_node.public_key.mul(level_secrets.remove(0)));
 
-            let node = ARTNode::new(
+            let node = ARTNode::new_internal_node(
                 generator.mul(&common_secret),
-                Some(Box::new(left_node)),
-                Some(Box::new(right_node)),
+                Box::new(left_node),
+                Box::new(right_node),
             );
 
             upper_level_nodes.push(node);
@@ -107,7 +106,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
         // leaves of the tree
         for leaf_secret in secrets {
-            let node = ARTNode::new(generator.mul(leaf_secret), None, None);
+            let node = ARTNode::new_leaf(generator.mul(leaf_secret));
 
             level_nodes.push(node);
             level_secrets.push(leaf_secret.clone());
@@ -128,7 +127,6 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         let art = ART {
             root: Box::new(root),
             generator: generator.clone(),
-            size: secrets.len(),
         };
 
         (art, root_key)
@@ -138,15 +136,11 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         &self.root
     }
 
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
     pub fn replace_root(&mut self, new_root: Box<ARTNode<G>>) -> Box<ARTNode<G>> {
         mem::replace(&mut self.root, new_root)
     }
 
-    pub fn get_co_path_values(&self, user_public_key: G) -> Result<Vec<G>, String> {
+    pub fn get_co_path_values(&self, user_public_key: &G) -> Result<Vec<G>, String> {
         let (path_nodes, next_node) = self.get_path_to_leaf(user_public_key)?;
 
         let mut co_path_values = Vec::new();
@@ -167,7 +161,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
     pub fn get_path_to_leaf(
         &self,
-        user_val: G,
+        user_val: &G,
     ) -> Result<(Vec<&ARTNode<G>>, Vec<Direction>), String> {
         let root = self.get_root();
 
@@ -178,7 +172,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
             let last_node = path.last().unwrap();
 
             if last_node.is_leaf() {
-                if last_node.public_key.eq(&user_val) {
+                if last_node.public_key.eq(user_val) {
                     next.pop();
                     return Ok((path, next));
                 } else {
@@ -211,7 +205,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
     pub fn recompute_root_key(&self, leaf_secret: G::ScalarField) -> ARTRootKey<G> {
         let co_path_values = self
-            .get_co_path_values(self.generator.mul(leaf_secret))
+            .get_co_path_values(&self.public_key_of(&leaf_secret))
             .unwrap();
 
         let mut secret = leaf_secret.clone();
@@ -225,23 +219,16 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         }
     }
 
-    pub fn public_key_of(&self, secret: G::ScalarField) -> G {
+    pub fn public_key_of(&self, secret: &G::ScalarField) -> G {
         self.generator.mul(secret)
-    }
-
-    pub fn height(&self) -> usize {
-        match self.size.is_power_of_two() {
-            true => self.size.ilog2() as usize,
-            false => (self.size.ilog2() + 1) as usize,
-        }
     }
 
     /// Change all public keys on path from the root to node corresponding to the given secret key
     pub fn update_branch_using_secret_key(
         &mut self,
-        leaf_secret: G::ScalarField,
+        secret_key: &G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let (_, mut next) = self.get_path_to_leaf(self.generator.mul(leaf_secret))?;
+        let (_, mut next) = self.get_path_to_leaf(&self.public_key_of(secret_key))?;
 
         let mut changes = BranchChanges {
             change_type: BranchChangesType::UpdateKeys,
@@ -249,9 +236,9 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
             next: next.clone(),
         };
 
-        let mut secret_key = leaf_secret.clone();
-        let mut public_key = self.generator.mul(secret_key);
+        let mut public_key = self.public_key_of(secret_key);
 
+        let mut level_secret_key = secret_key.clone();
         while !next.is_empty() {
             let next_child = next.pop().unwrap();
 
@@ -267,9 +254,9 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
             changes.public_keys.push(public_key);
 
             let other_child_public_key = parent.get_other_child(&next_child)?.public_key.clone();
-            let secret = other_child_public_key.mul(secret_key);
-            secret_key = Self::iota_function(&secret);
-            public_key = self.generator.mul(&secret_key);
+            let common_secret = other_child_public_key.mul(level_secret_key);
+            level_secret_key = Self::iota_function(&common_secret);
+            public_key = self.generator.mul(&level_secret_key);
         }
 
         self.root.set_public_key(public_key);
@@ -277,7 +264,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         changes.public_keys.reverse();
 
         let key = ARTRootKey {
-            key: secret_key,
+            key: level_secret_key,
             generator: self.generator.clone(),
         };
 
@@ -286,16 +273,16 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
     pub fn change_lambda(
         &mut self,
-        old_leaf_secret: G::ScalarField,
-        new_leaf_secret: G::ScalarField,
+        old_leaf_secret: &G::ScalarField,
+        new_leaf_secret: &G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let (_, next) = self.get_path_to_leaf(self.public_key_of(old_leaf_secret))?;
+        let (_, next) = self.get_path_to_leaf(&self.public_key_of(old_leaf_secret))?;
         let new_public_key = self.public_key_of(new_leaf_secret);
 
         let mut user_node = self.get_to_node(next)?;
         user_node.set_public_key(new_public_key);
 
-        self.update_branch_using_secret_key(new_leaf_secret)
+        self.update_branch_using_secret_key(&new_leaf_secret)
     }
 
     /// Searches for the closest leaf to the root. Assume that the required leaf is in a subtree,
@@ -323,65 +310,66 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         next
     }
 
-    fn find_place_and_append_node(&mut self, node: ARTNode<G>) -> Result<(), String> {
-        let next = self.find_path_to_possible_leaf_for_insertion();
-
+    fn append_node(&mut self, node: ARTNode<G>, path: &Vec<Direction>) -> Result<(), String> {
         let mut node_for_extension = self.root.as_mut();
-        for direction in &next {
+        for direction in path {
             node_for_extension.weight += 1;
             node_for_extension = node_for_extension.get_mut_child(direction)?;
         }
 
         node_for_extension.extend_or_replace(node);
 
-        self.size += 1;
-
         Ok(())
     }
 
-    pub fn append_node_by_secret_key(
+    pub fn append_node_and_update_tree(
         &mut self,
-        secret_key: G::ScalarField,
+        node: ARTNode<G>,
+        path: &Vec<Direction>,
+        secret_key: &G::ScalarField,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let new_public_key = self.generator.mul(secret_key);
-        let new_node = ARTNode::new(new_public_key, None, None);
-
-        self.find_place_and_append_node(new_node.clone())?;
+        self.append_node(node.clone(), path)?;
 
         self.update_branch_using_secret_key(secret_key)
             .map(|(root_key, mut changes)| {
-                changes.change_type = BranchChangesType::AppendNode(new_node);
+                changes.change_type = BranchChangesType::AppendNode(node);
                 (root_key, changes)
             })
     }
 
-    pub fn change_node_to_temporal(
+    pub fn make_node_temporal(
         &mut self,
-        public_key: G,
-        temporal_secret_key: G::ScalarField,
-    ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
-        let new_public_key = self.generator.mul(temporal_secret_key);
-
-        let (_, next) = self.get_path_to_leaf(public_key)?;
-
+        path: &Vec<Direction>,
+        temporal_public_key: &G,
+    ) -> Result<(), String> {
         let mut target_node = self.root.as_mut();
-        for direction in &next {
+        for direction in path {
             target_node.weight -= 1;
             target_node = target_node.get_mut_child(direction)?;
         }
-        target_node.make_temporal(new_public_key);
+        target_node.make_temporal(temporal_public_key);
 
-        self.size -= 1;
+        Ok(())
+    }
 
-        match self.update_branch_using_secret_key(temporal_secret_key) {
-            Ok((root_key, mut changes)) => {
-                changes.change_type =
-                    BranchChangesType::MakeTemporal(public_key, temporal_secret_key);
+    pub fn make_node_temporal_and_update(
+        &mut self,
+        public_key: &G,
+        temporal_secret_key: &G::ScalarField,
+    ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
+        let new_public_key = self.public_key_of(temporal_secret_key);
+        let (_, next) = self.get_path_to_leaf(public_key)?;
 
-                Ok((root_key, changes))
-            }
-            Err(msg) => Err(msg),
-        }
+        self.make_node_temporal(&next, &new_public_key)?;
+
+        self.update_branch_using_secret_key(temporal_secret_key)
+            .map(|(root_key, mut changes)| {
+                changes.change_type = BranchChangesType::MakeTemporal(
+                    public_key.clone(),
+                    temporal_secret_key.clone(),
+                );
+                (root_key, changes)
+            })
     }
 
     pub fn update_branch_public_keys_using_changes(
@@ -399,6 +387,25 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         Ok(())
     }
 
+    pub fn update_branch_public_keys_using_changes_and_path(
+        &mut self,
+        changes: &BranchChanges<G>,
+        path: &Vec<Direction>,
+    ) -> Result<(), String> {
+        let mut current_node = self.root.as_mut();
+        for (next, public_key) in path
+            .iter()
+            .zip(changes.public_keys[..changes.public_keys.len() - 1].iter())
+        {
+            current_node.set_public_key(public_key.clone());
+            current_node = current_node.get_mut_child(next)?;
+        }
+
+        current_node.set_public_key(changes.public_keys[changes.public_keys.len() - 1].clone());
+
+        Ok(())
+    }
+
     /// Returns mut node by the given path to it
     pub fn get_to_node(&mut self, next: Vec<Direction>) -> Result<&mut ARTNode<G>, String> {
         let mut target_node = self.root.as_mut();
@@ -409,15 +416,15 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         Ok(target_node)
     }
 
-    pub fn can_remove(&mut self, lambda: G::ScalarField, public_key: G) -> bool {
+    pub fn can_remove(&mut self, lambda: &G::ScalarField, public_key: &G) -> bool {
         let users_public_key = self.public_key_of(lambda);
 
-        if users_public_key == public_key {
+        if users_public_key.eq(public_key) {
             return false;
         }
 
-        let (_, mut path_to_other) = self.get_path_to_leaf(public_key).unwrap();
-        let (_, mut path_to_self) = self.get_path_to_leaf(users_public_key).unwrap();
+        let (_, path_to_other) = self.get_path_to_leaf(public_key).unwrap();
+        let (_, path_to_self) = self.get_path_to_leaf(&users_public_key).unwrap();
 
         if path_to_other.len().abs_diff(path_to_self.len()) > 1 {
             return false;
@@ -432,36 +439,34 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         true
     }
 
-    pub fn remove_node_from_tree(&mut self, neighbour_public_key: G) -> Result<(), String> {
-        let (_, mut next) = self.get_path_to_leaf(neighbour_public_key)?;
-        let node_for_deletion = next.pop().unwrap();
-
+    /// Remove the last node in the given path
+    pub fn remove_node(&mut self, path: &Vec<Direction>) -> Result<(), String> {
         let mut target_node = self.root.as_mut();
-        for direction in &next {
+        for direction in &path[..path.len() - 1] {
             target_node.weight -= 1;
             target_node = target_node.get_mut_child(direction)?;
         }
 
-        target_node.shrink_to_other(node_for_deletion)?;
-        self.size -= 1;
+        target_node.shrink_to_other(path[path.len() - 1])?;
 
         Ok(())
     }
 
-    pub fn remove_node(
+    pub fn remove_node_and_update_tree(
         &mut self,
-        lambda: G::ScalarField,
-        public_key: G,
+        lambda: &G::ScalarField,
+        public_key: &G,
     ) -> Result<(ARTRootKey<G>, BranchChanges<G>), String> {
         if !self.can_remove(lambda, public_key) {
             return Err("Can't remove a node, because the given node isn't close enough".into());
         }
 
-        self.remove_node_from_tree(public_key)?;
+        let (_, path) = self.get_path_to_leaf(public_key)?;
+        self.remove_node(&path)?;
 
         match self.update_branch_using_secret_key(lambda) {
             Ok((root_key, mut changes)) => {
-                changes.change_type = BranchChangesType::RemoveNode(public_key);
+                changes.change_type = BranchChangesType::RemoveNode(public_key.clone());
 
                 Ok((root_key, changes))
             }
@@ -473,18 +478,18 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
         match &changes.change_type {
             BranchChangesType::UpdateKeys => self.update_branch_public_keys_using_changes(changes),
             BranchChangesType::AppendNode(node) => {
-                self.find_place_and_append_node(node.clone())?;
+                let path = self.find_path_to_possible_leaf_for_insertion();
+                self.append_node(node.clone(), &path)?;
                 self.update_branch_public_keys_using_changes(changes)
             }
             BranchChangesType::MakeTemporal(public_key, temporal_lambda) => {
-                match self.change_node_to_temporal(public_key.clone(), temporal_lambda.clone()) {
-                    Ok(_) => Ok(()),
-                    Err(msg) => Err(msg),
-                }
+                let (_, path) = self.get_path_to_leaf(public_key)?;
+                self.make_node_temporal(&path, &self.public_key_of(temporal_lambda))?;
+                self.update_branch_public_keys_using_changes(changes)
             }
             BranchChangesType::RemoveNode(public_key) => {
-                self.remove_node_from_tree(public_key.clone())?;
-
+                let (_, path) = self.get_path_to_leaf(public_key)?;
+                self.remove_node(&path)?;
                 self.update_branch_public_keys_using_changes(changes)
             }
         }
@@ -509,12 +514,6 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
 
 impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> PartialEq for ART<G> {
     fn eq(&self, other: &Self) -> bool {
-        match self.root != other.root
-            || self.generator.into_affine() != other.generator.into_affine()
-            || self.size != other.size
-        {
-            true => false,
-            false => true,
-        }
+        !(self.root != other.root || self.generator.into_affine() != other.generator.into_affine())
     }
 }
