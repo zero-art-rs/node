@@ -1,0 +1,22 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+storage = { path = "../storage" }
+axum = { workspace = true, features = ["macros"] }
+validator = { workspace = true, features = ["derive"] }
+utoipa = { workspace = true, features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+utoipa-axum = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["full"] }
+eyre = { workspace = true }
+tower-http = { version = "0.6.2", features = ["fs", "trace", "cors"] }
