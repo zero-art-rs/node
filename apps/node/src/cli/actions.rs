@@ -4,12 +4,14 @@ use tokio::signal::unix;
 use tokio::signal::unix::SignalKind;
 
 use crate::{
-    cli::{arguments, node::Node},
+    cli::{arguments, logging, node::Node},
     config::NodeConfig,
 };
 
 pub async fn run(args: arguments::Run) -> eyre::Result<()> {
     let config = NodeConfig::from_path(args.config)?;
+
+    logging::init(config.logger.level)?;
 
     let node = Arc::new(Node::new(config).await?);
     let node_clone = node.clone();

@@ -1,5 +1,6 @@
 mod actions;
 mod arguments;
+mod logging;
 mod node;
 
 use clap::Parser;
