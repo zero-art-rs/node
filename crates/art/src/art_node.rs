@@ -1,5 +1,4 @@
-use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
-use ark_ec::{AffineRepr, CurveGroup, short_weierstrass::SWCurveConfig};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +19,7 @@ pub struct ARTNode<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> {
     pub l: Option<Box<ARTNode<G>>>,
     pub r: Option<Box<ARTNode<G>>>,
     pub is_temporal: bool,
+    pub weight: usize,
 }
 
 impl<G: CurveGroup> ARTNode<G> {
@@ -27,12 +27,41 @@ impl<G: CurveGroup> ARTNode<G> {
         public_key: G,
         l: Option<Box<ARTNode<G>>>,
         r: Option<Box<ARTNode<G>>>,
-    ) -> ARTNode<G> {
-        ARTNode {
+    ) -> Result<ARTNode<G>, String> {
+        let weight = match (&l, &r) {
+            (Some(l), Some(r)) => l.weight + r.weight, //internal node
+            (None, None) => 1,                         // leaf node
+            _ => return Err("Cannot create a node with only one child".to_string()),
+        };
+
+        Ok(ARTNode {
             public_key,
             l,
             r,
             is_temporal: false,
+            weight,
+        })
+    }
+
+    pub fn new_internal_node(public_key: G, l: Box<ARTNode<G>>, r: Box<ARTNode<G>>) -> ARTNode<G> {
+        let weight = l.weight + r.weight;
+
+        ARTNode {
+            public_key,
+            l: Some(l),
+            r: Some(r),
+            is_temporal: false,
+            weight,
+        }
+    }
+
+    pub fn new_leaf(public_key: G) -> ARTNode<G> {
+        ARTNode {
+            public_key,
+            l: None,
+            r: None,
+            is_temporal: false,
+            weight: 1,
         }
     }
 
@@ -47,10 +76,11 @@ impl<G: CurveGroup> ARTNode<G> {
         }
     }
 
-    pub fn make_temporal(&mut self, temporal_public_key: G) {
+    pub fn make_temporal(&mut self, temporal_public_key: &G) {
         if self.is_leaf() {
-            self.set_public_key(temporal_public_key);
+            self.set_public_key(temporal_public_key.clone());
             self.is_temporal = true;
+            self.weight = 0;
         }
     }
 
@@ -134,13 +164,16 @@ impl<G: CurveGroup> ARTNode<G> {
         }
     }
 
-    // Move current node down to left child, and append other node to right
+    /// Move current node down to left child, and append other node to the right
     pub fn extend(&mut self, other: ARTNode<G>) {
+        let weight = other.weight + self.weight;
+
         let new_self = ARTNode {
             public_key: self.public_key.clone(),
             l: self.l.take(),
             r: self.r.take(),
             is_temporal: false,
+            weight,
         };
 
         self.l = Some(Box::new(new_self));
@@ -154,6 +187,8 @@ impl<G: CurveGroup> ARTNode<G> {
         self.is_temporal = other.is_temporal;
     }
 
+    /// If the node is temporal, replace the node, else moves current node down to left,
+    /// and append other node to the right
     pub fn extend_or_replace(&mut self, other: ARTNode<G>) {
         match self.is_temporal {
             true => self.replace_with(other),
@@ -161,9 +196,9 @@ impl<G: CurveGroup> ARTNode<G> {
         }
     }
 
-    // Change current node with child. Other child is removed
+    /// Change current node with child. Other child is removed. The result is other child
     pub fn shrink_to(&mut self, child: Direction) -> Result<Option<Box<ARTNode<G>>>, String> {
-        let (mut new_self, mut other_child) = match child {
+        let (mut new_self, other_child) = match child {
             Direction::Left => (self.l.take(), self.r.take()),
             Direction::Right => (self.r.take(), self.l.take()),
             _ => return Err("Unexpected direction".into()),
@@ -196,6 +231,7 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> PartialEq for AR
             || self.l != other.l
             || self.r != other.r
             || self.is_temporal != other.is_temporal
+            || self.weight != other.weight
         {
             true => false,
             false => true,

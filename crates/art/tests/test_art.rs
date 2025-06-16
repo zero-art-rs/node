@@ -3,9 +3,9 @@ mod tests {
     use ark_bn254::{G2Projective as ART_G, fr::Fr as ARTScalarField};
     use ark_ec::PrimeGroup;
     use ark_ec::pairing::Pairing;
-    use ark_std::rand::prelude::StdRng;
-    use ark_std::rand::SeedableRng;
     use ark_std::UniformRand;
+    use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
     use art::art_user_agent::ARTUserAgent;
     use art::{self, art::ART, helper_tools};
     use helper_tools::create_random_secrets;
@@ -98,7 +98,7 @@ mod tests {
         let mut temporal_user_agent = users_agents.remove(temporal_user_id);
 
         let (root_key, changes) = main_user_agent
-            .make_temporal(temporal_user_agent.public_key())
+            .make_temporal(&temporal_user_agent.public_key())
             .unwrap();
 
         for user_agent in &mut users_agents {
@@ -107,19 +107,19 @@ mod tests {
             _ = user_agent.update_branch(&changes);
 
             assert_eq!(user_agent.root_key.key, main_user_agent.root_key.key);
-            assert_eq!(user_agent.tree.size(), (number_of_users - 1) as usize);
+            assert_eq!(user_agent.tree.get_root().weight, (number_of_users - 1));
         }
 
         let mut rng = StdRng::seed_from_u64(rand::random());
         let new_lambda = ARTScalarField::rand(&mut rng);
 
-        let (root_key, changes) = main_user_agent.append_node(new_lambda).unwrap();
+        let (root_key, changes) = main_user_agent.append_node(&new_lambda).unwrap();
 
         for user_agent in &mut users_agents {
             _ = user_agent.update_branch(&changes);
 
             assert_eq!(user_agent.root_key.key, main_user_agent.root_key.key);
-            assert_eq!(user_agent.tree.size(), number_of_users as usize);
+            assert_eq!(user_agent.tree.get_root().weight, number_of_users);
         }
     }
 
@@ -148,7 +148,7 @@ mod tests {
             let mut for_removal = users_agents.remove(0);
 
             let (root_key, changes) = main_user_agent
-                .remove_node(for_removal.public_key())
+                .remove_node(&for_removal.public_key())
                 .unwrap();
 
             for user_agent in &mut users_agents {
@@ -157,14 +157,17 @@ mod tests {
                 _ = user_agent.update_branch(&changes);
 
                 assert_eq!(user_agent.root_key.key, main_user_agent.root_key.key);
-                assert_eq!(user_agent.tree.size(), (number_of_users - 1 - i) as usize);
+                assert_eq!(
+                    user_agent.tree.get_root().weight,
+                    (number_of_users - 1 - i) as usize
+                );
             }
         }
 
-        assert!(!main_user_agent.can_remove(users_agents[0].public_key()));
+        assert!(!main_user_agent.can_remove(&users_agents[0].public_key()));
 
         let (root_key, changes) = main_user_agent
-            .remove_node(main_user_neighbour.public_key())
+            .remove_node(&main_user_neighbour.public_key())
             .unwrap();
 
         for user_agent in &mut users_agents {
@@ -176,7 +179,7 @@ mod tests {
         }
 
         let (root_key, changes) = main_user_agent
-            .append_node(main_user_neighbour.lambda)
+            .append_node(&main_user_neighbour.lambda)
             .unwrap();
 
         for user_agent in &mut users_agents {
