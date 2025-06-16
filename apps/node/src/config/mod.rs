@@ -9,6 +9,9 @@ pub use api::ApiConfig;
 mod storage;
 pub use storage::StorageConfig;
 
+mod mq;
+pub use mq::MqConfig;
+
 mod logger;
 pub use logger::LoggerConfig;
 
@@ -16,6 +19,7 @@ pub use logger::LoggerConfig;
 pub struct NodeConfig {
     pub api: ApiConfig,
     pub storage: StorageConfig,
+    pub mq: MqConfig,
 
     #[serde(default)]
     pub logger: LoggerConfig,
