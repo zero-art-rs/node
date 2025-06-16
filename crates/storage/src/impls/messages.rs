@@ -3,6 +3,8 @@ use mongodb::{
     options::{ClientOptions, IndexOptions},
     Client, Collection, IndexModel,
 };
+
+use mongodb::bson::oid::ObjectId;
 use serde::Serialize;
 
 use crate::{MessageStorage, MongoConfig};
@@ -68,7 +70,7 @@ impl MessageStorage for MongoMessageStorage {
         Ok(())
     }
 
-    async fn get_message(&self, id: &str) -> Result<Option<Document>, mongodb::error::Error> {
+    async fn get_message(&self, id: &ObjectId) -> Result<Option<Document>, mongodb::error::Error> {
         let result = self.collection.find_one(doc! { "_id": id }).await?;
         Ok(result)
     }
@@ -92,8 +94,8 @@ impl MessageStorage for MongoMessageStorage {
         Ok(messages)
     }
 
-    async fn delete_message(&self, id: &str) -> Result<(), mongodb::error::Error> {
-        self.collection.delete_one(doc! { "_id": id }).await?;
-        Ok(())
+    async fn delete_message(&self, id: &ObjectId) -> Result<Option<Document>, mongodb::error::Error> {
+        let result = self.collection.find_one_and_delete(doc! { "_id": id }).await?;
+        Ok(result)
     }
 }
