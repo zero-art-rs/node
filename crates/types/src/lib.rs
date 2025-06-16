@@ -1,3 +1,3 @@
-fn main() {
-    println!("Hello, world!");
-}
+mod mq;
+
+pub use self::mq::MqTopic;
