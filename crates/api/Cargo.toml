@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 storage = { path = "../storage" }
+types = { path = "../types" }
 axum = { workspace = true, features = ["macros"] }
 validator = { workspace = true, features = ["derive"] }
 utoipa = { workspace = true, features = ["axum_extras", "uuid", "chrono"] }
@@ -21,3 +22,4 @@ tokio-util = { workspace = true, features = ["full"] }
 eyre = { workspace = true }
 tower-http = { version = "0.6.2", features = ["fs", "trace", "cors"] }
 mongodb = {workspace = true}
+chrono = {workspace = true, features = ["serde"]}

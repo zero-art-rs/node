@@ -121,6 +121,7 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "eyre",
  "mongodb",
  "serde",
@@ -132,6 +133,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "types",
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
@@ -1744,6 +1746,7 @@ dependencies = [
  "clap",
  "config",
  "eyre",
+ "mongodb",
  "serde",
  "storage",
  "tokio",
@@ -2508,6 +2511,7 @@ dependencies = [
  "mongodb",
  "serde",
  "tokio",
+ "types",
 ]
 
 [[package]]
@@ -2953,6 +2957,11 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 [[package]]
 name = "types"
 version = "0.1.0"
+dependencies = [
+ "hex",
+ "mongodb",
+ "serde",
+]
 
 [[package]]
 name = "ucd-trie"

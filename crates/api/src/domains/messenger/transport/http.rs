@@ -4,11 +4,14 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
+use mongodb::bson::Uuid;
+use mongodb::bson::{DateTime, Document};
+use chrono;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use mongodb::bson;
 use tracing::{debug, info, instrument};
 use utoipa::{IntoParams, ToSchema};
-use uuid::Uuid;
 use validator::Validate;
 
 use crate::{container::Container, errors::ApiError};
@@ -16,14 +19,6 @@ use crate::{container::Container, errors::ApiError};
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageRequest {
-    /// Hex-encoded public key of the user sending the message.
-    #[validate(length(equal = 33))]
-    #[schema(example = "03abcdef0123456789abcdef012345678")]
-    pub user_public_key: String,
-
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
     /// Message content
     pub message: String,
 }
@@ -66,17 +61,8 @@ pub async fn send_message(
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
-    /// Hex-encoded public key of the user sending the message.
-    #[validate(length(equal = 33))]
-    #[schema(example = "03abcdef0123456789abcdef012345678")]
-    pub user_public_key: String,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = "b3d56c7e-4c1a-4f8e-9f8a-7f9f7f9f7f9f")]
-    pub chat_id: Uuid,
-
-    /// Unique message id
-    pub message_id: String,
+    /// message creation time
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[utoipa::path(
@@ -100,22 +86,24 @@ pub struct GetMessageQuery {
 pub async fn get_message(
     State(state): State<Arc<Container>>,
     headers: HeaderMap,
-    Query(payload): Query<GetMessageQuery>,
+    Query(mut payload): Query<GetMessageQuery>,
 ) -> Result<StatusCode, ApiError> {
     // Validate the request payload.
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
+    let created_at = DateTime::from_millis(payload.created_at.timestamp_millis());
+
     let message = state
         .messenger_service
-        .get_message(payload.message_id.clone())
+        .get_message(&created_at)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
     match &message {
         Some(document) => info!("Found message: {}", document),
-        None => info!("Message not found for id: {}", payload.message_id),
+        None => info!("Message not found for date: {}", created_at),
     }
 
     Ok(StatusCode::ACCEPTED)
@@ -123,16 +111,7 @@ pub async fn get_message(
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
-pub struct ListMessageQuery {
-    /// Hex-encoded public key of the user sending the message.
-    #[validate(length(equal = 33))]
-    #[schema(example = "03abcdef0123456789abcdef012345678")]
-    pub user_public_key: String,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = "b3d56c7e-4c1a-4f8e-9f8a-7f9f7f9f7f9f")]
-    pub chat_id: Uuid,
-}
+pub struct ListMessageQuery {}
 
 #[utoipa::path(
     get,
@@ -162,41 +141,40 @@ pub async fn list_messages(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    let message = state
+    let messages = state
         .messenger_service
         .list_messages()
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    for message in message {
+    if messages.is_empty() {
+        info!("No messages found");
+        return Ok(StatusCode::OK);
+    }
+
+    for message in messages {
         info!("Found message: {}", message);
     }
 
-    Ok(StatusCode::ACCEPTED)
+    Ok(StatusCode::OK)
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteMessageQuery {
-    /// Hex-encoded public key of the user sending the message.
-    #[validate(length(equal = 33))]
-    #[schema(example = "03abcdef0123456789abcdef012345678")]
-    pub user_public_key: String,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = "b3d56c7e-4c1a-4f8e-9f8a-7f9f7f9f7f9f")]
-    pub chat_id: Uuid,
-
-    /// Unique message id
-    pub message_id: String,
+    /// Message creation time
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[utoipa::path(
     delete,
     path = "/v1/messenger/delete",
-    request_body = DeleteMessageQuery,
+    params(
+        DeleteMessageQuery
+    ),
     responses(
         (status = 202, description = "Message sent."),
+        (status = 204, description = "No Content. Removed successfully."),
         (status = 400, description = "Bad request", body = ApiError),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
@@ -207,7 +185,7 @@ pub struct DeleteMessageQuery {
     tag = "Liquidity"
 )]
 #[instrument(skip(state, headers), err)]
-pub async fn delete_messages(
+pub async fn delete_message(
     State(state): State<Arc<Container>>,
     headers: HeaderMap,
     Query(payload): Query<DeleteMessageQuery>,
@@ -217,10 +195,73 @@ pub async fn delete_messages(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    state.messenger_service
-        .delete_messages(payload.message_id)
+    let created_at = DateTime::from_millis(payload.created_at.timestamp_millis());
+
+    let result = state
+        .messenger_service
+        .delete_message(&created_at)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    Ok(StatusCode::NO_CONTENT)
+    match result {
+        Some(result) => {
+            info!("Successfully deleted message: {}", result);
+            Ok(StatusCode::OK)
+        }
+        None => {
+            info!("No message found");
+            Ok(StatusCode::NO_CONTENT)
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteMessageByIdQuery {
+    /// Unique message id
+    pub message_id: String,
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/messenger/delete_by_id",
+    params(
+        DeleteMessageByIdQuery
+    ),
+    responses(
+        (status = 202, description = "Message sent."),
+        (status = 204, description = "No Content. Remove successfully."),
+        (status = 400, description = "Bad request", body = ApiError),
+        (status = 401, description = "Unauthorized", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Liquidity"
+)]
+#[instrument(skip(state, headers), err)]
+pub async fn delete_message_by_id(
+    State(state): State<Arc<Container>>,
+    headers: HeaderMap,
+    Query(payload): Query<DeleteMessageByIdQuery>,
+) -> Result<StatusCode, ApiError> {
+    // Validate the request payload.
+    payload
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    let result = state
+        .messenger_service
+        .delete_message_by_id(&payload.message_id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+
+    match result {
+        Some(result) => {
+            info!("Successfully deleted message: {}", result);
+            Ok(StatusCode::OK)
+        }
+        None => Ok(StatusCode::NO_CONTENT),
+    }
 }

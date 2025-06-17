@@ -1,3 +1,3 @@
-fn main() {
-    println!("Hello, world!");
-}
+mod message;
+
+pub use message::Message;

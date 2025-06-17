@@ -1,14 +1,10 @@
+use chrono::Utc;
+use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use storage::MessageStorage;
 use tracing::{debug, error, info};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Message {
-    pub content: String,
-    pub created_at: DateTime,
-    pub sender_id: String,
-}
+use types::Message;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessengerError {
@@ -38,43 +34,55 @@ where
 {
     pub async fn send_message(&self, message: String) -> Result<(), MessengerError> {
         self.storage
-            .store_message(Message {
-                content: message,
-                created_at: DateTime::now(),
-                sender_id: "temps".to_string(),
-            })
+            .store_message(Message::new(message.into_bytes()))
             .await?;
         Ok(())
     }
 
-    pub async fn get_message(&self, id: String) -> Result<Option<Document>, MessengerError> {
+    pub async fn get_message(
+        &self,
+        created_at: &DateTime,
+    ) -> Result<Option<Message>, MessengerError> {
+        let message = self.storage.get_message(&created_at).await?;
+        Ok(message)
+    }
+
+    pub async fn get_message_by_id(&self, id: &str) -> Result<Option<Message>, MessengerError> {
         let message_id = match ObjectId::parse_str(id) {
             Ok(id) => id,
             Err(_) => {
                 info!("Can't convert given id to ObjectId");
-                return Ok(None)
-            },
+                return Ok(None);
+            }
         };
 
-        let message = self.storage.get_message(&message_id).await?;
+        let message = self.storage.get_message_by_id(&message_id).await?;
         Ok(message)
     }
 
-    pub async fn list_messages(&self) -> Result<Vec<Document>, MessengerError> {
+    pub async fn list_messages(&self) -> Result<Vec<Message>, MessengerError> {
         let message_record = self.storage.list_messages(10, 0).await?;
         Ok(message_record)
     }
 
-    pub async fn delete_messages(&self, id: String) -> Result<Option<Document>, MessengerError> {
+    pub async fn delete_message(
+        &self,
+        created_at: &DateTime,
+    ) -> Result<Option<Message>, MessengerError> {
+        let result = self.storage.delete_message(&created_at).await?;
+        Ok(result)
+    }
+
+    pub async fn delete_message_by_id(&self, id: &str) -> Result<Option<Message>, MessengerError> {
         let message_id = match ObjectId::parse_str(id) {
             Ok(id) => id,
             Err(_) => {
                 info!("Can't convert given id to ObjectId");
-                return Ok(None)
-            },
+                return Ok(None);
+            }
         };
 
-        let result = self.storage.delete_message(&message_id).await?;
+        let result = self.storage.delete_message_by_id(&message_id).await?;
         Ok(result)
     }
 }

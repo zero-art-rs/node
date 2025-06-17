@@ -30,7 +30,10 @@ pub fn build_router() -> Router<Arc<Container>> {
         // message service
         .routes(routes!(domains::messenger::transport::http::get_message))
         .routes(routes!(domains::messenger::transport::http::list_messages))
-        .routes(routes!(domains::messenger::transport::http::delete_messages))
+        .routes(routes!(domains::messenger::transport::http::delete_message))
+        .routes(routes!(
+            domains::messenger::transport::http::delete_message_by_id
+        ))
         .routes(routes!(domains::messenger::transport::http::send_message));
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(shared_routes.clone())
