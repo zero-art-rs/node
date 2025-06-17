@@ -1,13 +1,9 @@
-use async_trait::async_trait;
-use lapin::{ Error as LapinError };
-use traits::Publisher;
-use errors::MqError;
-
-pub use impls::{RabbitMqPublisher, TopicBuilder};
-
 mod traits;
 mod impls;
 mod errors;
+
+pub use traits::{Publisher};
+pub use impls::{RabbitMqPublisher, TopicBuilder};
 
 #[derive(Debug)]
 pub struct MqConfig {
