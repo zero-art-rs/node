@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{Router, middleware};
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -20,15 +20,29 @@ async fn get_health_handler() -> &'static str {
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(info(title = env!("CARGO_PKG_NAME"),))]
+#[openapi(
+    info(title = env!("CARGO_PKG_NAME"),),
+    components(schemas(
+        domains::auth::transport::http::AuthRequest,
+        domains::auth::transport::http::AuthResponse,
+    ))
+)]
 struct PublicApiDoc;
 
-pub fn build_router() -> Router<Arc<Container>> {
-    let shared_routes = OpenApiRouter::new()
+pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
+    let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        // auth service
-        // message service
-        .routes(routes!(domains::messenger::transport::http::send_message));
+        .routes(routes!(domains::auth::transport::http::authenticate));
+
+    let protected_routes = OpenApiRouter::new()
+        .routes(routes!(domains::messenger::transport::http::send_message))
+        .layer(middleware::from_fn_with_state(
+            container,
+            domains::auth::transport::http::jwt_middleware,
+        ));
+
+    let shared_routes = public_routes.merge(protected_routes);
+
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(shared_routes.clone())
         .split_for_parts();

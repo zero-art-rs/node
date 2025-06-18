@@ -19,6 +19,8 @@ pub struct NodeConfig {
 
     #[serde(default)]
     pub logger: LoggerConfig,
+
+    pub jwt_secret: String,
 }
 
 impl NodeConfig {

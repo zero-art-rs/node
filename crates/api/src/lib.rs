@@ -11,6 +11,7 @@ mod errors;
 mod router;
 
 pub use container::Container;
+pub use domains::auth::service::AuthService;
 pub use domains::messenger::service::MessengerService;
 
 pub async fn run_server(address: String, container: Arc<Container>) -> eyre::Result<()> {
@@ -19,7 +20,7 @@ pub async fn run_server(address: String, container: Arc<Container>) -> eyre::Res
 
     axum::serve(
         listener,
-        build_router()
+        build_router(container.clone())
             .layer(CorsLayer::permissive())
             .layer(
             TraceLayer::new_for_http()
