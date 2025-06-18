@@ -53,7 +53,7 @@ pub async fn authenticate(
 
     let response = AuthResponse {
         token,
-        expires_in: 24 * 60 * 60, // 24 hours in seconds
+        expires_in: auth_service.token_ttl().as_secs() as i64,
     };
 
     Ok(Json(response))

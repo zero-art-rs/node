@@ -51,7 +51,7 @@ impl Node {
         })
         .await?;
         let messenger_service = MessengerService::new(message_storage);
-        let auth_service = AuthService::new(self.config.jwt_secret.clone());
+        let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),

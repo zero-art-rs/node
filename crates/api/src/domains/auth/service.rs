@@ -1,4 +1,6 @@
-use chrono::{Duration, Utc};
+use std::time::Duration;
+
+use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -16,17 +18,25 @@ pub struct Claims {
 #[derive(Clone)]
 pub struct AuthService {
     jwt_secret: String,
+    token_ttl: Duration,
     // Add db in the future
 }
 
 impl AuthService {
-    pub fn new(jwt_secret: String) -> Self {
-        Self { jwt_secret }
+    pub fn new(jwt_secret: String, token_ttl: Duration) -> Self {
+        Self {
+            jwt_secret,
+            token_ttl,
+        }
+    }
+
+    pub fn token_ttl(&self) -> Duration {
+        self.token_ttl
     }
 
     pub async fn generate_token(&self, public_key: String) -> Result<String, ApiError> {
         let now = Utc::now();
-        let expiration = now + Duration::hours(24); // Token valid for 24 hours
+        let expiration = now + self.token_ttl;
 
         let claims = Claims {
             public_key,
