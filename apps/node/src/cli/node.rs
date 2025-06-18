@@ -65,18 +65,16 @@ impl Node {
         info!("Connected to database {}", database_name);
 
         // create default chat api
-        let chat_id = Uuid::parse_str("00000000000000000000000000000001")?;
-        self.spawn_api(chat_id).await?;
+        self.spawn_api().await?;
 
         self.task_tracker.close();
 
         Ok(())
     }
 
-    async fn spawn_api(&self, chat_id: Uuid) -> eyre::Result<()> {
+    async fn spawn_api(&self) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
-        let message_storage = MongoMessageStorage::new(chat_id).await?;
-        let messenger_service = MessengerService::new(message_storage);
+        let messenger_service = MessengerService::new();
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),

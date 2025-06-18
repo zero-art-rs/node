@@ -2508,6 +2508,8 @@ name = "storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures-util",
+ "log",
  "mongodb",
  "serde",
  "tokio",
