@@ -4,12 +4,12 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
+use chrono;
+use mongodb::bson;
 use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document};
-use chrono;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use mongodb::bson;
 use tracing::{debug, info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
@@ -21,6 +21,9 @@ use crate::{container::Container, errors::ApiError};
 pub struct SendMessageRequest {
     /// Message content
     pub message: String,
+
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
 }
 
 #[utoipa::path(
@@ -50,7 +53,9 @@ pub async fn send_message(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     state
-        .messenger_service
+        .get_messenger_service(payload.chat_id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
         .send_message(payload.message)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
@@ -63,6 +68,9 @@ pub async fn send_message(
 pub struct GetMessageQuery {
     /// message creation time
     pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
 }
 
 #[utoipa::path(
@@ -96,7 +104,9 @@ pub async fn get_message(
     let created_at = DateTime::from_millis(payload.created_at.timestamp_millis());
 
     let message = state
-        .messenger_service
+        .get_messenger_service(payload.chat_id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
         .get_message(&created_at)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
@@ -111,7 +121,10 @@ pub async fn get_message(
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
-pub struct ListMessageQuery {}
+pub struct ListMessageQuery {
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
+}
 
 #[utoipa::path(
     get,
@@ -142,7 +155,9 @@ pub async fn list_messages(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     let messages = state
-        .messenger_service
+        .get_messenger_service(payload.chat_id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
         .list_messages()
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
@@ -164,6 +179,9 @@ pub async fn list_messages(
 pub struct DeleteMessageQuery {
     /// Message creation time
     pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
 }
 
 #[utoipa::path(
@@ -198,7 +216,9 @@ pub async fn delete_message(
     let created_at = DateTime::from_millis(payload.created_at.timestamp_millis());
 
     let result = state
-        .messenger_service
+        .get_messenger_service(payload.chat_id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
         .delete_message(&created_at)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
@@ -220,6 +240,9 @@ pub async fn delete_message(
 pub struct DeleteMessageByIdQuery {
     /// Unique message id
     pub message_id: String,
+
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
 }
 
 #[utoipa::path(
@@ -252,7 +275,9 @@ pub async fn delete_message_by_id(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     let result = state
-        .messenger_service
+        .get_messenger_service(payload.chat_id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
         .delete_message_by_id(&payload.message_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;

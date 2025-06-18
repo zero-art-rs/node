@@ -24,6 +24,11 @@ impl fmt::Display for Message {
             Err(_) => format!("0x{}", hex::encode(&self.content)),
         };
 
-        write!(f, "\"{}\" [{}]", content_str, self.created_at.try_to_rfc3339_string().unwrap())
+        write!(
+            f,
+            "\"{}\" [{}]",
+            content_str,
+            self.created_at.try_to_rfc3339_string().unwrap()
+        )
     }
 }
