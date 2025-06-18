@@ -37,7 +37,7 @@ pub struct SendMessageRequest {
     security(
         ("bearer_auth" = [])
     ),
-    tag = "Liquidity"
+    tag = "Messages"
 )]
 #[instrument(skip(state, headers), err)]
 pub async fn send_message(
