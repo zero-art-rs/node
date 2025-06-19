@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::{container::Container, errors::ApiError};
+use crate::{container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +42,7 @@ pub struct SendMessageRequest {
 #[instrument(skip(state, headers), err)]
 pub async fn send_message(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<StatusCode, ApiError> {

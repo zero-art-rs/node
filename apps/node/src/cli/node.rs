@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::NodeConfig;
-use api::{Container, MessengerService};
+use api::{AuthService, Container, MessengerService};
 use eyre::Ok;
 use storage::{MongoConfig, MongoMessageStorage};
 use tokio::select;
@@ -51,9 +51,11 @@ impl Node {
         })
         .await?;
         let messenger_service = MessengerService::new(message_storage);
+        let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),
+            auth_service: Arc::new(auth_service),
         });
 
         self.task_tracker.spawn(api::run_server(address, container));
