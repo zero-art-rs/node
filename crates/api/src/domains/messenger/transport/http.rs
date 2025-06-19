@@ -1,4 +1,6 @@
+use crate::{container::Container, errors::ApiError};
 use axum::extract::{Path, Query};
+use axum::response::Response;
 use axum::{
     Json,
     extract::State,
@@ -7,18 +9,16 @@ use axum::{
 };
 use chrono;
 use mongodb::bson;
-use mongodb::bson::{doc, Uuid, Binary, spec::BinarySubtype};
 use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{Binary, Uuid, doc, spec::BinarySubtype};
 use mongodb::bson::{DateTime, Document};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use axum::response::Response;
 use serde_json::json;
+use std::sync::Arc;
 use tracing::{debug, info, instrument};
+use types::Message;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
-use types::Message;
-use crate::{container::Container, errors::ApiError};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -120,14 +120,20 @@ pub async fn list_messages(
     let mut filter = doc! {};
 
     if let Some(creation_time) = payload.created_at {
-        _ = filter.insert("created_at", DateTime::from_millis(creation_time.timestamp_millis()));
+        _ = filter.insert(
+            "created_at",
+            DateTime::from_millis(creation_time.timestamp_millis()),
+        );
     }
 
     if let Some(content) = payload.content {
-        _ = filter.insert("content", Binary {
-            subtype: BinarySubtype::Generic,
-            bytes: content.into_bytes(),
-        });
+        _ = filter.insert(
+            "content",
+            Binary {
+                subtype: BinarySubtype::Generic,
+                bytes: content.into_bytes(),
+            },
+        );
     }
 
     if let Some(sequence_number) = payload.sequence_number {
@@ -136,7 +142,12 @@ pub async fn list_messages(
 
     let messages = state
         .messenger_service
-        .list_messages(&payload.chat_id, filter.clone(), payload.limit, payload.skip)
+        .list_messages(
+            &payload.chat_id,
+            filter.clone(),
+            payload.limit,
+            payload.skip,
+        )
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
@@ -149,10 +160,7 @@ pub async fn list_messages(
         }
     }
 
-    let response = (
-        StatusCode::OK,
-        Json(messages)
-    );
+    let response = (StatusCode::OK, Json(messages));
 
     Ok(response)
 }
@@ -204,14 +212,20 @@ pub async fn delete_messages(
     let mut filter = doc! {};
 
     if let Some(creation_time) = payload.created_at {
-        _ = filter.insert("created_at", DateTime::from_millis(creation_time.timestamp_millis()));
+        _ = filter.insert(
+            "created_at",
+            DateTime::from_millis(creation_time.timestamp_millis()),
+        );
     }
 
     if let Some(content) = payload.content {
-        _ = filter.insert("content", Binary {
-            subtype: BinarySubtype::Generic,
-            bytes: content.into_bytes(),
-        });
+        _ = filter.insert(
+            "content",
+            Binary {
+                subtype: BinarySubtype::Generic,
+                bytes: content.into_bytes(),
+            },
+        );
     }
 
     if let Some(sequence_number) = payload.sequence_number {
@@ -235,10 +249,7 @@ pub async fn delete_messages(
         }
     }
 
-    let response = (
-        status_code,
-        Json(removed_messages)
-    );
+    let response = (status_code, Json(removed_messages));
 
     Ok(response)
 }
@@ -295,15 +306,9 @@ pub async fn mark_as_read(
     match result {
         Some(result) => {
             info!("Successfully read. The previous cursor was: {}", result);
-            response = (
-                StatusCode::OK,
-                Json(Some(result))
-            );
+            response = (StatusCode::OK, Json(Some(result)));
         }
-        None => response = (
-            StatusCode::NO_CONTENT,
-            Json(None)
-        )
+        None => response = (StatusCode::NO_CONTENT, Json(None)),
     }
 
     Ok(response)
@@ -367,7 +372,12 @@ pub async fn list_cursors(
 
     let cursors = state
         .messenger_service
-        .list_cursors(&payload.chat_id, filter.clone(), payload.limit, payload.skip)
+        .list_cursors(
+            &payload.chat_id,
+            filter.clone(),
+            payload.limit,
+            payload.skip,
+        )
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
@@ -380,10 +390,7 @@ pub async fn list_cursors(
         }
     }
 
-    let response = (
-        StatusCode::ACCEPTED,
-        Json(cursors)
-    );
+    let response = (StatusCode::ACCEPTED, Json(cursors));
 
     Ok(response)
 }
@@ -456,10 +463,7 @@ pub async fn delete_cursors(
         }
     }
 
-    let response = (
-        status_code,
-        Json(removed_cursors)
-    );
+    let response = (status_code, Json(removed_cursors));
 
     Ok(response)
 }

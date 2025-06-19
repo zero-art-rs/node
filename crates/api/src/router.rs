@@ -30,7 +30,9 @@ pub fn build_router() -> Router<Arc<Container>> {
         // message service
         .routes(routes!(domains::messenger::transport::http::send_message))
         .routes(routes!(domains::messenger::transport::http::list_messages))
-        .routes(routes!(domains::messenger::transport::http::delete_messages))
+        .routes(routes!(
+            domains::messenger::transport::http::delete_messages
+        ))
         .routes(routes!(domains::messenger::transport::http::mark_as_read))
         .routes(routes!(domains::messenger::transport::http::delete_cursors))
         .routes(routes!(domains::messenger::transport::http::list_cursors));

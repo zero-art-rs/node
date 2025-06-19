@@ -1,11 +1,11 @@
 use crate::Container;
 use chrono::Utc;
+use mongodb::bson;
 use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use mongodb::bson;
-use storage::{MessageStorage, MongoMessageStorage};
+use storage::{CursorStorage, MessageStorage, MongoCursorStorage, MongoMessageStorage};
 use tracing::{debug, error, info};
 use types::{CursorRecord, Message};
 
@@ -14,7 +14,7 @@ pub enum MessengerError {
     #[error("Storage error: {0}")]
     StorageError(storage::Error),
     #[error("Conversion error: {0}")]
-    ConversionError(bson::oid::Error)
+    ConversionError(bson::oid::Error),
 }
 
 impl From<storage::Error> for MessengerError {
@@ -38,7 +38,7 @@ impl MessengerService {
         sender: String,
         chat_id: &Uuid,
     ) -> Result<(), MessengerError> {
-        self.get_storage(chat_id)
+        self.create_messages_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
             .store_message(message, sender)
@@ -54,7 +54,7 @@ impl MessengerService {
         skip: i64,
     ) -> Result<Vec<Message>, MessengerError> {
         let message_record = self
-            .get_storage(chat_id)
+            .create_messages_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
             .list_messages(filter, limit, skip)
@@ -70,7 +70,7 @@ impl MessengerService {
         skip: i64,
     ) -> Result<Vec<CursorRecord>, MessengerError> {
         let record = self
-            .get_storage(chat_id)
+            .create_cursors_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
             .list_cursors(filter, limit, skip)
@@ -84,7 +84,7 @@ impl MessengerService {
         filter: Document,
     ) -> Result<Vec<Message>, MessengerError> {
         let result = self
-            .get_storage(chat_id)
+            .create_messages_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
             .delete_messages(filter)
@@ -98,7 +98,7 @@ impl MessengerService {
         filter: Document,
     ) -> Result<Vec<CursorRecord>, MessengerError> {
         let result = self
-            .get_storage(chat_id)
+            .create_cursors_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
             .delete_cursors(filter)
@@ -113,7 +113,7 @@ impl MessengerService {
         chat_id: &Uuid,
     ) -> Result<Option<CursorRecord>, MessengerError> {
         let result = self
-            .get_storage(chat_id)
+            .create_cursors_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
             .update_user_cursor(user_id, sequence_number)
@@ -122,11 +122,24 @@ impl MessengerService {
         Ok(result)
     }
 
-    pub async fn get_storage(
+    pub async fn create_messages_storage(
         &self,
         chat_id: &Uuid,
     ) -> Result<Arc<MongoMessageStorage>, mongodb::error::Error> {
-        let message_storage = MongoMessageStorage::new(chat_id).await?;
-        Ok(Arc::new(message_storage))
+        Ok(Arc::new(MongoMessageStorage::new(chat_id).await?))
     }
+
+    pub async fn create_cursors_storage(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<Arc<MongoCursorStorage>, mongodb::error::Error> {
+        Ok(Arc::new(MongoCursorStorage::new(chat_id).await?))
+    }
+
+    // pub async fn create_arts_storage(
+    //     &self,
+    //     chat_id: &Uuid,
+    // ) -> Result<Arc<MongoARTStorage<ARTG>>, mongodb::error::Error> {
+    //     Ok(Arc::new(MongoARTStorage::new(chat_id).await?))
+    // }
 }
