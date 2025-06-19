@@ -36,10 +36,10 @@ impl fmt::Display for Message {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CursorRecord {
-    user_id: String,
-    cursor: i64,
+    pub user_id: String,
+    pub cursor: i64,
 }
 
 impl fmt::Display for CursorRecord {

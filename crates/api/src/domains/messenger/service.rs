@@ -4,6 +4,7 @@ use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use mongodb::bson;
 use storage::{MessageStorage, MongoMessageStorage};
 use tracing::{debug, error, info};
 use types::{CursorRecord, Message};
@@ -12,6 +13,8 @@ use types::{CursorRecord, Message};
 pub enum MessengerError {
     #[error("Storage error: {0}")]
     StorageError(storage::Error),
+    #[error("Conversion error: {0}")]
+    ConversionError(bson::oid::Error)
 }
 
 impl From<storage::Error> for MessengerError {
@@ -42,45 +45,10 @@ impl MessengerService {
         Ok(())
     }
 
-    pub async fn get_message(
-        &self,
-        created_at: &DateTime,
-        chat_id: &Uuid,
-    ) -> Result<Option<Message>, MessengerError> {
-        let message = self
-            .get_storage(chat_id)
-            .await
-            .map_err(|e| MessengerError::StorageError(e))?
-            .get_message(&created_at)
-            .await?;
-        Ok(message)
-    }
-
-    pub async fn get_message_by_id(
-        &self,
-        id: &str,
-        chat_id: &Uuid,
-    ) -> Result<Option<Message>, MessengerError> {
-        let message_id = match ObjectId::parse_str(id) {
-            Ok(id) => id,
-            Err(_) => {
-                info!("Can't convert given id to ObjectId");
-                return Ok(None);
-            }
-        };
-
-        let message = self
-            .get_storage(chat_id)
-            .await
-            .map_err(|e| MessengerError::StorageError(e))?
-            .get_message_by_id(&message_id)
-            .await?;
-        Ok(message)
-    }
-
     pub async fn list_messages(
         &self,
         chat_id: &Uuid,
+        filter: Document,
         limit: i64,
         skip: i64,
     ) -> Result<Vec<Message>, MessengerError> {
@@ -88,7 +56,7 @@ impl MessengerService {
             .get_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
-            .list_messages(limit, skip)
+            .list_messages(filter, limit, skip)
             .await?;
         Ok(message_record)
     }
@@ -96,6 +64,7 @@ impl MessengerService {
     pub async fn list_cursors(
         &self,
         chat_id: &Uuid,
+        filter: Document,
         limit: i64,
         skip: i64,
     ) -> Result<Vec<CursorRecord>, MessengerError> {
@@ -103,43 +72,35 @@ impl MessengerService {
             .get_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
-            .list_cursors(limit, skip)
+            .list_cursors(filter, limit, skip)
             .await?;
         Ok(record)
     }
 
-    pub async fn delete_message(
+    pub async fn delete_messages(
         &self,
-        created_at: &DateTime,
         chat_id: &Uuid,
-    ) -> Result<Option<Message>, MessengerError> {
+        filter: Document,
+    ) -> Result<Vec<Message>, MessengerError> {
         let result = self
             .get_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
-            .delete_message(&created_at)
+            .delete_messages(filter)
             .await?;
         Ok(result)
     }
 
-    pub async fn delete_message_by_id(
+    pub async fn delete_cursors(
         &self,
-        id: &str,
         chat_id: &Uuid,
-    ) -> Result<Option<Message>, MessengerError> {
-        let message_id = match ObjectId::parse_str(id) {
-            Ok(id) => id,
-            Err(_) => {
-                info!("Can't convert given id to ObjectId");
-                return Ok(None);
-            }
-        };
-
+        filter: Document,
+    ) -> Result<Vec<CursorRecord>, MessengerError> {
         let result = self
             .get_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
-            .delete_message_by_id(&message_id)
+            .delete_cursors(filter)
             .await?;
         Ok(result)
     }
