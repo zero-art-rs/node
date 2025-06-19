@@ -52,7 +52,7 @@ impl MongoMessageStorage {
 
 #[async_trait::async_trait]
 impl MessageStorage for MongoMessageStorage {
-    async fn store_message(&self, content: String) -> Result<(), mongodb::error::Error> {
+    async fn store_message(&self, content: String, sender: String) -> Result<(), mongodb::error::Error> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -66,7 +66,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number = result.sequence_number + 1;
         }
 
-        message_collection.insert_one(Message::new(content.into_bytes(), next_sequence_number)).await?;
+        message_collection.insert_one(Message::new(content.into_bytes(), next_sequence_number, sender)).await?;
         Ok(())
     }
 

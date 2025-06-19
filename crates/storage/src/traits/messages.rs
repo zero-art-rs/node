@@ -4,7 +4,7 @@ use types::{CursorRecord, Message};
 
 #[async_trait::async_trait]
 pub trait MessageStorage: Send + Sync {
-    async fn store_message(&self, message: String) -> Result<(), mongodb::error::Error>;
+    async fn store_message(&self, message: String, sender: String) -> Result<(), mongodb::error::Error>;
     async fn list_messages(
         &self,
         filter: Document,

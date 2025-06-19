@@ -26,6 +26,9 @@ pub struct SendMessageRequest {
     /// Message content
     pub message: String,
 
+    /// Sender public key
+    pub sender_public_key: String,
+
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Uuid,
 }
@@ -58,7 +61,7 @@ pub async fn send_message(
 
     state
         .messenger_service
-        .send_message(payload.message, &payload.chat_id)
+        .send_message(payload.message, payload.sender_public_key, &payload.chat_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 

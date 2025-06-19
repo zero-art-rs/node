@@ -35,12 +35,13 @@ impl MessengerService {
     pub async fn send_message(
         &self,
         message: String,
+        sender: String,
         chat_id: &Uuid,
     ) -> Result<(), MessengerError> {
         self.get_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
-            .store_message(message)
+            .store_message(message, sender)
             .await?;
         Ok(())
     }

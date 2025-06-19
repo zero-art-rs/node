@@ -7,14 +7,16 @@ pub struct Message {
     pub content: Vec<u8>, // binary string, Vec<u8>
     pub created_at: DateTime,
     pub sequence_number: i64,
+    pub sender_public_key: String,
 }
 
 impl Message {
-    pub fn new(content: Vec<u8>, sequence_number: i64) -> Self {
+    pub fn new(content: Vec<u8>, sequence_number: i64, sender_public_key: String) -> Self {
         Self {
             content,
             created_at: DateTime::now(),
             sequence_number,
+            sender_public_key
         }
     }
 }
@@ -28,10 +30,11 @@ impl fmt::Display for Message {
 
         write!(
             f,
-            "[content: \"{}\", id: {}, time: {}]",
+            "[content: \"{}\", id: {}, time: {}, sender: {}]",
             content_str,
             self.sequence_number,
-            self.created_at.try_to_rfc3339_string().unwrap()
+            self.created_at.try_to_rfc3339_string().unwrap(),
+            self.sender_public_key
         )
     }
 }
