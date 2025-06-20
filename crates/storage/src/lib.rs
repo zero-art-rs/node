@@ -10,10 +10,12 @@ use std::sync::OnceLock;
 mod impls;
 mod traits;
 
+pub use impls::MongoARTChangesStorage;
+pub use impls::MongoARTStorage;
 pub use impls::MongoCursorStorage;
 pub use impls::MongoMessageStorage;
-// pub use impls::MongoARTStorage;
 pub use mongodb::error::Error;
+pub use traits::ARTChangesStorage;
 pub use traits::ARTStorage;
 pub use traits::CursorStorage;
 pub use traits::MessageStorage;

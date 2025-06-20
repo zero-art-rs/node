@@ -19,4 +19,5 @@ ark-bn254 = { workspace = true, features = ["curve"] }
 rand = { workspace = true, features = ["thread_rng"]}
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+serde_bytes = {workspace = true}
 criterion = { workspace = true }

@@ -1,18 +1,21 @@
-use ark_ec::PrimeGroup;
+use ark_ec::{CurveGroup, PrimeGroup};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_std::{One, UniformRand, Zero};
 use art::art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
+use log::info;
 use mongodb::error::Error;
 use mongodb::{
     bson::{doc, Binary, DateTime, Document, Uuid},
     options::{ClientOptions, IndexOptions},
     Client, Collection, Cursor, Database, IndexModel,
 };
-use zk::curve::cortado::{CortadoProjective as ARTG, Fr as ScalarField};
+use rand::Rng;
+use zk::curve::cortado::{CortadoProjective as ARTG, CortadoProjective, Fr as ScalarField};
 
 use crate::{ARTStorage, DATABASE};
-use types::ARTRecord;
+use art::art_user_agent::ARTUserAgent;
+use types::{ARTChangesRecord, ARTRecord};
 
 pub struct MongoARTStorage {
     arts_collection: Collection<ARTRecord<ARTG>>,
@@ -39,31 +42,34 @@ impl MongoARTStorage {
     }
 }
 
+impl MongoARTStorage {
+    pub async fn get_recent_art_record(
+        &self,
+    ) -> Result<Cursor<ARTRecord<CortadoProjective>>, Error> {
+        let cursor = self
+            .arts_collection
+            .find(doc! {})
+            .sort(doc! { "sequence_number": -1 })
+            .limit(1)
+            .await?;
+
+        Ok(cursor)
+    }
+}
+
 #[async_trait::async_trait]
 impl ARTStorage for MongoARTStorage {
-    async fn new_art(
-        &self,
-        creator_secret_key: ScalarField,
-        number_of_users: i64,
-    ) -> Result<ART<ARTG>, Error> {
-        let mut secrets = vec![creator_secret_key];
+    async fn new_art(&self, art: ART<ARTG>) -> Result<(), Error> {
+        self.arts_collection.delete_many(doc! {}).await?;
 
-        for i in 1..number_of_users {
-            secrets.push(ScalarField::rand(
-                &mut StdRng::seed_from_u64(rand::random()),
-            ));
-        }
+        self.arts_collection
+            .insert_one(ARTRecord {
+                sequence_number: 0,
+                art: art.clone(),
+            })
+            .await?;
 
-        let (art, _) = ART::new_art_from_secrets(&secrets, &ARTG::generator());
-
-        let record = ARTRecord {
-            sequence_number: 0,
-            art: art.clone(),
-        };
-
-        self.arts_collection.insert_one(record).await?;
-
-        Ok(art)
+        Ok(())
     }
 
     async fn delete_art(
@@ -82,48 +88,51 @@ impl ARTStorage for MongoARTStorage {
         Ok(art_records)
     }
 
-    async fn list_art(
+    async fn get_art(
         &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<ARTRecord<ARTG>>, mongodb::error::Error> {
+        sequence_number: i64,
+    ) -> Result<ARTRecord<ARTG>, mongodb::error::Error> {
         let mut cursor = self
             .arts_collection
-            .find(filter)
-            .skip(skip as u64)
-            .limit(limit)
+            .find(doc! {"sequence_number": sequence_number})
             .await?;
 
-        let mut records = Vec::new();
-        while cursor.advance().await? {
-            records.push(cursor.deserialize_current()?);
+        if let Some(result) = cursor.try_next().await? {
+            return Ok(result);
         }
 
-        Ok(records)
+        info!("There is no instance of arts collection for given sequence_number");
+        Err(Error::custom(
+            "There is no instance of arts collection for given sequence_number",
+        ))
     }
 
-    async fn update_art(
-        &self,
-        secret_key: ScalarField,
-        changes: BranchChanges<ARTG>,
-    ) -> Result<Option<ARTRecord<ARTG>>, mongodb::error::Error> {
-        let mut cursor = self
-            .arts_collection
+    async fn find_latest_art(&self) -> Result<ARTRecord<ARTG>, mongodb::error::Error> {
+        let message_collection = &self.arts_collection;
+
+        let mut cursor = message_collection
             .find(doc! {})
             .sort(doc! { "sequence_number": -1 })
             .limit(1)
             .await?;
 
-        if let Some(mut record) = cursor.try_next().await? {
-            record.art.update_branch(&changes).unwrap();
-            let root_key = record.art.recompute_root_key(secret_key);
-
-            record.sequence_number += 1;
-            self.arts_collection.insert_one(record.clone()).await?;
-
-            return Ok(Some(record));
+        if let Some(result) = cursor.try_next().await? {
+            return Ok(result);
         }
-        Ok(None)
+
+        info!("The chat isn't initialized yet");
+        Err(Error::custom("The chat isn't initialized yet"))
+    }
+
+    async fn update_art(&self, changes: BranchChanges<ARTG>) -> Result<(), mongodb::error::Error> {
+        let mut recent_record = self.get_recent_art_record().await?;
+
+        if let Some(mut recent_record) = recent_record.try_next().await? {
+            recent_record.art.update_branch(&changes).unwrap();
+
+            recent_record.sequence_number += 1;
+            self.arts_collection.insert_one(recent_record).await?;
+        }
+        Ok(())
     }
 }

@@ -10,3 +10,4 @@ hex = { workspace = true }
 art = {path = "../art"}
 ark-ec = {workspace = true}
 ark-serialize = { workspace = true, features = ["derive"] }
+serde_json = {workspace = true}

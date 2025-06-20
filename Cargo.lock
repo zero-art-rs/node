@@ -120,10 +120,16 @@ dependencies = [
 name = "api"
 version = "0.1.0"
 dependencies = [
+ "ark-ec",
+ "ark-serialize",
+ "ark-std",
+ "art",
  "axum",
  "chrono",
  "eyre",
+ "log",
  "mongodb",
+ "rand 0.9.1",
  "serde",
  "serde_json",
  "storage",
@@ -139,6 +145,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "validator",
+ "zk",
 ]
 
 [[package]]
@@ -375,6 +382,7 @@ dependencies = [
  "criterion",
  "rand 0.9.1",
  "serde",
+ "serde_bytes",
  "serde_json",
 ]
 
@@ -3171,6 +3179,7 @@ dependencies = [
  "hex",
  "mongodb",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

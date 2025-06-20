@@ -35,7 +35,11 @@ pub fn build_router() -> Router<Arc<Container>> {
         ))
         .routes(routes!(domains::messenger::transport::http::mark_as_read))
         .routes(routes!(domains::messenger::transport::http::delete_cursors))
-        .routes(routes!(domains::messenger::transport::http::list_cursors));
+        .routes(routes!(domains::messenger::transport::http::list_cursors))
+        .routes(routes!(domains::messenger::transport::http::init_chat))
+        .routes(routes!(domains::messenger::transport::http::get_art))
+        .routes(routes!(domains::messenger::transport::http::list_changes))
+        .routes(routes!(domains::messenger::transport::http::update_art));
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(shared_routes.clone())
         .split_for_parts();

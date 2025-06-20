@@ -4,6 +4,7 @@ use ark_std::rand::SeedableRng;
 use ark_std::rand::rngs::StdRng;
 use ark_std::{One, UniformRand, Zero};
 use rand;
+use serde_bytes::ByteBuf;
 
 // return random ScalarField element, which isn't zero or one
 pub fn random_non_neutral_scalar_field_element<F: Field>() -> F {
@@ -33,7 +34,7 @@ pub fn ark_de<'de, D, A: CanonicalDeserialize>(data: D) -> Result<A, D::Error>
 where
     D: serde::de::Deserializer<'de>,
 {
-    let s: Vec<u8> = serde::de::Deserialize::deserialize(data)?;
+    let s: ByteBuf = serde::de::Deserialize::deserialize(data)?;
     let a = A::deserialize_with_mode(s.as_slice(), Compress::No, Validate::Yes);
     a.map_err(serde::de::Error::custom)
 }

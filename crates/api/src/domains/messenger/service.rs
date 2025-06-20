@@ -1,13 +1,18 @@
 use crate::Container;
+use art::art::{ART, BranchChanges};
 use chrono::Utc;
 use mongodb::bson;
 use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use storage::{CursorStorage, MessageStorage, MongoCursorStorage, MongoMessageStorage};
+use storage::{
+    ARTChangesStorage, ARTStorage, CursorStorage, MessageStorage, MongoARTChangesStorage,
+    MongoARTStorage, MongoCursorStorage, MongoMessageStorage,
+};
 use tracing::{debug, error, info};
-use types::{CursorRecord, Message};
+use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message};
+use zk::curve::cortado::{CortadoProjective as ARTG, Fr as ScalarField};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessengerError {
@@ -78,6 +83,48 @@ impl MessengerService {
         Ok(record)
     }
 
+    pub async fn get_art(
+        &self,
+        chat_id: &Uuid,
+        sequence_number: i64,
+    ) -> Result<ARTRecord<ARTG>, MessengerError> {
+        let record = self
+            .create_arts_storage(chat_id)
+            .await
+            .map_err(|e| MessengerError::StorageError(e))?
+            .get_art(sequence_number)
+            .await?;
+
+        Ok(record)
+    }
+
+    pub async fn find_latest_art(&self, chat_id: &Uuid) -> Result<ARTRecord<ARTG>, MessengerError> {
+        let record = self
+            .create_arts_storage(chat_id)
+            .await
+            .map_err(|e| MessengerError::StorageError(e))?
+            .find_latest_art()
+            .await?;
+
+        Ok(record)
+    }
+
+    pub async fn list_changes(
+        &self,
+        chat_id: &Uuid,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+    ) -> Result<Vec<ARTChangesRecord<ARTG>>, MessengerError> {
+        let record = self
+            .create_art_changes_storage(chat_id)
+            .await
+            .map_err(|e| MessengerError::StorageError(e))?
+            .list_changes(filter, limit, skip)
+            .await?;
+        Ok(record)
+    }
+
     pub async fn delete_messages(
         &self,
         chat_id: &Uuid,
@@ -122,24 +169,57 @@ impl MessengerService {
         Ok(result)
     }
 
-    pub async fn create_messages_storage(
+    pub async fn init_chat(&self, chat_id: &Uuid, art: ART<ARTG>) -> Result<(), MessengerError> {
+        let art_storage = self.create_arts_storage(chat_id).await?;
+
+        art_storage.new_art(art).await?;
+
+        Ok(())
+    }
+
+    pub async fn update_art(
+        &self,
+        chat_id: &Uuid,
+        changes: BranchChanges<ARTG>,
+    ) -> Result<(), MessengerError> {
+        self.create_arts_storage(chat_id)
+            .await?
+            .update_art(changes.clone())
+            .await?;
+
+        self.create_art_changes_storage(chat_id)
+            .await?
+            .store_change(changes)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn create_messages_storage(
         &self,
         chat_id: &Uuid,
     ) -> Result<Arc<MongoMessageStorage>, mongodb::error::Error> {
         Ok(Arc::new(MongoMessageStorage::new(chat_id).await?))
     }
 
-    pub async fn create_cursors_storage(
+    async fn create_cursors_storage(
         &self,
         chat_id: &Uuid,
     ) -> Result<Arc<MongoCursorStorage>, mongodb::error::Error> {
         Ok(Arc::new(MongoCursorStorage::new(chat_id).await?))
     }
 
-    // pub async fn create_arts_storage(
-    //     &self,
-    //     chat_id: &Uuid,
-    // ) -> Result<Arc<MongoARTStorage<ARTG>>, mongodb::error::Error> {
-    //     Ok(Arc::new(MongoARTStorage::new(chat_id).await?))
-    // }
+    async fn create_arts_storage(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<Arc<MongoARTStorage>, mongodb::error::Error> {
+        Ok(Arc::new(MongoARTStorage::new(chat_id).await?))
+    }
+
+    async fn create_art_changes_storage(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<Arc<MongoARTChangesStorage>, mongodb::error::Error> {
+        Ok(Arc::new(MongoARTChangesStorage::new(chat_id).await?))
+    }
 }
