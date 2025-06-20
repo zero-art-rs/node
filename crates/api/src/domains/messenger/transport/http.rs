@@ -1,4 +1,3 @@
-use crate::{container::Container, errors::ApiError};
 use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::{SeedableRng, rngs::StdRng};
@@ -26,6 +25,7 @@ use types::Message;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
+use crate::{container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError};
 use art::art::{BranchChanges, ART};
 use art::art_user_agent::ARTUserAgent;
 use art::helper_tools::{ark_de, ark_se};
@@ -62,13 +62,16 @@ pub struct SendMessageRequest {
 #[instrument(skip(state, headers), err)]
 pub async fn send_message(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<StatusCode, ApiError> {
+    _claims.
     // Validate the request payload.
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
 
     state
         .messenger_service
@@ -121,6 +124,7 @@ pub struct GetMessageQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn list_messages(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(mut payload): Query<GetMessageQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -213,6 +217,7 @@ pub struct DeleteMessageQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn delete_messages(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<DeleteMessageQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -299,6 +304,7 @@ pub struct MarkAsRead {
 #[instrument(skip(state, headers), err)]
 pub async fn mark_as_read(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<MarkAsRead>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -364,6 +370,7 @@ pub struct GetCursorsQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn list_cursors(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(mut payload): Query<GetCursorsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -440,6 +447,7 @@ pub struct DeleteCursorsQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn delete_cursors(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<DeleteCursorsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -500,6 +508,7 @@ pub struct InitChatRequest {
 #[instrument(skip(state, headers), err)]
 pub async fn init_chat(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<InitChatRequest>,
 ) -> Result<StatusCode, ApiError> {
@@ -545,6 +554,7 @@ pub struct GetARTQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<GetARTQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -611,6 +621,7 @@ pub struct GetARTChangeQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn list_changes(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<GetARTChangeQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -659,6 +670,7 @@ pub struct UpdateARTQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn update_art(
     State(state): State<Arc<Container>>,
+    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<UpdateARTQuery>,
 ) -> Result<StatusCode, ApiError> {
