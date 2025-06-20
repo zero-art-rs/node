@@ -66,7 +66,6 @@ pub async fn send_message(
     headers: HeaderMap,
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<StatusCode, ApiError> {
-    _claims.
     // Validate the request payload.
     payload
         .validate()
