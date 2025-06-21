@@ -1,16 +1,21 @@
-use mongodb::bson::Document;
-use serde::Serialize;
+use mongodb::bson::{doc, from_document, DateTime, Document, Uuid};
+use types::Message;
 
 #[async_trait::async_trait]
 pub trait MessageStorage: Send + Sync {
-    async fn store_message<T>(&self, message: T) -> Result<(), mongodb::error::Error>
-    where
-        T: Serialize + Send;
-    async fn get_message(&self, id: &str) -> Result<Option<Document>, mongodb::error::Error>;
+    async fn store_message(
+        &self,
+        message: String,
+        sender: String,
+    ) -> Result<(), mongodb::error::Error>;
     async fn list_messages(
         &self,
+        filter: Document,
         limit: i64,
         skip: i64,
-    ) -> Result<Vec<Document>, mongodb::error::Error>;
-    async fn delete_message(&self, id: &str) -> Result<(), mongodb::error::Error>;
+    ) -> Result<Vec<Message>, mongodb::error::Error>;
+    async fn delete_messages(
+        &self,
+        filter: Document,
+    ) -> Result<Vec<Message>, mongodb::error::Error>;
 }

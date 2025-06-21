@@ -1,86 +1,78 @@
+use crate::{MessageStorage, DATABASE};
+use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Document},
+    bson::{doc, Binary, DateTime, Document, Uuid},
     options::{ClientOptions, IndexOptions},
-    Client, Collection, IndexModel,
+    Client, Collection, Cursor, Database, IndexModel,
 };
-use serde::Serialize;
-
-use crate::{MessageStorage, MongoConfig};
+use types::Message;
 
 pub struct MongoMessageStorage {
-    collection: Collection<Document>,
+    messages_collection: Collection<Message>,
+    chat_id: Uuid,
 }
 
 impl MongoMessageStorage {
-    pub async fn new(config: MongoConfig) -> Result<Self, mongodb::error::Error> {
-        let client_options = ClientOptions::parse(config.uri).await?;
-        let client = Client::with_options(client_options)?;
-        let db = client.database(&config.database_name);
-        let collection = db.collection("messages");
+    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
+        let db = DATABASE.get().unwrap();
 
-        let index_model = IndexModel::builder()
-            .keys(doc! { "created_at": 1 })
+        let messages_collection_name = format!("chat/{}", chat_id);
+        let messages_collection = db.collection(&messages_collection_name);
+
+        let messages_index_model = IndexModel::builder()
+            .keys(doc! { "sequence_number": -1})
             .options(IndexOptions::builder().build())
             .build();
-        collection.create_index(index_model).await?;
+        messages_collection
+            .create_index(messages_index_model)
+            .await?;
 
-        let schema = doc! {
-            "validator": {
-                "$jsonSchema": {
-                    "bsonType": "object",
-                    "required": ["content", "created_at", "sender_id"],
-                    "properties": {
-                        "content": {
-                            "bsonType": "string",
-                            "description": "Message content"
-                        },
-                        "created_at": {
-                            "bsonType": "date",
-                            "description": "Message creation timestamp"
-                        },
-                        "sender_id": {
-                            "bsonType": "string",
-                            "description": "ID of the message sender"
-                        }
-                    }
-                }
-            }
-        };
-
-        db.run_command(doc! {
-            "collMod": "messages",
-            "validator": schema["validator"].clone()
+        Ok(Self {
+            messages_collection,
+            chat_id: chat_id.clone(),
         })
-        .await?;
-
-        Ok(Self { collection })
     }
 }
 
 #[async_trait::async_trait]
 impl MessageStorage for MongoMessageStorage {
-    async fn store_message<T>(&self, message: T) -> Result<(), mongodb::error::Error>
-    where
-        T: Serialize + Send,
-    {
-        let doc = mongodb::bson::to_document(&message)?;
-        self.collection.insert_one(doc).await?;
-        Ok(())
-    }
+    async fn store_message(
+        &self,
+        content: String,
+        sender: String,
+    ) -> Result<(), mongodb::error::Error> {
+        let message_collection = &self.messages_collection;
 
-    async fn get_message(&self, id: &str) -> Result<Option<Document>, mongodb::error::Error> {
-        let result = self.collection.find_one(doc! { "_id": id }).await?;
-        Ok(result)
+        let mut cursor = message_collection
+            .find(doc! {})
+            .sort(doc! { "sequence_number": -1 })
+            .limit(1)
+            .await?;
+
+        let mut next_sequence_number = 0;
+        if let Some(result) = cursor.try_next().await? {
+            next_sequence_number = result.sequence_number + 1;
+        }
+
+        message_collection
+            .insert_one(Message::new(
+                content.into_bytes(),
+                next_sequence_number,
+                sender,
+            ))
+            .await?;
+        Ok(())
     }
 
     async fn list_messages(
         &self,
+        filter: Document,
         limit: i64,
         skip: i64,
-    ) -> Result<Vec<Document>, mongodb::error::Error> {
+    ) -> Result<Vec<Message>, mongodb::error::Error> {
         let mut cursor = self
-            .collection
-            .find(doc! {})
+            .messages_collection
+            .find(filter)
             .skip(skip as u64)
             .limit(limit)
             .await?;
@@ -89,11 +81,23 @@ impl MessageStorage for MongoMessageStorage {
         while cursor.advance().await? {
             messages.push(cursor.deserialize_current()?);
         }
+
         Ok(messages)
     }
 
-    async fn delete_message(&self, id: &str) -> Result<(), mongodb::error::Error> {
-        self.collection.delete_one(doc! { "_id": id }).await?;
-        Ok(())
+    async fn delete_messages(
+        &self,
+        filter: Document,
+    ) -> Result<Vec<Message>, mongodb::error::Error> {
+        let mut collection_cursor = self.messages_collection.find(filter.clone()).await?;
+        let mut messages = Vec::new();
+
+        while let Some(message) = collection_cursor.try_next().await? {
+            messages.push(message);
+        }
+
+        self.messages_collection.delete_many(filter).await?;
+
+        Ok(messages)
     }
 }

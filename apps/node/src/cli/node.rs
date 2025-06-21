@@ -4,11 +4,19 @@ use std::time::Duration;
 use crate::config::NodeConfig;
 use api::{AuthService, Container, MessengerService};
 use eyre::Ok;
-use storage::{MongoConfig, MongoMessageStorage};
+use mongodb::{
+    Client, Collection, IndexModel, bson,
+    bson::spec::BinarySubtype,
+    bson::{Binary, DateTime, Document, doc},
+    options::{ClientOptions, IndexOptions},
+};
+use storage::{DATABASE, MongoConfig, MongoMessageStorage};
 use tokio::select;
 use tokio::time::sleep;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::info;
+
+use mongodb::bson::Uuid;
 
 /// The limit of time to wait for the node to shutdown.
 const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
@@ -36,6 +44,27 @@ impl Node {
     }
 
     pub async fn run(&self) -> eyre::Result<()> {
+        let uri = self.config.storage.database_url.clone();
+        let database_name = self.config.storage.database_name.clone();
+
+        let client_options = ClientOptions::parse(uri).await?;
+        let client = Client::with_options(client_options)?;
+
+        DATABASE
+            .set(
+                client
+                    .default_database()
+                    .unwrap_or(client.database(&database_name)),
+            )
+            .unwrap();
+        DATABASE
+            .get()
+            .unwrap()
+            .run_command(doc! { "ping": 1 })
+            .await?;
+        info!("Connected to database {}", database_name);
+
+        // create default chat api
         self.spawn_api().await?;
 
         self.task_tracker.close();
@@ -45,12 +74,7 @@ impl Node {
 
     async fn spawn_api(&self) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
-        let message_storage = MongoMessageStorage::new(MongoConfig {
-            uri: self.config.storage.database_url.clone(),
-            database_name: self.config.storage.database_name.clone(),
-        })
-        .await?;
-        let messenger_service = MessengerService::new(message_storage);
+        let messenger_service = MessengerService::new();
         let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
 
         let container = Arc::new(Container {

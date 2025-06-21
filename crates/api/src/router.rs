@@ -36,6 +36,15 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
 
     let protected_routes = OpenApiRouter::new()
         .routes(routes!(domains::messenger::transport::http::send_message))
+        .routes(routes!(domains::messenger::transport::http::list_messages))
+        .routes(routes!(domains::messenger::transport::http::delete_messages))
+        .routes(routes!(domains::messenger::transport::http::mark_as_read))
+        .routes(routes!(domains::messenger::transport::http::delete_cursors))
+        .routes(routes!(domains::messenger::transport::http::list_cursors))
+        .routes(routes!(domains::messenger::transport::http::init_chat))
+        .routes(routes!(domains::messenger::transport::http::get_art))
+        .routes(routes!(domains::messenger::transport::http::list_changes))
+        .routes(routes!(domains::messenger::transport::http::update_art))
         .layer(middleware::from_fn_with_state(
             container,
             domains::auth::transport::http::jwt_middleware,

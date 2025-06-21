@@ -9,6 +9,9 @@ members = [
 ]
 resolver = "2"
 
+[net]
+git-fetch-with-cli = true
+
 [workspace.dependencies]
 chrono = { version = "0.4.41", default-features = false }
 aes-gcm = { version = "0.10", default-features = false }
@@ -46,3 +49,4 @@ serde_repr = { version = "0.1.20", default-features = false }
 tracing-subscriber = { version = "0.3.19" }
 uuid = { version = "1.17.0", features = ["v7"] }
 jsonwebtoken = "9.3.1"
+zk = {git = "ssh://git@github.com/zk-messenger/project-m.git"}
