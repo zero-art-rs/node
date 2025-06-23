@@ -1,0 +1,13 @@
+[package]
+name = "message-watcher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+types = { path = "../types" }
+tokio = { workspace = true, features = ["full"] }
+eyre = { workspace = true }
+mongodb = { workspace = true }
+tracing = { workspace = true }
+hex = { workspace = true }
+futures-util = { workspace = true }

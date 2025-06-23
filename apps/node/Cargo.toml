@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 api = { path = "../../crates/api" }
 storage = { path = "../../crates/storage" }
+message-watcher = { path = "../../crates/message-watcher" }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
@@ -19,4 +20,4 @@ clap = { version = "4.5.40", features = ["derive"] }
 config = { version = "0.15.11", features = ["toml"] }
 serde = { workspace = true, features = ["derive"] }
 chrono = { workspace = true }
-mongodb = {workspace = true}
+mongodb = { workspace = true }

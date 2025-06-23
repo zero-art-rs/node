@@ -1,10 +1,18 @@
+use crate::Container;
+use art::art::{ART, BranchChanges};
+use chrono::Utc;
+use message_watcher::MessageWatcher;
 use mongodb::bson;
 use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
+use mongodb::change_stream::ChangeStream;
+use mongodb::change_stream::event::ChangeStreamEvent;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use storage::{
     CursorStorage, DataStorage, MessageStorage, MongoCursorStorage, MongoMessageStorage,
 };
+use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 use types::{CursorRecord, Message};
 
@@ -22,15 +30,50 @@ impl From<storage::Error> for MessengerError {
     }
 }
 
-pub struct MessengerService {}
+pub struct MessengerService {
+    subscription_sender: mpsc::Sender<(
+        String,
+        ChangeStream<ChangeStreamEvent<Message>>,
+        mpsc::Sender<Message>,
+    )>,
+}
 
 impl MessengerService {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(
+        subscription_sender: mpsc::Sender<(
+            String,
+            ChangeStream<ChangeStreamEvent<Message>>,
+            mpsc::Sender<Message>,
+        )>,
+    ) -> Self {
+        Self {
+            subscription_sender,
+        }
     }
 }
 
 impl MessengerService {
+    pub async fn subscribe_for_messages(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<mpsc::Receiver<Message>, MessengerError> {
+        let storage = self.create_messages_storage(chat_id).await?;
+        let change_stream = storage.stream_messages().await?;
+
+        let (tx, rx) = mpsc::channel(100);
+
+        self.subscription_sender
+            .send((chat_id.to_string(), change_stream, tx))
+            .await
+            .map_err(|_| {
+                MessengerError::StorageError(mongodb::error::Error::custom(
+                    "Failed to send subscription to MessageWatcher".to_string(),
+                ))
+            })?;
+
+        Ok(rx)
+    }
+
     pub async fn send_message(
         &self,
         message: String,

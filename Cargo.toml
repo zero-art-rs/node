@@ -45,5 +45,6 @@ tracing-subscriber = { version = "0.3.19" }
 uuid = { version = "1.17.0", features = ["v7"] }
 jsonwebtoken = { version = "9.3.1" }
 zk = { git = "ssh://git@github.com/zk-messenger/project-m.git" }
-art = { git = "ssh://git@github.com/zk-messenger/project-m.git" }
-postcard = { version = "1.1.2" }
+art = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
+postcard = { version = "1.1.2"  }
+tokio-stream = { version = "0.1.10" }

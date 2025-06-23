@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use axum::{Router, middleware};
+use axum::{Router, middleware, routing::get};
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
+use utoipa::OpenApi;
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -53,7 +54,11 @@ impl Modify for SecurityAddon {
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        .routes(routes!(domains::auth::transport::http::authenticate));
+        .routes(routes!(domains::auth::transport::http::authenticate))
+        // TODO: add auth middleware to SSE
+        .routes(routes!(
+            domains::messenger::transport::sse::subscribe_for_messages
+        ));
 
     let protected_routes = OpenApiRouter::new()
         .routes(routes!(domains::messenger::transport::http::send_message))

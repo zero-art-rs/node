@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 storage = { path = "../storage" }
+message-watcher = { path = "../message-watcher" }
 types = { path = "../types" }
 axum = { workspace = true, features = ["macros"] }
 validator = { workspace = true, features = ["derive"] }
@@ -33,3 +34,5 @@ rand = { workspace = true, features = ["thread_rng"]}
 log = "0.4.27"
 postcard = {workspace = true}
 base64 = "0.22.1"
+tokio-stream = { workspace = true }
+futures-util = { workspace = true }

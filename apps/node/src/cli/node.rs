@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::config::NodeConfig;
 use api::{ARTService, AuthService, Container, InvitationService, MessengerService};
 use eyre::Ok;
+use message_watcher::MessageWatcher;
 use mongodb::{
     Client, Collection, IndexModel, bson,
     bson::spec::BinarySubtype,
@@ -74,8 +75,13 @@ impl Node {
 
     async fn spawn_api(&self) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
-        let messenger_service = MessengerService::new();
+
+        let (subscription_sender, subscription_receiver) = tokio::sync::mpsc::channel(100);
+
+        let message_watcher = MessageWatcher::new(subscription_receiver);
+        self.task_tracker.spawn(message_watcher.run());
         let art_service = ARTService::new();
+        let messenger_service = MessengerService::new(subscription_sender);
         let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
         let invitation_service = InvitationService::new();
 
