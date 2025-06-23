@@ -9,9 +9,6 @@ members = [
 ]
 resolver = "2"
 
-[net]
-git-fetch-with-cli = true
-
 [workspace.dependencies]
 chrono = { version = "0.4.41", default-features = false }
 aes-gcm = { version = "0.10", default-features = false }

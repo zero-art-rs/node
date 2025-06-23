@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use axum::{Router, middleware};
-use utoipa::OpenApi;
+use utoipa::{OpenApi, Modify};
+use utoipa::openapi::security::{Http, ApiKey, ApiKeyValue, HttpAuthScheme, SecurityScheme};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -21,13 +22,34 @@ async fn get_health_handler() -> &'static str {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
+    modifiers(&SecurityAddon),
     info(title = env!("CARGO_PKG_NAME"),),
     components(schemas(
         domains::auth::transport::http::AuthRequest,
         domains::auth::transport::http::AuthResponse,
-    ))
+    )),
+    security(
+        ("bearer_auth" = [])
+    ),
 )]
 struct PublicApiDoc;
+
+pub struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = &mut openapi.components {
+            let mut http = Http::new(HttpAuthScheme::Bearer);
+            http.bearer_format = Some("JWT".to_string());
+            http.description = Some("Enter JWT as: Bearer <token>".to_string());
+
+            components
+                .security_schemes
+                .insert("bearer_auth".to_string(), SecurityScheme::Http(http));
+        }
+    }
+}
+
 
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
