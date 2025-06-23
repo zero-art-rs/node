@@ -127,8 +127,10 @@ dependencies = [
  "axum",
  "chrono",
  "eyre",
+ "futures-util",
  "jsonwebtoken",
  "log",
+ "message-watcher",
  "mongodb",
  "rand 0.9.1",
  "serde",
@@ -136,6 +138,7 @@ dependencies = [
  "storage",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tower-http",
  "tracing",
@@ -1855,6 +1858,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "message-watcher"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "futures-util",
+ "hex",
+ "mongodb",
+ "tokio",
+ "tracing",
+ "types",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1960,6 +1976,7 @@ dependencies = [
  "clap",
  "config",
  "eyre",
+ "message-watcher",
  "mongodb",
  "serde",
  "storage",
@@ -3005,6 +3022,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-stream"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3218,6 +3246,8 @@ dependencies = [
  "mongodb",
  "serde",
  "serde_json",
+ "tokio",
+ "utoipa",
 ]
 
 [[package]]

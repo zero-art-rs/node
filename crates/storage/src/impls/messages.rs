@@ -1,15 +1,16 @@
 use crate::{MessageStorage, DATABASE};
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Binary, DateTime, Document, Uuid},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Cursor, Database, IndexModel,
+    bson::{doc, Document, Uuid},
+    change_stream::{event::ChangeStreamEvent, ChangeStream},
+    options::IndexOptions,
+    Collection, IndexModel,
 };
 use types::Message;
 
 pub struct MongoMessageStorage {
     messages_collection: Collection<Message>,
-    chat_id: Uuid,
+    _chat_id: Uuid,
 }
 
 impl MongoMessageStorage {
@@ -29,13 +30,21 @@ impl MongoMessageStorage {
 
         Ok(Self {
             messages_collection,
-            chat_id: chat_id.clone(),
+            _chat_id: chat_id.clone(),
         })
     }
 }
 
 #[async_trait::async_trait]
 impl MessageStorage for MongoMessageStorage {
+    async fn stream_messages(
+        &self,
+    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, mongodb::error::Error> {
+        let change_stream = self.messages_collection.watch().await?;
+
+        Ok(change_stream)
+    }
+
     async fn store_message(
         &self,
         content: String,

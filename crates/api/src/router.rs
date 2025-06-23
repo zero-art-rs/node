@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{Router, middleware};
+use axum::{Router, middleware, routing::get};
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -32,12 +32,18 @@ struct PublicApiDoc;
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        .routes(routes!(domains::auth::transport::http::authenticate));
+        .routes(routes!(domains::auth::transport::http::authenticate))
+        // TODO: add auth middleware to SSE
+        .routes(routes!(
+            domains::messenger::transport::sse::subscribe_for_messages
+        ));
 
     let protected_routes = OpenApiRouter::new()
         .routes(routes!(domains::messenger::transport::http::send_message))
         .routes(routes!(domains::messenger::transport::http::list_messages))
-        .routes(routes!(domains::messenger::transport::http::delete_messages))
+        .routes(routes!(
+            domains::messenger::transport::http::delete_messages
+        ))
         .routes(routes!(domains::messenger::transport::http::mark_as_read))
         .routes(routes!(domains::messenger::transport::http::delete_cursors))
         .routes(routes!(domains::messenger::transport::http::list_cursors))
