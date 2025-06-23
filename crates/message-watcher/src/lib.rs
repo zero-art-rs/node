@@ -20,7 +20,7 @@ pub struct MessageWatcher {
     inner_tx: mpsc::Sender<(String, Message)>,
     inner_rx: mpsc::Receiver<(String, Message)>,
 
-    tasks: Vec<JoinHandle<()>>,
+    tasks: HashMap<String, JoinHandle<()>>,
 }
 
 impl MessageWatcher {
@@ -32,7 +32,7 @@ impl MessageWatcher {
             message_sender: HashMap::new(),
             inner_tx,
             inner_rx,
-            tasks: Vec::new(),
+            tasks: HashMap::new(),
         }
     }
 
@@ -63,7 +63,7 @@ impl MessageWatcher {
                         "Updated message senders for chat"
                     );
 
-                    if receivers.len() == 1 {
+                    if !self.tasks.contains_key(&chat_id) {
                         self.spawn_subscription_task(chat_id, change_stream).await;
                     }
                 }
@@ -73,27 +73,76 @@ impl MessageWatcher {
                         break;
                     };
 
-                    self.broadcast_message(chat_id, message).await;
+                    if let Err(e) = self.broadcast_message(chat_id, message).await {
+                        error!("Error broadcasting message: {}", e);
+                    }
                 }
             }
         }
     }
 
-    async fn broadcast_message(&self, chat_id: String, message: Message) {
+    async fn broadcast_message(
+        &mut self,
+        chat_id: String,
+        message: Message,
+    ) -> Result<(), mpsc::error::SendError<Message>> {
         let Some(recievers) = self.message_sender.get(&chat_id) else {
-            return;
+            return Ok(());
         };
 
-        for receiver in recievers.iter() {
-            receiver.send(message.clone()).await.unwrap();
+        let mut stale_receivers = Vec::new();
+
+        for receiver in recievers {
+            if let Err(e) = receiver.send(message.clone()).await {
+                stale_receivers.push(true);
+
+                debug!(
+                    chat_id = chat_id.as_str(),
+                    receiver = ?receiver,
+                    "Stale receiver: {}",
+                    e
+                );
+
+                continue;
+            }
+
+            stale_receivers.push(false);
+        }
+
+        if !stale_receivers.is_empty() {
+            self.remove_stale_receivers(&chat_id, stale_receivers).await;
         }
 
         info!(
             chat_id = chat_id.as_str(),
             message = ?message,
-            "Broadcasted message to {} receivers",
-            recievers.len()
+            "Broadcasted message",
         );
+
+        Ok(())
+    }
+
+    async fn remove_stale_receivers(&mut self, chat_id: &str, stale_receivers: Vec<bool>) {
+        let Some(recievers) = self.message_sender.get(chat_id) else {
+            return;
+        };
+
+        let mut new_receivers = Vec::new();
+
+        for (index, receiver) in recievers.iter().enumerate() {
+            if !stale_receivers[index] {
+                new_receivers.push(receiver.clone());
+            }
+        }
+
+        self.message_sender
+            .insert(chat_id.to_string(), new_receivers.clone());
+
+        if new_receivers.is_empty() && self.tasks.contains_key(chat_id) {
+            if let Some(task) = self.tasks.remove(chat_id) {
+                task.abort();
+            }
+        }
     }
 
     async fn spawn_subscription_task(
@@ -107,6 +156,7 @@ impl MessageWatcher {
         );
 
         let tx = self.inner_tx.clone();
+        let chat_id_clone = chat_id.clone();
         let task = tokio::spawn(async move {
             while let Some(event) = change_stream.next().await {
                 match event {
@@ -116,7 +166,7 @@ impl MessageWatcher {
                                 continue;
                             };
 
-                            tx.send((chat_id.clone(), message)).await.unwrap();
+                            tx.send((chat_id_clone.clone(), message)).await.unwrap();
                         }
                         // Ignore other events
                         _ => {}
@@ -128,6 +178,6 @@ impl MessageWatcher {
             }
         });
 
-        self.tasks.push(task);
+        self.tasks.insert(chat_id, task);
     }
 }
