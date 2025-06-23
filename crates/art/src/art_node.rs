@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,30 @@ pub struct ARTNode<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> {
     pub r: Option<Box<ARTNode<G>>>,
     pub is_temporal: bool,
     pub weight: usize,
+}
+
+impl<G> Display for ARTNode<G>
+where
+    G: CurveGroup + CanonicalSerialize + CanonicalDeserialize + std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(f, "ARTNode {{")?;
+        // writeln!(f, "  public_key: {:?}", self.public_key)?;
+        // writeln!(f, "  is_temporal: {}", self.is_temporal)?;
+        writeln!(f, "  weight: {}", self.weight)?;
+
+        match &self.l {
+            Some(left) => writeln!(f, "  l: {}", left)?,
+            None => {},
+        }
+
+        match &self.r {
+            Some(right) => writeln!(f, "  r: {}", right)?,
+            None => {},
+        }
+
+        write!(f, "}}")
+    }
 }
 
 impl<G: CurveGroup> ARTNode<G> {
@@ -66,7 +92,7 @@ impl<G: CurveGroup> ARTNode<G> {
     }
 
     pub fn is_leaf(&self) -> bool {
-        self.l.is_none() && self.r.is_none()
+        self.l.is_none() || self.r.is_none()
     }
 
     pub fn get_left(&self) -> &Box<ARTNode<G>> {
@@ -76,11 +102,14 @@ impl<G: CurveGroup> ARTNode<G> {
         }
     }
 
-    pub fn make_temporal(&mut self, temporal_public_key: &G) {
+    pub fn make_temporal(&mut self, temporal_public_key: &G) -> Result<(), String> {
         if self.is_leaf() {
             self.set_public_key(temporal_public_key.clone());
             self.is_temporal = true;
             self.weight = 0;
+            Ok(())
+        } else { 
+            Err("Cannot convert internal node to temporal one.".to_string())
         }
     }
 
@@ -164,7 +193,8 @@ impl<G: CurveGroup> ARTNode<G> {
         }
     }
 
-    /// Move current node down to left child, and append other node to the right
+    /// Move current node down to left child, and append other node to the right. The current node
+    /// becomes iternal.
     pub fn extend(&mut self, other: ARTNode<G>) {
         let weight = other.weight + self.weight;
 
@@ -176,6 +206,7 @@ impl<G: CurveGroup> ARTNode<G> {
             weight,
         };
 
+        self.weight = other.weight + new_self.weight;
         self.l = Some(Box::new(new_self));
         self.r = Some(Box::new(other));
     }
@@ -185,15 +216,22 @@ impl<G: CurveGroup> ARTNode<G> {
         self.l = other.l;
         self.r = other.r;
         self.is_temporal = other.is_temporal;
+        self.weight = other.weight;
     }
 
     /// If the node is temporal, replace the node, else moves current node down to left,
     /// and append other node to the right
-    pub fn extend_or_replace(&mut self, other: ARTNode<G>) {
+    pub fn extend_or_replace(&mut self, other: ARTNode<G>) -> Result<(), String> {
+        if !self.is_leaf() {
+            return Err("Cannot extend a leaf node.".to_string());
+        }
+        
         match self.is_temporal {
             true => self.replace_with(other),
             false => self.extend(other),
         }
+        
+        Ok(())
     }
 
     /// Change current node with child. Other child is removed. The result is other child

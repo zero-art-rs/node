@@ -313,10 +313,12 @@ impl<G: CurveGroup + CanonicalSerialize + CanonicalDeserialize> ART<G> {
     fn append_node(&mut self, node: ARTNode<G>, path: &Vec<Direction>) -> Result<(), String> {
         let mut node_for_extension = self.root.as_mut();
         for direction in path {
-            node_for_extension.weight += 1;
+            node_for_extension.weight += 1; // The weight of every node is increased by 1
             node_for_extension = node_for_extension.get_mut_child(direction)?;
         }
 
+        node_for_extension.weight -= 1; // The last node weight is done automatically through the
+        // extension methods
         node_for_extension.extend_or_replace(node);
 
         Ok(())

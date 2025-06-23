@@ -10,6 +10,7 @@ mod tests {
     use art::{self, art::ART, helper_tools};
     use helper_tools::create_random_secrets;
     use rand::{Rng, rng};
+    use art::art_node::{ARTNode, Direction};
 
     #[test]
     fn test_art_tree_key_update() {
@@ -51,6 +52,62 @@ mod tests {
         for user_agent in &mut users_agents {
             _ = user_agent.update_branch(&changes);
             assert_eq!(user_agent.root_key.key, old_key.key);
+        }
+    }
+
+    #[test]
+    fn test_art_weights_correctness() {
+        let number_of_users = 2;
+        let main_user_id = rng().random_range(0..number_of_users as usize);
+        let secrets = create_random_secrets(number_of_users);
+
+        let (tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
+        let mut agent = ARTUserAgent::new(tree, secrets[0]);
+        let mut rng = &mut StdRng::seed_from_u64(rand::random());
+        for _ in 0..10 {
+            let _ = agent.append_node(&ARTScalarField::rand(rng)).unwrap();
+        }
+
+        let root = agent.tree.root;
+        let mut path = vec![root.as_ref()];
+        let mut next = vec![Direction::NoDirection];
+
+        // search in deep
+        while !path.is_empty() {
+            let last_node = path.last().unwrap();
+
+            if !last_node.is_leaf() {
+                assert_eq!(last_node.weight, last_node.get_left().weight + last_node.get_right().weight);
+            } else {
+                if last_node.is_temporal {
+                    assert_eq!(last_node.weight, 0);
+                } else {
+                    assert_eq!(last_node.weight, 1);
+                }
+            }
+
+            if last_node.is_leaf() {
+                    path.pop();
+                    next.pop();
+            } else {
+                match next.pop().unwrap() {
+                    Direction::Left => {
+                        path.push(last_node.get_right().as_ref());
+
+                        next.push(Direction::Right);
+                        next.push(Direction::NoDirection);
+                    }
+                    Direction::Right => {
+                        path.pop();
+                    }
+                    Direction::NoDirection => {
+                        path.push(last_node.get_left().as_ref());
+
+                        next.push(Direction::Left);
+                        next.push(Direction::NoDirection);
+                    }
+                }
+            }
         }
     }
 
