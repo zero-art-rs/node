@@ -1,6 +1,17 @@
-use mongodb::bson::{DateTime, Document, Uuid, doc, from_document, oid::ObjectId};
+use mongodb::{
+    bson::{DateTime, doc},
+    change_stream::{ChangeStream, event::ChangeStreamEvent},
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use tokio::sync::mpsc;
+
+#[derive(Debug)]
+pub struct Subscription {
+    pub chat_id: String,
+    pub change_stream: ChangeStream<ChangeStreamEvent<Message>>,
+    pub sender: mpsc::Sender<Message>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Message {

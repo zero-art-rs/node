@@ -3246,6 +3246,7 @@ dependencies = [
  "mongodb",
  "serde",
  "serde_json",
+ "tokio",
  "utoipa",
 ]
 

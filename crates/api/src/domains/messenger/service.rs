@@ -15,7 +15,7 @@ use storage::{
 };
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
-use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message};
+use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message, Subscription};
 use zk::curve::cortado::{CortadoProjective as ARTG, Fr as ScalarField};
 
 #[derive(Debug, thiserror::Error)]
@@ -33,21 +33,11 @@ impl From<storage::Error> for MessengerError {
 }
 
 pub struct MessengerService {
-    subscription_sender: mpsc::Sender<(
-        String,
-        ChangeStream<ChangeStreamEvent<Message>>,
-        mpsc::Sender<Message>,
-    )>,
+    subscription_sender: mpsc::Sender<Subscription>,
 }
 
 impl MessengerService {
-    pub fn new(
-        subscription_sender: mpsc::Sender<(
-            String,
-            ChangeStream<ChangeStreamEvent<Message>>,
-            mpsc::Sender<Message>,
-        )>,
-    ) -> Self {
+    pub fn new(subscription_sender: mpsc::Sender<Subscription>) -> Self {
         Self {
             subscription_sender,
         }
@@ -65,7 +55,11 @@ impl MessengerService {
         let (tx, rx) = mpsc::channel(100);
 
         self.subscription_sender
-            .send((chat_id.to_string(), change_stream, tx))
+            .send(Subscription {
+                chat_id: chat_id.to_string(),
+                change_stream,
+                sender: tx,
+            })
             .await
             .map_err(|_| {
                 MessengerError::StorageError(mongodb::error::Error::custom(

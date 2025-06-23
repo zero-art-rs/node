@@ -7,16 +7,12 @@ use mongodb::change_stream::{
 };
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, info};
-use types::Message;
+use types::{Message, Subscription};
 
 #[derive(Debug)]
 pub struct MessageWatcher {
     /// Receiver of chat ids to watch
-    subscription_receiver: mpsc::Receiver<(
-        String,
-        ChangeStream<ChangeStreamEvent<Message>>,
-        mpsc::Sender<Message>,
-    )>,
+    subscription_receiver: mpsc::Receiver<Subscription>,
     /// Real-time senders of messages
     /// chat_id -> [sender1, sender2, ...]
     message_sender: HashMap<String, Vec<mpsc::Sender<Message>>>,
@@ -28,13 +24,7 @@ pub struct MessageWatcher {
 }
 
 impl MessageWatcher {
-    pub fn new(
-        subscription_receiver: mpsc::Receiver<(
-            String,
-            ChangeStream<ChangeStreamEvent<Message>>,
-            mpsc::Sender<Message>,
-        )>,
-    ) -> Self {
+    pub fn new(subscription_receiver: mpsc::Receiver<Subscription>) -> Self {
         let (inner_tx, inner_rx) = mpsc::channel(100);
 
         Self {
@@ -49,15 +39,22 @@ impl MessageWatcher {
     pub async fn run(mut self) {
         loop {
             tokio::select! {
-                subscription = self.subscription_receiver.recv() => {
-                    let Some((chat_id, change_stream, sender)) = subscription else {
+                subscription_opt = self.subscription_receiver.recv() => {
+                    let Some(subscription) = subscription_opt else {
                         info!("Subscription receiver closed");
                         break;
                     };
 
-                    info!("Received subscription for chat: {}", chat_id);
+                    info!("Received subscription for chat: {}", subscription.chat_id);
 
-                    let receivers = self.message_sender.entry(chat_id.clone()).or_insert(Vec::new());
+                    let chat_id = subscription.chat_id.clone();
+                    let sender = subscription.sender.clone();
+                    let change_stream = subscription.change_stream;
+
+                    let receivers = self
+                        .message_sender
+                        .entry(chat_id.clone())
+                        .or_insert(Vec::new());
                     receivers.push(sender);
 
                     debug!(
