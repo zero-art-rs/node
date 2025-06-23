@@ -10,3 +10,4 @@ pub use art_record::ARTRecord;
 pub use cursor_record::CursorRecord;
 pub use invitation_record::InvitationRecord;
 pub use message::Message;
+pub use message::Subscription;
