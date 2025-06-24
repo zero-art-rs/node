@@ -1,4 +1,7 @@
 /target
 *.dev
+*.dev.*
 m.circom
 *.json
+.idea
+.DS_Store
