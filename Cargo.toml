@@ -39,7 +39,7 @@ ark-serialize = { version = "0.5.0", default-features = false }
 ark-bn254 = { version = "0.5.0", default-features = false }
 criterion = { version = "0.6.0", default-features = false }
 utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
-utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
+utoipa-swagger-ui = { version = "9.0.1", features = ["axum", "reqwest"] }
 utoipa-axum = "0.2"
 axum = { version = "0.8.1", features = ["macros"] }
 validator = { version = "0.20.0", features = ["derive"] }
