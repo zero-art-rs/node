@@ -129,6 +129,7 @@ dependencies = [
  "chrono",
  "eyre",
  "futures-util",
+ "hex",
  "jsonwebtoken",
  "log",
  "message-watcher",

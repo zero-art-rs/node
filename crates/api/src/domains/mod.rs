@@ -1,4 +1,4 @@
 pub(crate) mod art;
-pub(crate) mod auth;
+pub(crate) mod centrifugo;
 pub(crate) mod invitations;
 pub(crate) mod messenger;

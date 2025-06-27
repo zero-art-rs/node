@@ -36,3 +36,4 @@ postcard = {workspace = true}
 base64 = "0.22.1"
 tokio-stream = { workspace = true }
 futures-util = { workspace = true }
+hex = { workspace = true }

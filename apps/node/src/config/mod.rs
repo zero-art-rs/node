@@ -12,14 +12,14 @@ pub use storage::StorageConfig;
 mod logger;
 pub use logger::LoggerConfig;
 
-mod jwt;
-pub use jwt::JwtConfig;
+mod centrifugo;
+pub use centrifugo::CentrifugoConfig;
 
 #[derive(Deserialize)]
 pub struct NodeConfig {
     pub api: ApiConfig,
     pub storage: StorageConfig,
-    pub jwt: JwtConfig,
+    pub centrifugo: CentrifugoConfig,
 
     #[serde(default)]
     pub logger: LoggerConfig,

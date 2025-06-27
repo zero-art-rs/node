@@ -2,8 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::NodeConfig;
-use api::{ARTService, AuthService, Container, InvitationService, MessengerService};
-use eyre::Ok;
+use api::{CentrifugoService, Container, MessengerService};
 use message_watcher::MessageWatcher;
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use storage::DATABASE;
@@ -77,13 +76,16 @@ impl Node {
 
         let art_service = ARTService::new();
         let messenger_service = MessengerService::new(subscription_sender);
-        let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
+        let centrifugo_service = CentrifugoService::new(
+            self.config.centrifugo.hmac_secret.clone(),
+            self.config.centrifugo.ttl,
+        );
         let invitation_service = InvitationService::new();
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),
             art_service: Arc::new(art_service),
-            auth_service: Arc::new(auth_service),
+            centrifugo_service: Arc::new(centrifugo_service),
             invitation_service: Arc::new(invitation_service),
         });
 

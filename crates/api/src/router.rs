@@ -26,12 +26,9 @@ async fn get_health_handler() -> &'static str {
     modifiers(&SecurityAddon),
     info(title = env!("CARGO_PKG_NAME"),),
     components(schemas(
-        domains::auth::transport::http::AuthRequest,
-        domains::auth::transport::http::AuthResponse,
-    )),
-    security(
-        ("bearer_auth" = [])
-    ),
+        domains::centrifugo::transport::http::AuthRequest,
+        domains::centrifugo::transport::http::AuthResponse,
+    ))
 )]
 struct PublicApiDoc;
 
@@ -51,10 +48,10 @@ impl Modify for SecurityAddon {
     }
 }
 
-pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
+pub fn build_router() -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        .routes(routes!(domains::auth::transport::http::authenticate))
+        .routes(routes!(domains::centrifugo::transport::http::authenticate))
         // TODO: add auth middleware to SSE
         .routes(routes!(
             domains::messenger::transport::sse::subscribe_for_messages
