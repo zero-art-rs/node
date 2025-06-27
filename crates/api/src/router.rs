@@ -49,11 +49,9 @@ impl Modify for SecurityAddon {
 }
 
 pub fn build_router() -> Router<Arc<Container>> {
-    let public_routes = OpenApiRouter::new()
+    let routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        .routes(routes!(domains::centrifugo::transport::http::authenticate));
-
-    let protected_routes = OpenApiRouter::new()
+        .routes(routes!(domains::centrifugo::transport::http::authenticate))
         .routes(routes!(domains::messenger::transport::http::send_message))
         .routes(routes!(domains::messenger::transport::http::list_messages))
         .routes(routes!(
@@ -90,10 +88,8 @@ pub fn build_router() -> Router<Arc<Container>> {
             domains::auth::transport::http::jwt_middleware,
         ));
 
-    let shared_routes = public_routes.merge(protected_routes);
-
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
-        .merge(shared_routes.clone())
+        .merge(routes)
         .split_for_parts();
     let public_swagger = SwaggerUi::new("/swagger").url("/spec.json", public_api.clone());
     router.merge(public_swagger)
