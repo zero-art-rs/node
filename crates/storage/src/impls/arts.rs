@@ -1,26 +1,21 @@
-use ark_ec::{CurveGroup, PrimeGroup};
-use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_std::{One, UniformRand, Zero};
 use art::art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
 use log::info;
-use mongodb::error::Error;
 use mongodb::{
     bson::{doc, Document},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Cursor, Database, IndexModel,
+    error::Error,
+    options::IndexOptions,
+    Collection, Cursor, IndexModel,
 };
-use rand::Rng;
 use uuid::Uuid;
-use zk::curve::cortado::{CortadoProjective as ARTG, CortadoProjective, Fr as ScalarField};
+use zk::curve::cortado::CortadoProjective as ARTG;
 
 use crate::{ARTStorage, DATABASE};
-use art::art_user_agent::ARTUserAgent;
-use types::{ARTChangesRecord, ARTRecord};
+use types::ARTRecord;
 
 pub struct MongoARTStorage {
     arts_collection: Collection<ARTRecord<ARTG>>,
-    chat_id: Uuid,
+    _chat_id: Uuid,
 }
 
 impl MongoARTStorage {
@@ -38,15 +33,13 @@ impl MongoARTStorage {
 
         Ok(Self {
             arts_collection,
-            chat_id: chat_id.clone(),
+            _chat_id: *chat_id,
         })
     }
 }
 
 impl MongoARTStorage {
-    pub async fn get_recent_art_record(
-        &self,
-    ) -> Result<Cursor<ARTRecord<CortadoProjective>>, Error> {
+    pub async fn get_recent_art_record(&self) -> Result<Cursor<ARTRecord<ARTG>>, Error> {
         let cursor = self
             .arts_collection
             .find(doc! {})

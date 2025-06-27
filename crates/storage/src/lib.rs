@@ -1,10 +1,4 @@
-use async_trait::async_trait;
-use mongodb::{
-    bson::{doc, Document},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Database, IndexModel,
-};
-use serde::Serialize;
+use mongodb::Database;
 use std::sync::OnceLock;
 
 mod impls;

@@ -1,22 +1,19 @@
 use futures_util::TryStreamExt;
 use log::info;
-use mongodb::bson::from_document;
-use mongodb::bson::oid::ObjectId;
-use mongodb::error::Error;
 use mongodb::{
-    bson::{doc, Binary, DateTime, Document},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Cursor, Database, IndexModel,
+    bson::{doc, Document},
+    error::Error,
+    options::IndexOptions,
+    Collection, IndexModel,
 };
-use serde::Serialize;
-use types::{CursorRecord, Message};
+use types::CursorRecord;
 use uuid::Uuid;
 
 use crate::{CursorStorage, DATABASE};
 
 pub struct MongoCursorStorage {
     cursors_collection: Collection<CursorRecord>,
-    chat_id: Uuid,
+    _chat_id: Uuid,
 }
 
 impl MongoCursorStorage {
@@ -33,7 +30,7 @@ impl MongoCursorStorage {
 
         Ok(Self {
             cursors_collection,
-            chat_id: chat_id.clone(),
+            _chat_id: *chat_id,
         })
     }
 }

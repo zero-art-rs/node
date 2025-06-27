@@ -1,9 +1,8 @@
-use mongodb::bson::{doc, from_document, DateTime, Document, Uuid};
-use types::ARTRecord;
+use mongodb::bson::Document;
 
-use art::art::{BranchChanges, ART};
+use art::art::BranchChanges;
 use types::ARTChangesRecord;
-use zk::curve::cortado::{CortadoProjective as ARTG, Fr as ScalarField};
+use zk::curve::cortado::CortadoProjective as ARTG;
 
 /// Storage for art full states
 #[async_trait::async_trait]

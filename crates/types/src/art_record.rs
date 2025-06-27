@@ -1,7 +1,6 @@
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::art::{ART, BranchChanges};
-use art::helper_tools::{ark_de, ark_se};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

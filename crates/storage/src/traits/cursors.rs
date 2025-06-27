@@ -1,5 +1,5 @@
-use mongodb::bson::{doc, from_document, DateTime, Document, Uuid};
-use types::{CursorRecord, Message};
+use mongodb::bson::Document;
+use types::CursorRecord;
 
 #[async_trait::async_trait]
 pub trait CursorStorage: Send + Sync {

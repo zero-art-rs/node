@@ -71,7 +71,7 @@ impl MessengerService {
     ) -> Result<(), MessengerError> {
         self.create_messages_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .store_message(message, sender)
             .await?;
         Ok(())
@@ -87,7 +87,7 @@ impl MessengerService {
         let message_record = self
             .create_messages_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .list_messages(filter, limit, skip)
             .await?;
         Ok(message_record)
@@ -103,7 +103,7 @@ impl MessengerService {
         let record = self
             .create_cursors_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .list_cursors(filter, limit, skip)
             .await?;
         Ok(record)
@@ -117,7 +117,7 @@ impl MessengerService {
         let record = self
             .create_arts_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .get_art(sequence_number)
             .await?;
 
@@ -128,7 +128,7 @@ impl MessengerService {
         let record = self
             .create_arts_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .find_latest_art()
             .await?;
 
@@ -145,7 +145,7 @@ impl MessengerService {
         let record = self
             .create_art_changes_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .list_changes(filter, limit, skip)
             .await?;
         Ok(record)
@@ -159,7 +159,7 @@ impl MessengerService {
         let result = self
             .create_messages_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .delete_messages(filter)
             .await?;
         Ok(result)
@@ -173,7 +173,7 @@ impl MessengerService {
         let result = self
             .create_cursors_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .delete_cursors(filter)
             .await?;
         Ok(result)
@@ -181,14 +181,14 @@ impl MessengerService {
 
     pub async fn mark_as_read(
         &self,
-        user_id: &String,
+        user_id: &str,
         sequence_number: i64,
         chat_id: &Uuid,
     ) -> Result<Option<CursorRecord>, MessengerError> {
         let result = self
             .create_cursors_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .update_user_cursor(user_id, sequence_number)
             .await?;
 

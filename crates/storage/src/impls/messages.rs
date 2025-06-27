@@ -23,7 +23,7 @@ impl MongoMessageStorage {
         let messages_collection = db.collection(&messages_collection_name);
 
         let messages_outbox_collection_name = "messages_outbox";
-        let messages_outbox_collection = db.collection(&messages_outbox_collection_name);
+        let messages_outbox_collection = db.collection(messages_outbox_collection_name);
 
         let messages_index_model = IndexModel::builder()
             .keys(doc! { "sequence_number": -1})
@@ -36,7 +36,7 @@ impl MongoMessageStorage {
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
-            chat_id: chat_id.clone(),
+            chat_id: *chat_id,
         })
     }
 }

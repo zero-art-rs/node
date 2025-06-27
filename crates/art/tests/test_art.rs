@@ -85,8 +85,8 @@ mod tests {
         let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
 
         let mut users_agents = Vec::new();
-        for i in 0..number_of_users {
-            users_agents.push(ARTUserAgent::new(tree.clone(), secrets[i]));
+        for secret in secrets {
+            users_agents.push(ARTUserAgent::new(tree.clone(), secret));
         }
 
         for user_agent in &users_agents {
@@ -133,8 +133,8 @@ mod tests {
         let (mut tree, root_key) = ART::new_art_from_secrets(&secrets, &ART_G::generator());
 
         let mut users_agents = Vec::new();
-        for i in 0..number_of_users {
-            users_agents.push(ARTUserAgent::new(tree.clone(), secrets[i]));
+        for secret in secrets {
+            users_agents.push(ARTUserAgent::new(tree.clone(), secret));
         }
 
         for user_agent in &users_agents {
@@ -157,10 +157,9 @@ mod tests {
                 _ = user_agent.update_branch(&changes);
 
                 assert_eq!(user_agent.root_key.key, main_user_agent.root_key.key);
-                assert_eq!(
-                    user_agent.tree.get_root().weight,
-                    (number_of_users - 1 - i) as usize
-                );
+                assert_eq!(user_agent.tree.get_root().weight, {
+                    number_of_users - 1 - i
+                });
             }
         }
 
