@@ -5,8 +5,7 @@ use std::sync::Arc;
 use storage::{
     CursorStorage, DataStorage, MessageStorage, MongoCursorStorage, MongoMessageStorage,
 };
-use tokio::sync::mpsc;
-use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message, Subscription};
+use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message};
 use uuid::Uuid;
 use zk::curve::cortado::CortadoProjective as ARTG;
 
@@ -24,44 +23,15 @@ impl From<storage::Error> for MessengerError {
     }
 }
 
-pub struct MessengerService {
-    subscription_sender: mpsc::Sender<Subscription>,
-}
+pub struct MessengerService {}
 
 impl MessengerService {
-    pub fn new(subscription_sender: mpsc::Sender<Subscription>) -> Self {
-        Self {
-            subscription_sender,
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
 impl MessengerService {
-    pub async fn subscribe_for_messages(
-        &self,
-        chat_id: &Uuid,
-    ) -> Result<mpsc::Receiver<Message>, MessengerError> {
-        let storage = self.create_messages_storage(chat_id).await?;
-        let change_stream = storage.stream_messages().await?;
-
-        let (tx, rx) = mpsc::channel(100);
-
-        self.subscription_sender
-            .send(Subscription {
-                chat_id: chat_id.to_string(),
-                change_stream,
-                sender: tx,
-            })
-            .await
-            .map_err(|_| {
-                MessengerError::StorageError(mongodb::error::Error::custom(
-                    "Failed to send subscription to MessageWatcher".to_string(),
-                ))
-            })?;
-
-        Ok(rx)
-    }
-
     pub async fn send_message(
         &self,
         message: String,

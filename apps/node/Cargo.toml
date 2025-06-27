@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 api = { path = "../../crates/api" }
 storage = { path = "../../crates/storage" }
-message-watcher = { path = "../../crates/message-watcher" }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }

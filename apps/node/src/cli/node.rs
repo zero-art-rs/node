@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use crate::config::NodeConfig;
 use api::{CentrifugoService, Container, MessengerService};
-use message_watcher::MessageWatcher;
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use storage::DATABASE;
 use tokio::select;
@@ -73,9 +72,9 @@ impl Node {
         let message_watcher = MessageWatcher::new(subscription_receiver);
         self.task_tracker
             .spawn(message_watcher.run(self.cancelation.clone()));
-
+        
         let art_service = ARTService::new();
-        let messenger_service = MessengerService::new(subscription_sender);
+        let messenger_service = MessengerService::new();
         let centrifugo_service = CentrifugoService::new(
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
