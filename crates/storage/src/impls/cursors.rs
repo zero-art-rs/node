@@ -4,12 +4,13 @@ use mongodb::bson::from_document;
 use mongodb::bson::oid::ObjectId;
 use mongodb::error::Error;
 use mongodb::{
-    bson::{doc, Binary, DateTime, Document, Uuid},
+    bson::{doc, Binary, DateTime, Document},
     options::{ClientOptions, IndexOptions},
     Client, Collection, Cursor, Database, IndexModel,
 };
 use serde::Serialize;
 use types::{CursorRecord, Message};
+use uuid::Uuid;
 
 use crate::{CursorStorage, DATABASE};
 

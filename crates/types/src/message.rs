@@ -5,6 +5,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct Subscription {
@@ -23,15 +24,23 @@ pub struct Message {
     pub sequence_number: i64,
     /// Public key of the message sender
     pub sender_public_key: String,
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Option<Uuid>,
 }
 
 impl Message {
-    pub fn new(content: Vec<u8>, sequence_number: i64, sender_public_key: String) -> Self {
+    pub fn new(
+        content: Vec<u8>,
+        sequence_number: i64,
+        sender_public_key: String,
+        chat_id: Option<Uuid>,
+    ) -> Self {
         Self {
             content,
             created_at: DateTime::now(),
             sequence_number,
             sender_public_key,
+            chat_id,
         }
     }
 }

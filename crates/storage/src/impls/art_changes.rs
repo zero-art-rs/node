@@ -5,10 +5,11 @@ use art::art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
 use mongodb::error::Error;
 use mongodb::{
-    bson::{doc, Binary, DateTime, Document, Uuid},
+    bson::{doc, Document},
     options::{ClientOptions, IndexOptions},
     Client, Collection, Cursor, Database, IndexModel,
 };
+use uuid::Uuid;
 use zk::curve::cortado::{CortadoProjective as ARTG, CortadoProjective, Fr as ScalarField};
 
 use crate::{ARTChangesStorage, DATABASE};

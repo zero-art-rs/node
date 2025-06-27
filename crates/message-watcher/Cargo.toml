@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 types = { path = "../types" }
 tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
 eyre = { workspace = true }
 mongodb = { workspace = true }
 tracing = { workspace = true }

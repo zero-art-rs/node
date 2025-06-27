@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{Router, middleware, routing::get};
+use axum::{Router, middleware};
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;

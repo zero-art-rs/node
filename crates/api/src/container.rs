@@ -1,7 +1,4 @@
-use mongodb::bson::Uuid;
 use std::sync::Arc;
-
-use storage::MongoMessageStorage;
 
 use crate::domains::{auth::service::AuthService, messenger::service::MessengerService};
 

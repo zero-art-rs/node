@@ -6,6 +6,7 @@ use mongodb::change_stream::{
     event::{ChangeStreamEvent, OperationType},
 };
 use tokio::{sync::mpsc, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 use types::{Message, Subscription};
 
@@ -36,7 +37,7 @@ impl MessageWatcher {
         }
     }
 
-    pub async fn run(mut self) {
+    pub async fn run(mut self, cancellation: CancellationToken) {
         loop {
             tokio::select! {
                 subscription_opt = self.subscription_receiver.recv() => {
@@ -76,6 +77,10 @@ impl MessageWatcher {
                     if let Err(e) = self.broadcast_message(chat_id, message).await {
                         error!("Error broadcasting message: {}", e);
                     }
+                }
+                _ = cancellation.cancelled() => {
+                    info!("Cancellation received");
+                    break;
                 }
             }
         }

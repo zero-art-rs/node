@@ -1,22 +1,15 @@
-use crate::Container;
 use art::art::{ART, BranchChanges};
-use chrono::Utc;
-use message_watcher::MessageWatcher;
 use mongodb::bson;
-use mongodb::bson::Uuid;
-use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
-use mongodb::change_stream::ChangeStream;
-use mongodb::change_stream::event::ChangeStreamEvent;
-use serde::{Deserialize, Serialize};
+use mongodb::bson::Document;
 use std::sync::Arc;
 use storage::{
     ARTChangesStorage, ARTStorage, CursorStorage, MessageStorage, MongoARTChangesStorage,
     MongoARTStorage, MongoCursorStorage, MongoMessageStorage,
 };
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
 use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message, Subscription};
-use zk::curve::cortado::{CortadoProjective as ARTG, Fr as ScalarField};
+use uuid::Uuid;
+use zk::curve::cortado::CortadoProjective as ARTG;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessengerError {

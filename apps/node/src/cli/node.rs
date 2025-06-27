@@ -3,21 +3,13 @@ use std::time::Duration;
 
 use crate::config::NodeConfig;
 use api::{AuthService, Container, MessengerService};
-use eyre::Ok;
 use message_watcher::MessageWatcher;
-use mongodb::{
-    Client, Collection, IndexModel, bson,
-    bson::spec::BinarySubtype,
-    bson::{Binary, DateTime, Document, doc},
-    options::{ClientOptions, IndexOptions},
-};
-use storage::{DATABASE, MongoConfig, MongoMessageStorage};
+use mongodb::{Client, bson::doc, options::ClientOptions};
+use storage::DATABASE;
 use tokio::select;
 use tokio::time::sleep;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::info;
-
-use mongodb::bson::Uuid;
 
 /// The limit of time to wait for the node to shutdown.
 const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
@@ -79,7 +71,8 @@ impl Node {
         let (subscription_sender, subscription_receiver) = tokio::sync::mpsc::channel(100);
 
         let message_watcher = MessageWatcher::new(subscription_receiver);
-        self.task_tracker.spawn(message_watcher.run());
+        self.task_tracker
+            .spawn(message_watcher.run(self.cancelation.clone()));
 
         let messenger_service = MessengerService::new(subscription_sender);
         let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
@@ -89,7 +82,11 @@ impl Node {
             auth_service: Arc::new(auth_service),
         });
 
-        self.task_tracker.spawn(api::run_server(address, container));
+        self.task_tracker.spawn(api::run_server(
+            address,
+            container,
+            self.cancelation.clone(),
+        ));
 
         Ok(())
     }
