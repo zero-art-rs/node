@@ -1,7 +1,7 @@
 use ark_ec::CurveGroup;
 use axum::Json;
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use chrono;
 use mongodb::bson::{Binary, spec::BinarySubtype};
@@ -15,9 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::{
-    container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError,
-};
+use crate::{container::Container, errors::ApiError};
 use art::art::{ART, BranchChanges};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
@@ -48,11 +46,9 @@ pub struct SendMessageRequest {
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn send_message(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<StatusCode, ApiError> {
     // Validate the request payload.
@@ -108,12 +104,10 @@ pub struct GetMessageQuery {
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn list_messages(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
-    Query(mut payload): Query<GetMessageQuery>,
+    Query(payload): Query<GetMessageQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
         .validate()
@@ -201,11 +195,9 @@ pub struct DeleteMessageQuery {
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn delete_messages(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Query(payload): Query<DeleteMessageQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
@@ -235,7 +227,7 @@ pub async fn delete_messages(
         _ = filter.insert("sequence_number", sequence_number);
     }
 
-    let mut removed_messages = state
+    let removed_messages = state
         .messenger_service
         .delete_messages(&payload.chat_id, filter.clone())
         .await
@@ -288,11 +280,9 @@ pub struct MarkAsRead {
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn mark_as_read(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Query(payload): Query<MarkAsRead>,
 ) -> Result<impl IntoResponse, ApiError> {
     // Validate the request payload.
@@ -354,12 +344,10 @@ pub struct GetCursorsQuery {
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn list_cursors(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
-    Query(mut payload): Query<GetCursorsQuery>,
+    Query(payload): Query<GetCursorsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
         .validate()
@@ -431,11 +419,9 @@ pub struct DeleteCursorsQuery {
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn delete_cursors(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Query(payload): Query<DeleteCursorsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
@@ -452,7 +438,7 @@ pub async fn delete_cursors(
         _ = filter.insert("cursor", cursor);
     }
 
-    let mut removed_cursors = state
+    let removed_cursors = state
         .messenger_service
         .delete_cursors(&payload.chat_id, filter.clone())
         .await
@@ -494,11 +480,9 @@ pub struct InitChatRequest {
     security(("bearer_auth" = [])),
     tag = "Chat operations"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn init_chat(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Json(payload): Json<InitChatRequest>,
 ) -> Result<StatusCode, ApiError> {
     payload
@@ -540,11 +524,9 @@ pub struct GetARTQuery {
     security(("bearer_auth" = [])),
     tag = "Chat operations"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Query(payload): Query<GetARTQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
@@ -607,11 +589,9 @@ pub struct GetARTChangeQuery {
     security(("bearer_auth" = [])),
     tag = "Chat operations"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn list_changes(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Query(payload): Query<GetARTChangeQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
@@ -658,11 +638,9 @@ pub struct UpdateARTQuery {
     security(("bearer_auth" = [])),
     tag = "Chat operations"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state), err)]
 pub async fn update_art(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
     Query(payload): Query<UpdateARTQuery>,
 ) -> Result<StatusCode, ApiError> {
     payload

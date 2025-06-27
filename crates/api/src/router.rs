@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{Router, middleware};
+use axum::Router;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -23,16 +23,16 @@ async fn get_health_handler() -> &'static str {
 #[openapi(
     info(title = env!("CARGO_PKG_NAME"),),
     components(schemas(
-        domains::auth::transport::http::AuthRequest,
-        domains::auth::transport::http::AuthResponse,
+        domains::centrifugo::transport::http::AuthRequest,
+        domains::centrifugo::transport::http::AuthResponse,
     ))
 )]
 struct PublicApiDoc;
 
-pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
+pub fn build_router() -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        .routes(routes!(domains::auth::transport::http::authenticate))
+        .routes(routes!(domains::centrifugo::transport::http::authenticate))
         // TODO: add auth middleware to SSE
         .routes(routes!(
             domains::messenger::transport::sse::subscribe_for_messages
@@ -50,11 +50,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes!(domains::messenger::transport::http::init_chat))
         .routes(routes!(domains::messenger::transport::http::get_art))
         .routes(routes!(domains::messenger::transport::http::list_changes))
-        .routes(routes!(domains::messenger::transport::http::update_art))
-        .layer(middleware::from_fn_with_state(
-            container,
-            domains::auth::transport::http::jwt_middleware,
-        ));
+        .routes(routes!(domains::messenger::transport::http::update_art));
 
     let shared_routes = public_routes.merge(protected_routes);
 

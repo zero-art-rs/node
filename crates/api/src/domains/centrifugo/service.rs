@@ -5,24 +5,25 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, deco
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::errors::ApiError;
+use crate::{domains::centrifugo::transport::http::AuthRequest, errors::ApiError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub public_key: String,
+    pub sub: String,
+    pub channels: Vec<String>,
     pub exp: i64,
     pub iat: i64,
     pub jti: String,
 }
 
 #[derive(Clone)]
-pub struct AuthService {
+pub struct CentrifugoService {
     jwt_secret: String,
     token_ttl: Duration,
     // Add db in the future
 }
 
-impl AuthService {
+impl CentrifugoService {
     pub fn new(jwt_secret: String, token_ttl: Duration) -> Self {
         Self {
             jwt_secret,
@@ -34,12 +35,13 @@ impl AuthService {
         self.token_ttl
     }
 
-    pub async fn generate_token(&self, public_key: String) -> Result<String, ApiError> {
+    pub async fn generate_token(&self, request: &AuthRequest) -> Result<String, ApiError> {
         let now = Utc::now();
         let expiration = now + self.token_ttl;
 
         let claims = Claims {
-            public_key,
+            sub: hex::encode(request.public_key.clone()),
+            channels: request.channels.clone(),
             exp: expiration.timestamp(),
             iat: now.timestamp(),
             jti: Uuid::new_v4().to_string(),
@@ -60,9 +62,5 @@ impl AuthService {
         decode::<Claims>(token, &decoding_key, &validation)
             .map(|token_data| token_data.claims)
             .map_err(|e| ApiError::Unauthorized(format!("Invalid token: {}", e)))
-    }
-
-    pub async fn authenticate_public_key(&self, public_key: &str) -> Result<bool, ApiError> {
-        Ok(!public_key.is_empty())
     }
 }

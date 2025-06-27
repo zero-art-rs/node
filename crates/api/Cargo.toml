@@ -34,3 +34,4 @@ rand = { workspace = true, features = ["thread_rng"] }
 log = "0.4.27"
 tokio-stream = { workspace = true }
 futures-util = { workspace = true }
+hex = { workspace = true }

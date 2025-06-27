@@ -1,2 +1,2 @@
-pub(crate) mod auth;
+pub(crate) mod centrifugo;
 pub(crate) mod messenger;

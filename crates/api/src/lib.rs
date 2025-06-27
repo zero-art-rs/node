@@ -12,7 +12,7 @@ mod errors;
 mod router;
 
 pub use container::Container;
-pub use domains::auth::service::AuthService;
+pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
 
 pub async fn run_server(
@@ -25,7 +25,7 @@ pub async fn run_server(
 
     axum::serve(
         listener,
-        build_router(container.clone())
+        build_router()
             .layer(CorsLayer::permissive())
             .layer(
             TraceLayer::new_for_http()
