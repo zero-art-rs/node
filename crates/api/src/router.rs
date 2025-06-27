@@ -32,11 +32,7 @@ struct PublicApiDoc;
 pub fn build_router() -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
-        .routes(routes!(domains::centrifugo::transport::http::authenticate))
-        // TODO: add auth middleware to SSE
-        .routes(routes!(
-            domains::messenger::transport::sse::subscribe_for_messages
-        ));
+        .routes(routes!(domains::centrifugo::transport::http::authenticate));
 
     let protected_routes = OpenApiRouter::new()
         .routes(routes!(domains::messenger::transport::http::send_message))

@@ -131,7 +131,6 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "log",
- "message-watcher",
  "mongodb",
  "rand 0.9.1",
  "serde",
@@ -1909,20 +1908,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-watcher"
-version = "0.1.0"
-dependencies = [
- "eyre",
- "futures-util",
- "hex",
- "mongodb",
- "tokio",
- "tokio-util",
- "tracing",
- "types",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2028,7 +2013,6 @@ dependencies = [
  "clap",
  "config",
  "eyre",
- "message-watcher",
  "mongodb",
  "serde",
  "storage",

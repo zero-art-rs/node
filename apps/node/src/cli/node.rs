@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use crate::config::NodeConfig;
 use api::{CentrifugoService, Container, MessengerService};
-use message_watcher::MessageWatcher;
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use storage::DATABASE;
 use tokio::select;
@@ -68,13 +67,7 @@ impl Node {
     async fn spawn_api(&self) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
 
-        let (subscription_sender, subscription_receiver) = tokio::sync::mpsc::channel(100);
-
-        let message_watcher = MessageWatcher::new(subscription_receiver);
-        self.task_tracker
-            .spawn(message_watcher.run(self.cancelation.clone()));
-
-        let messenger_service = MessengerService::new(subscription_sender);
+        let messenger_service = MessengerService::new();
         let centrifugo_service = CentrifugoService::new(
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
