@@ -3,17 +3,19 @@ use async_trait::async_trait;
 use futures_util::TryStreamExt;
 use mongodb::error::Error;
 use mongodb::{
-    bson::{doc, Document, Uuid},
+    bson::{doc, Document},
     change_stream::{event::ChangeStreamEvent, ChangeStream},
     options::IndexOptions,
     Collection, IndexModel,
 };
 use std::io::Read;
 use types::Message;
+use uuid::Uuid;
 
 pub struct MongoMessageStorage {
     messages_collection: Collection<Message>,
-    _chat_id: Uuid,
+    messages_outbox_collection: Collection<Message>,
+    chat_id: Uuid,
 }
 
 impl MongoMessageStorage {
@@ -22,6 +24,9 @@ impl MongoMessageStorage {
 
         let messages_collection_name = format!("chat/{}", chat_id);
         let messages_collection = db.collection(&messages_collection_name);
+
+        let messages_outbox_collection_name = "messages_outbox";
+        let messages_outbox_collection = db.collection(&messages_outbox_collection_name);
 
         let messages_index_model = IndexModel::builder()
             .keys(doc! { "sequence_number": -1})
@@ -33,7 +38,8 @@ impl MongoMessageStorage {
 
         Ok(Self {
             messages_collection,
-            _chat_id: chat_id.clone(),
+            messages_outbox_collection,
+            chat_id: chat_id.clone(),
         })
     }
 }
@@ -66,9 +72,18 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number = result.sequence_number + 1;
         }
 
-        message_collection
-            .insert_one(Message::new(content, next_sequence_number, sender))
-            .await?;
+        let mut message = Message::new(content.into_bytes(), next_sequence_number, sender, None);
+        let mut session = self.messages_collection.client().start_session().await?;
+        session.start_transaction().await?;
+
+        message_collection.insert_one(message.clone()).await?;
+
+        message.chat_id = Some(self.chat_id);
+
+        self.messages_outbox_collection.insert_one(message).await?;
+
+        session.commit_transaction().await?;
+
         Ok(())
     }
 }

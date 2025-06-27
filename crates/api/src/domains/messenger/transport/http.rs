@@ -1,28 +1,18 @@
-use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::rand::{SeedableRng, rngs::StdRng};
-use ark_std::{One, UniformRand, Zero};
-use axum::extract::{Path, Query};
-use axum::response::Response;
-use axum::{
-    Json,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-};
+use ark_ec::CurveGroup;
+use axum::Json;
+use axum::extract::{Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::IntoResponse;
 use chrono;
-use mongodb::action::StartTransaction;
-use mongodb::bson;
-use mongodb::bson::oid::ObjectId;
-use mongodb::bson::{Binary, Uuid, doc, spec::BinarySubtype};
-use mongodb::bson::{DateTime, Document};
-use rand::Rng;
+use mongodb::bson::{Binary, spec::BinarySubtype};
+use mongodb::bson::{DateTime, doc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, info, instrument};
-use types::Message;
+use tracing::{info, instrument};
+use zk::curve::cortado::CortadoProjective as ARTG;
+
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::{

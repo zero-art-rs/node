@@ -1,5 +1,6 @@
 use axum::{extract::MatchedPath, http::Request, response::Response};
 use std::{sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tower_http::{classify::ServerErrorsFailureClass, cors::CorsLayer, trace::TraceLayer};
 use tracing::{Span, info, info_span};
 
@@ -16,7 +17,11 @@ pub use domains::auth::service::AuthService;
 pub use domains::invitations::service::InvitationService;
 pub use domains::messenger::service::MessengerService;
 
-pub async fn run_server(address: String, container: Arc<Container>) -> eyre::Result<()> {
+pub async fn run_server(
+    address: String,
+    container: Arc<Container>,
+    cancellation: CancellationToken,
+) -> eyre::Result<()> {
     info!("Starting API server on {}", address);
     let listener = tokio::net::TcpListener::bind(address).await?;
 
@@ -51,8 +56,7 @@ pub async fn run_server(address: String, container: Arc<Container>) -> eyre::Res
                 ),
             )
             .with_state(container),
-    )
-    .await?;
+    ).with_graceful_shutdown(cancellation.cancelled_owned()).await?;
 
     Ok(())
 }

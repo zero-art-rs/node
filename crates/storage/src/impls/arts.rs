@@ -7,7 +7,7 @@ use futures_util::TryStreamExt;
 use log::info;
 use mongodb::error::Error;
 use mongodb::{
-    bson::{doc, Binary, DateTime, Document, Uuid},
+    bson::{doc, Document},
     options::{ClientOptions, IndexOptions},
     Client, Collection, Cursor, Database, IndexModel,
 };

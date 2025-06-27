@@ -2048,6 +2048,7 @@ dependencies = [
  "hex",
  "mongodb",
  "tokio",
+ "tokio-util",
  "tracing",
  "types",
 ]
@@ -3222,6 +3223,7 @@ dependencies = [
  "serde",
  "tokio",
  "types",
+ "uuid",
  "zk",
 ]
 
@@ -3710,6 +3712,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]

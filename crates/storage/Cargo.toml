@@ -15,4 +15,5 @@ ark-ec = {workspace = true}
 art = {workspace = true}
 zk = {workspace = true}
 ark-std = { workspace = true }
-rand = { workspace = true, features = ["thread_rng"]}
+rand = { workspace = true, features = ["thread_rng"] }
+uuid = { workspace = true }
