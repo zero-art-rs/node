@@ -138,14 +138,14 @@ impl MessengerService {
 
     pub async fn mark_as_read(
         &self,
-        user_id: &String,
+        user_id: &str,
         sequence_number: i64,
         chat_id: &Uuid,
     ) -> Result<Option<CursorRecord>, MessengerError> {
         let result = self
             .create_cursors_storage(chat_id)
             .await
-            .map_err(|e| MessengerError::StorageError(e))?
+            .map_err(MessengerError::StorageError)?
             .update_user_cursor(user_id, sequence_number)
             .await?;
 

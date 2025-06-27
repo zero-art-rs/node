@@ -3,20 +3,20 @@ use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_std::{One, UniformRand, Zero};
 use art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
-use mongodb::error::Error;
 use mongodb::{
     bson::{doc, Document},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Cursor, Database, IndexModel,
+    error::Error,
+    options::IndexOptions,
+    Collection, Cursor, IndexModel,
 };
 use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
 
 use crate::{ARTChangesStorage, DATABASE};
-use types::{ARTChangesRecord, ARTRecord};
+use types::ARTChangesRecord;
 
 pub struct MongoARTChangesStorage {
     art_changes_collection: Collection<ARTChangesRecord<ARTG>>,
-    chat_id: Uuid,
+    _chat_id: Uuid,
 }
 
 impl MongoARTChangesStorage {
@@ -36,19 +36,18 @@ impl MongoARTChangesStorage {
 
         Ok(Self {
             art_changes_collection,
-            chat_id: chat_id.clone(),
+            _chat_id: *chat_id,
         })
     }
 }
 
 impl MongoARTChangesStorage {
     async fn get_recent_record(&self) -> Result<Cursor<ARTChangesRecord<ARTG>>, Error> {
-        Ok(self
-            .art_changes_collection
+        self.art_changes_collection
             .find(doc! {})
             .sort(doc! { "sequence_number": -1 })
             .limit(1)
-            .await?)
+            .await
     }
 }
 
@@ -56,7 +55,7 @@ impl MongoARTChangesStorage {
 impl ARTChangesStorage for MongoARTChangesStorage {
     async fn store_change(&self, change: BranchChanges<ARTG>) -> Result<(), Error> {
         let sequence_number = match self.get_recent_record().await?.try_next().await? {
-            Some(mut recent_record) => recent_record.sequence_number + 1,
+            Some(recent_record) => recent_record.sequence_number + 1,
             None => 0,
         };
 

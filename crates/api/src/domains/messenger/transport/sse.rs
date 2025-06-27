@@ -4,13 +4,13 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::Stream;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::error;
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 use crate::Container;
 
@@ -43,16 +43,13 @@ pub async fn subscribe_for_messages(
         .subscribe_for_messages(&payload.chat_id)
         .await
     {
-        Ok(rx) => {
-            let stream = ReceiverStream::new(rx).map(|message| {
-                Ok(Event::default().data(
-                    serde_json::to_string(&message).unwrap_or_else(|_| {
-                        format!("{{\"error\": \"Failed to serialize message\"}}")
-                    }),
-                ))
-            });
-            stream
-        }
+        Ok(rx) => ReceiverStream::new(rx).map(|message| {
+            Ok(Event::default().data(
+                serde_json::to_string(&message).unwrap_or_else(|_| {
+                    "{{\"error\": \"Failed to serialize message\"}}".to_string()
+                }),
+            ))
+        }),
         Err(e) => {
             error!("Failed to subscribe to messages: {}", e);
             return Err((

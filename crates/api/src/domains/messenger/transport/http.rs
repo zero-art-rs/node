@@ -3,7 +3,6 @@ use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use chrono;
 use mongodb::bson::{Binary, spec::BinarySubtype};
 use mongodb::bson::{DateTime, doc};
 use serde::{Deserialize, Serialize};
@@ -299,14 +298,13 @@ pub async fn mark_as_read(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    let response;
-    match result {
+    let response = match result {
         Some(result) => {
             info!("Successfully read. The previous cursor was: {}", result);
-            response = (StatusCode::OK, Json(Some(result)));
+            (StatusCode::OK, Json(Some(result)))
         }
-        None => response = (StatusCode::NO_CONTENT, Json(None)),
-    }
+        None => (StatusCode::NO_CONTENT, Json(None)),
+    };
 
     Ok(response)
 }

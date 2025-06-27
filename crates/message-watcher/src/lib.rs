@@ -55,7 +55,7 @@ impl MessageWatcher {
                     let receivers = self
                         .message_sender
                         .entry(chat_id.clone())
-                        .or_insert(Vec::new());
+                        .or_default();
                     receivers.push(sender);
 
                     debug!(
@@ -165,17 +165,15 @@ impl MessageWatcher {
         let task = tokio::spawn(async move {
             while let Some(event) = change_stream.next().await {
                 match event {
-                    Ok(event) => match event.operation_type {
-                        OperationType::Insert => {
+                    Ok(event) => {
+                        if event.operation_type == OperationType::Insert {
                             let Some(message) = event.full_document else {
                                 continue;
                             };
 
                             tx.send((chat_id_clone.clone(), message)).await.unwrap();
                         }
-                        // Ignore other events
-                        _ => {}
-                    },
+                    }
                     Err(err) => {
                         error!("Error in change stream: {}", err);
                     }

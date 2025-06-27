@@ -5,11 +5,11 @@ use ark_std::{One, UniformRand, Zero};
 use art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
 use log::info;
-use mongodb::error::Error;
 use mongodb::{
     bson::{doc, Document},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Cursor, Database, IndexModel,
+    error::Error,
+    options::IndexOptions,
+    Collection, Cursor, IndexModel,
 };
 use rand::Rng;
 use types::{ARTChangesRecord, ARTRecord};

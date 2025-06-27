@@ -1,5 +1,4 @@
-use mongodb::bson::{doc, from_document, DateTime, Document, Uuid};
-use types::ARTRecord;
+use mongodb::bson::Document;
 
 use art::{BranchChanges, ART};
 use types::ARTChangesRecord;
