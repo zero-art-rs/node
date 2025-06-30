@@ -43,11 +43,12 @@ impl MongoARTChangesStorage {
 
 impl MongoARTChangesStorage {
     async fn get_recent_record(&self) -> Result<Cursor<ARTChangesRecord<ARTG>>, Error> {
-        self.art_changes_collection
+        Ok(self
+            .art_changes_collection
             .find(doc! {})
             .sort(doc! { "sequence_number": -1 })
             .limit(1)
-            .await
+            .await)
     }
 }
 

@@ -32,22 +32,6 @@ async fn get_health_handler() -> &'static str {
 )]
 struct PublicApiDoc;
 
-pub struct SecurityAddon;
-
-impl Modify for SecurityAddon {
-    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        if let Some(components) = &mut openapi.components {
-            let mut http = Http::new(HttpAuthScheme::Bearer);
-            http.bearer_format = Some("JWT".to_string());
-            http.description = Some("Enter JWT as: Bearer <token>".to_string());
-
-            components
-                .security_schemes
-                .insert("bearer_auth".to_string(), SecurityScheme::Http(http));
-        }
-    }
-}
-
 pub fn build_router() -> Router<Arc<Container>> {
     let routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
@@ -82,10 +66,6 @@ pub fn build_router() -> Router<Arc<Container>> {
         ))
         .routes(routes!(
             domains::invitations::transport::http::delete_invitation
-        ))
-        .layer(middleware::from_fn_with_state(
-            container,
-            domains::auth::transport::http::jwt_middleware,
         ));
 
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())

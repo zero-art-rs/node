@@ -3,8 +3,14 @@ use std::time::Duration;
 
 use crate::config::NodeConfig;
 use api::{CentrifugoService, Container, MessengerService};
-use mongodb::{Client, bson::doc, options::ClientOptions};
-use storage::DATABASE;
+use eyre::Ok;
+use mongodb::{
+    Client, Collection, IndexModel, bson,
+    bson::spec::BinarySubtype,
+    bson::{Binary, DateTime, Document, doc},
+    options::{ClientOptions, IndexOptions},
+};
+use storage::{DATABASE, MongoConfig, MongoMessageStorage};
 use tokio::select;
 use tokio::time::sleep;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};

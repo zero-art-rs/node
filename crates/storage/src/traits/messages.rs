@@ -5,6 +5,8 @@ use serde::Serialize;
 use mongodb::{
     change_stream::{event::ChangeStreamEvent, ChangeStream},
 };
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use types::Message;
 
 #[async_trait::async_trait]

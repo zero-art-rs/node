@@ -1,6 +1,6 @@
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::ART;
+use art::art::{ART, BranchChanges};
 use mongodb::bson::Uuid;
 use serde::{Deserialize, Serialize};
 use std::fmt;
