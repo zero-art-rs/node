@@ -3,9 +3,10 @@ use api::{ARTService, CentrifugoService, Container, InvitationService, Messenger
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use std::sync::Arc;
 use std::time::Duration;
+use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
 use storage::{CLIENT, DATABASE};
-use tokio::select;
 use tokio::time::sleep;
+use tokio::{select, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::info;
 
@@ -57,15 +58,19 @@ impl Node {
             .await?;
         info!("Connected to database {}", database_name);
 
+        let (proof_verifier_tx, proof_verifier_rx) = mpsc::channel(1000);
+
         // create default chat api
-        self.spawn_api().await?;
+        self.spawn_api(proof_verifier_tx).await?;
+
+        self.spawn_proof_verifier(proof_verifier_rx).await?;
 
         self.task_tracker.close();
 
         Ok(())
     }
 
-    async fn spawn_api(&self) -> eyre::Result<()> {
+    async fn spawn_api(&self, proof_verifier_sender: ProofVerifierSender) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
 
         let messenger_service = MessengerService::new();
@@ -81,6 +86,7 @@ impl Node {
             centrifugo_service: Arc::new(centrifugo_service),
             art_service: Arc::new(art_service),
             invitation_service: Arc::new(invitation_service),
+            proof_verifier_sender,
         });
 
         self.task_tracker.spawn(api::run_server(
@@ -88,6 +94,18 @@ impl Node {
             container,
             self.cancelation.clone(),
         ));
+
+        Ok(())
+    }
+
+    async fn spawn_proof_verifier(
+        &self,
+        proof_verifier_receiver: ProofVerifierReceiver,
+    ) -> eyre::Result<()> {
+        let proof_verifier = ProofVerifier::new(proof_verifier_receiver);
+
+        self.task_tracker
+            .spawn(proof_verifier.run(self.cancelation.clone()));
 
         Ok(())
     }

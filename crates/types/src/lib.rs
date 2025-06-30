@@ -1,5 +1,6 @@
 mod art_changes_record;
 mod art_record;
+pub mod callback_wrappers;
 mod cursor_record;
 mod invitation_record;
 mod message;

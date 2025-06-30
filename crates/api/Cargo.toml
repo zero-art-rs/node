@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 storage = { path = "../storage" }
+proof-verifier = { path = "../proof-verifier" }
+callbacks = { path = "../callback" }
 types = { path = "../types" }
 axum = { workspace = true, features = ["macros"] }
 validator = { workspace = true, features = ["derive"] }

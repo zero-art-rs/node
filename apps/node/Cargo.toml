@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 api = { path = "../../crates/api" }
+proof-verifier = { path = "../../crates/proof-verifier" }
+types = { path = "../../crates/types" }
 storage = { path = "../../crates/storage" }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }

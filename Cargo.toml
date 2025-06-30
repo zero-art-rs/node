@@ -2,14 +2,12 @@
 members = [
     "apps/node",
     "crates/api",
-    "crates/processor",
+    "crates/proof-verifier",
     "crates/storage",
     "crates/types",
+    "crates/callback",
 ]
 resolver = "2"
-
-[net]
-git-fetch-with-cli = true
 
 [workspace.dependencies]
 chrono = { version = "0.4.41", default-features = false }
@@ -49,3 +47,17 @@ tokio-stream = { version = "0.1.10" }
 art = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
 cortado = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
 postcard = { version = "1.1.2"  }
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+restriction = "warn"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+missing_docs = "deny"
+
+[workspace.metadata.clippy]
+warn-on-all-levels = true
+deny-warnings = true
