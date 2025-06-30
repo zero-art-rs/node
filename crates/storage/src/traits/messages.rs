@@ -1,21 +1,14 @@
+use crate::DataStorage;
 use mongodb::bson::{doc, from_document, DateTime, Document, Uuid};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use types::Message;
 
 #[async_trait::async_trait]
-pub trait MessageStorage: Send + Sync {
-    async fn store_message(
+pub trait MessageStorage: Send + Sync + DataStorage {
+    async fn store_as_latest(
         &self,
-        message: String,
+        content: Vec<u8>,
         sender: String,
     ) -> Result<(), mongodb::error::Error>;
-    async fn list_messages(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<Message>, mongodb::error::Error>;
-    async fn delete_messages(
-        &self,
-        filter: Document,
-    ) -> Result<Vec<Message>, mongodb::error::Error>;
 }

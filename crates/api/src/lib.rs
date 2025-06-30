@@ -11,7 +11,9 @@ mod errors;
 mod router;
 
 pub use container::Container;
+pub use domains::art::service::ARTService;
 pub use domains::auth::service::AuthService;
+pub use domains::invitations::service::InvitationService;
 pub use domains::messenger::service::MessengerService;
 
 pub async fn run_server(address: String, container: Arc<Container>) -> eyre::Result<()> {

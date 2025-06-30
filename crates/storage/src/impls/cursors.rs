@@ -11,7 +11,7 @@ use mongodb::{
 use serde::Serialize;
 use types::{CursorRecord, Message};
 
-use crate::{CursorStorage, DATABASE};
+use crate::{CursorStorage, DataStorage, DATABASE};
 
 pub struct MongoCursorStorage {
     cursors_collection: Collection<CursorRecord>,
@@ -72,38 +72,13 @@ impl CursorStorage for MongoCursorStorage {
             }
         }
     }
+}
 
-    async fn list_cursors(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<CursorRecord>, mongodb::error::Error> {
-        let mut cursor = self
-            .cursors_collection
-            .find(filter)
-            .skip(skip as u64)
-            .limit(limit)
-            .await?;
+#[async_trait::async_trait]
+impl DataStorage for MongoCursorStorage {
+    type Data = CursorRecord;
 
-        let mut records = Vec::new();
-        while cursor.advance().await? {
-            records.push(cursor.deserialize_current()?);
-        }
-
-        Ok(records)
-    }
-
-    async fn delete_cursors(&self, filter: Document) -> Result<Vec<CursorRecord>, Error> {
-        let mut collection_cursor = self.cursors_collection.find(filter.clone()).await?;
-        let mut cursors = Vec::new();
-
-        while let Some(cursor) = collection_cursor.try_next().await? {
-            cursors.push(cursor);
-        }
-
-        self.cursors_collection.delete_many(filter).await?;
-
-        Ok(cursors)
+    async fn get_collection(&self) -> &'async_trait Collection<Self::Data> {
+        &self.cursors_collection
     }
 }

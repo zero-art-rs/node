@@ -25,11 +25,11 @@ use types::Message;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
-use crate::{container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError};
-use art::art::{BranchChanges, ART};
-use art::art_user_agent::ARTUserAgent;
-use art::helper_tools::{ark_de, ark_se};
-use zk::curve::cortado::{CortadoProjective as ARTG, CortadoProjective, Fr as ScalarField};
+use crate::{
+    container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError,
+};
+use art::{ART, BranchChanges, ark_de, ark_se};
+use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -70,7 +70,6 @@ pub async fn send_message(
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
 
     state
         .messenger_service
@@ -484,210 +483,4 @@ pub async fn delete_cursors(
     let response = (status_code, Json(removed_cursors));
 
     Ok(response)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct InitChatRequest {
-    /// Serialised art structure for new chat
-    #[schema( example = r#"{"root":{"public_key":[93,204,250,239,86,184,225,19,125,201,203,238,144,197,170,153,170,109,111,102,221,244,35,197,34,146,107,80,133,225,225,14,115,37,119,103,215,149,190,117,198,41,73,219,149,186,57,156,21,227,162,136,186,253,134,127,33,135,80,82,37,13,2,143],"l":{"public_key":[163,136,76,181,232,10,167,59,44,1,200,84,84,247,126,197,243,131,169,41,135,0,178,216,144,223,179,188,22,242,36,0,211,222,140,178,157,49,202,100,246,174,122,158,245,208,229,114,94,147,151,183,250,156,150,163,179,110,109,4,33,169,47,137],"l":null,"r":null,"is_temporal":false,"weight":1},"r":{"public_key":[83,85,176,206,106,64,75,186,85,178,13,41,109,63,238,100,32,49,194,89,58,85,147,133,9,198,173,0,22,86,148,8,233,53,14,99,155,164,223,2,19,157,107,220,0,212,197,25,136,253,37,172,73,117,125,45,184,14,253,231,117,82,146,2],"l":null,"r":null,"is_temporal":false,"weight":1},"is_temporal":false,"weight":2},"generator":[22,244,156,151,240,52,186,62,131,201,148,9,140,40,123,188,71,49,218,14,31,201,65,80,246,210,196,99,184,101,78,11,228,198,239,125,93,107,124,64,185,17,37,99,218,201,16,12,183,132,48,197,157,65,225,253,184,205,141,66,95,213,110,139]}"#)]
-    art: String,
-
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/messenger/chat",
-    request_body = InitChatRequest,
-    security(("bearer_auth" = [])),
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, headers), err)]
-pub async fn init_chat(
-    State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
-    Json(payload): Json<InitChatRequest>,
-) -> Result<StatusCode, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let art = ART::<ARTG>::from_json(&payload.art).unwrap();
-    let art_pk = art.root.public_key;
-    state
-        .messenger_service
-        .init_chat(&payload.chat_id, art)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    info!(
-        "Successfully inited chat. ART root pk: {}",
-        art_pk.into_affine()
-    );
-
-    Ok(StatusCode::OK)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetARTQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// Sequence number of a tree to retrieve. If not set, retrieve th latest.
-    pub sequence_number: Option<i64>,
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/messenger/chat/art",
-    params(
-        GetARTQuery
-    ),
-    security(("bearer_auth" = [])),
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, headers), err)]
-pub async fn get_art(
-    State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
-    Query(payload): Query<GetARTQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let art = match &payload.sequence_number {
-        Some(sequence_number) => {
-            info!("Retrieve ART with sequence_number: {}", sequence_number);
-            state
-                .messenger_service
-                .get_art(&payload.chat_id, *sequence_number)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?
-                .art
-        }
-        None => {
-            info!("Retrieve the latest ART");
-            state
-                .messenger_service
-                .find_latest_art(&payload.chat_id)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?
-                .art
-        }
-    };
-
-    info!(
-        "Retrieved ART with public root key: {}",
-        art.root.public_key.into_affine()
-    );
-
-    let response = (StatusCode::OK, Json(art));
-
-    Ok(response)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetARTChangeQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    // Unique sequence number of the message
-    pub sequence_number: Option<i64>,
-
-    /// Number of results to be returned
-    pub limit: i64,
-
-    /// The amount or results to skip
-    pub skip: i64,
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/messenger/chat/changes",
-    params(
-        GetARTChangeQuery
-    ),
-    security(("bearer_auth" = [])),
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, headers), err)]
-pub async fn list_changes(
-    State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
-    Query(payload): Query<GetARTChangeQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let mut filter = doc! {};
-
-    if let Some(sequence_number) = &payload.sequence_number {
-        _ = filter.insert("sequence_number", sequence_number);
-    }
-
-    info!("Retrieve changes with filter: {}", filter);
-    let changes = state
-        .messenger_service
-        .list_changes(&payload.chat_id, filter, payload.limit, payload.skip)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    let response = (StatusCode::OK, Json(changes));
-
-    Ok(response)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateARTQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// Serialised structure of BranchChanges
-    #[param(example = r#"{"change_type":"UpdateKeys","public_keys":[2,0,0,0,0,0,0,0,108,46,5,147,166,28,186,84,56,51,15,0,164,233,163,124,211,62,84,115,12,41,29,21,174,23,41,150,199,190,223,9,32,203,55,0,14,229,209,251,97,64,74,39,27,154,11,74,185,186,109,192,82,15,159,240,224,90,199,170,52,210,1,142,251,48,27,214,6,87,114,21,34,89,30,213,183,242,32,230,13,216,121,58,34,36,192,176,220,239,123,166,185,166,146,2,225,247,234,205,175,76,201,98,151,70,205,212,66,93,245,29,94,100,14,36,206,74,65,202,136,62,39,59,150,107,207,0],"next":["Left"]}"#)]
-    pub changes: String,
-}
-
-#[utoipa::path(
-    put,
-    path = "/v1/messenger/chat/art",
-    params(
-        UpdateARTQuery
-    ),
-    security(("bearer_auth" = [])),
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, headers), err)]
-pub async fn update_art(
-    State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
-    headers: HeaderMap,
-    Query(payload): Query<UpdateARTQuery>,
-) -> Result<StatusCode, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let changes = serde_json::from_str::<BranchChanges<ARTG>>(&payload.changes)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    state.messenger_service.update_art(&payload.chat_id, changes.clone())
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    info!(
-        "Successfully updated art with changes: {}",
-        serde_json::to_string(&changes).unwrap()
-    );
-
-    Ok(StatusCode::OK)
 }

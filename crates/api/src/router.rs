@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{Router, middleware};
-use utoipa::{OpenApi, Modify};
-use utoipa::openapi::security::{Http, ApiKey, ApiKeyValue, HttpAuthScheme, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -50,7 +50,6 @@ impl Modify for SecurityAddon {
     }
 }
 
-
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let public_routes = OpenApiRouter::new()
         .routes(routes![get_health_handler])
@@ -59,14 +58,35 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let protected_routes = OpenApiRouter::new()
         .routes(routes!(domains::messenger::transport::http::send_message))
         .routes(routes!(domains::messenger::transport::http::list_messages))
-        .routes(routes!(domains::messenger::transport::http::delete_messages))
+        .routes(routes!(
+            domains::messenger::transport::http::delete_messages
+        ))
         .routes(routes!(domains::messenger::transport::http::mark_as_read))
         .routes(routes!(domains::messenger::transport::http::delete_cursors))
         .routes(routes!(domains::messenger::transport::http::list_cursors))
-        .routes(routes!(domains::messenger::transport::http::init_chat))
-        .routes(routes!(domains::messenger::transport::http::get_art))
-        .routes(routes!(domains::messenger::transport::http::list_changes))
-        .routes(routes!(domains::messenger::transport::http::update_art))
+        .routes(routes!(domains::art::transport::http::init_chat_phase1))
+        .routes(routes!(domains::art::transport::http::init_chat_phase2))
+        .routes(routes!(domains::art::transport::http::init_chat_phase3))
+        .routes(routes!(domains::art::transport::http::add_member_phase1))
+        .routes(routes!(domains::art::transport::http::add_member_phase2))
+        .routes(routes!(domains::art::transport::http::add_member_phase3))
+        .routes(routes!(domains::art::transport::http::remove_member))
+        // .routes(routes!(domains::art::transport::http::leave_chat))
+        .routes(routes!(domains::art::transport::http::update_key))
+        .routes(routes!(domains::art::transport::http::get_changes))
+        .routes(routes!(domains::art::transport::http::delete_chat))
+        .routes(routes!(
+            domains::invitations::transport::http::add_invitations
+        ))
+        .routes(routes!(
+            domains::invitations::transport::http::add_member_invitation
+        ))
+        .routes(routes!(
+            domains::invitations::transport::http::get_invitation
+        ))
+        .routes(routes!(
+            domains::invitations::transport::http::delete_invitation
+        ))
         .layer(middleware::from_fn_with_state(
             container,
             domains::auth::transport::http::jwt_middleware,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::NodeConfig;
-use api::{AuthService, Container, MessengerService};
+use api::{ARTService, AuthService, Container, InvitationService, MessengerService};
 use eyre::Ok;
 use mongodb::{
     Client, Collection, IndexModel, bson,
@@ -75,11 +75,15 @@ impl Node {
     async fn spawn_api(&self) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
         let messenger_service = MessengerService::new();
+        let art_service = ARTService::new();
         let auth_service = AuthService::new(self.config.jwt.secret.clone(), self.config.jwt.ttl);
+        let invitation_service = InvitationService::new();
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),
+            art_service: Arc::new(art_service),
             auth_service: Arc::new(auth_service),
+            invitation_service: Arc::new(invitation_service),
         });
 
         self.task_tracker.spawn(api::run_server(address, container));

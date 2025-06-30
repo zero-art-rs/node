@@ -1,7 +1,7 @@
 use ark_ec::PrimeGroup;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_std::{One, UniformRand, Zero};
-use art::art::{BranchChanges, ART};
+use art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
 use mongodb::error::Error;
 use mongodb::{
@@ -9,7 +9,7 @@ use mongodb::{
     options::{ClientOptions, IndexOptions},
     Client, Collection, Cursor, Database, IndexModel,
 };
-use zk::curve::cortado::{CortadoProjective as ARTG, CortadoProjective, Fr as ScalarField};
+use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
 
 use crate::{ARTChangesStorage, DATABASE};
 use types::{ARTChangesRecord, ARTRecord};
@@ -42,9 +42,7 @@ impl MongoARTChangesStorage {
 }
 
 impl MongoARTChangesStorage {
-    async fn get_recent_record(
-        &self,
-    ) -> Result<Cursor<ARTChangesRecord<CortadoProjective>>, Error> {
+    async fn get_recent_record(&self) -> Result<Cursor<ARTChangesRecord<ARTG>>, Error> {
         Ok(self
             .art_changes_collection
             .find(doc! {})
