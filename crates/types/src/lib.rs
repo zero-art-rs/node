@@ -1,4 +1,5 @@
 mod art_record;
+pub mod callback_wrappers;
 mod cursor_record;
 mod message;
 

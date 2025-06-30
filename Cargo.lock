@@ -125,6 +125,7 @@ dependencies = [
  "ark-std",
  "art",
  "axum",
+ "callbacks",
  "chrono",
  "eyre",
  "futures-util",
@@ -132,6 +133,7 @@ dependencies = [
  "jsonwebtoken",
  "log",
  "mongodb",
+ "proof-verifier",
  "rand 0.9.1",
  "serde",
  "serde_json",
@@ -602,6 +604,14 @@ name = "bytes"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
+
+[[package]]
+name = "callbacks"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "tokio",
+]
 
 [[package]]
 name = "cast"
@@ -2014,12 +2024,14 @@ dependencies = [
  "config",
  "eyre",
  "mongodb",
+ "proof-verifier",
  "serde",
  "storage",
  "tokio",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "types",
 ]
 
 [[package]]
@@ -2282,8 +2294,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "processor"
+name = "proof-verifier"
 version = "0.1.0"
+dependencies = [
+ "callbacks",
+ "eyre",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "types",
+]
 
 [[package]]
 name = "quinn"
@@ -3436,6 +3456,8 @@ dependencies = [
  "ark-ec",
  "ark-serialize",
  "art",
+ "callbacks",
+ "eyre",
  "hex",
  "mongodb",
  "serde",

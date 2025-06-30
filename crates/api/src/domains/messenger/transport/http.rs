@@ -3,11 +3,13 @@ use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use callbacks::callback;
 use mongodb::bson::{Binary, spec::BinarySubtype};
 use mongodb::bson::{DateTime, doc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
+use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use zk::curve::cortado::CortadoProjective as ARTG;
 
 use utoipa::{IntoParams, ToSchema};
@@ -54,6 +56,25 @@ pub async fn send_message(
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    let add_member_message = ProofVerifierMessage::AddMember { proof: vec![] };
+    match callback(&state.proof_verifier_sender, add_member_message).await {
+        Ok(message) => {
+            let ProofVerifierResult::AddMember { verdict } = message else {
+                return Err(ApiError::InternalServerError(
+                    "Invalid message from proof verifier".to_string(),
+                ));
+            };
+
+            if !verdict {
+                return Err(ApiError::BadRequest("Invalid proof".to_string()));
+            }
+        }
+        Err(e) => {
+            error!("Failed to send message to proof verifier: {}", e);
+            return Err(ApiError::InternalServerError(e.to_string()));
+        }
+    };
 
     state
         .messenger_service
@@ -644,6 +665,25 @@ pub async fn update_art(
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    let modify_art_message = ProofVerifierMessage::ModifyArt { proof: vec![] };
+    match callback(&state.proof_verifier_sender, modify_art_message).await {
+        Ok(message) => {
+            let ProofVerifierResult::ModifyArt { verdict } = message else {
+                return Err(ApiError::InternalServerError(
+                    "Invalid message from proof verifier".to_string(),
+                ));
+            };
+
+            if !verdict {
+                return Err(ApiError::BadRequest("Invalid proof".to_string()));
+            }
+        }
+        Err(e) => {
+            error!("Failed to send message to proof verifier: {}", e);
+            return Err(ApiError::InternalServerError(e.to_string()));
+        }
+    };
 
     let changes = serde_json::from_str::<BranchChanges<ARTG>>(&payload.changes)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
