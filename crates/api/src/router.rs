@@ -20,9 +20,23 @@ async fn get_health_handler() -> &'static str {
     "healthy"
 }
 
+pub struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = &mut openapi.components {
+            let http = Http::new(HttpAuthScheme::Bearer);
+
+            components
+                .security_schemes
+                .insert("bearer_auth".to_string(), SecurityScheme::Http(http));
+        }
+    }
+}
+
 #[derive(utoipa::OpenApi)]
 #[openapi(
-
+    modifiers(&SecurityAddon),
     info(title = env!("CARGO_PKG_NAME"),),
     components(schemas(
         domains::centrifugo::transport::http::AuthRequest,
