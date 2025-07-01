@@ -13,9 +13,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::{
-    container::Container, errors::ApiError,
-};
+use crate::{container::Container, errors::ApiError};
 use art::{ART, BranchChanges, ark_de, ark_se};
 use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
 

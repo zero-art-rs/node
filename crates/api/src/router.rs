@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{Router, middleware, routing::get};
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
-use utoipa::OpenApi;
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -23,7 +22,7 @@ async fn get_health_handler() -> &'static str {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    modifiers(&SecurityAddon),
+
     info(title = env!("CARGO_PKG_NAME"),),
     components(schemas(
         domains::centrifugo::transport::http::AuthRequest,

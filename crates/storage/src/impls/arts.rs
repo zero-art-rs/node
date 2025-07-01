@@ -61,15 +61,12 @@ impl ARTStorage for MongoARTStorage {
         Ok(())
     }
 
-    async fn get_art(
-        &self,
-        chat_id: Uuid,
-    ) -> Result<ARTRecord<ARTG>, mongodb::error::Error> {
+    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTG>, mongodb::error::Error> {
         let art = self
             .arts_collection
             .find_one(doc! {"chat_id": chat_id})
             .await?;
-        
+
         match art {
             Some(art) => Ok(art),
             None => Err(Error::custom("Chat isn't initialized yet.")),

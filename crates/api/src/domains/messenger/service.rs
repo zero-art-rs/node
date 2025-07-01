@@ -7,8 +7,8 @@ use storage::{
 };
 use tracing::{debug, error, info};
 use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message};
-use zk::curve::cortado::CortadoProjective as ARTG;
 use uuid::Uuid;
+use zk::curve::cortado::CortadoProjective as ARTG;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessengerError {

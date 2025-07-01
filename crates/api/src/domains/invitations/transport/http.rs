@@ -10,7 +10,7 @@ use axum::{
     response::IntoResponse,
 };
 use base64::prelude::*;
-use mongodb::bson::{doc, spec::BinarySubtype, Uuid};
+use mongodb::bson::{Uuid, doc, spec::BinarySubtype};
 use postcard;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -18,12 +18,10 @@ use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
-use crate::{
-    container::Container, errors::ApiError,
-};
+use crate::{container::Container, errors::ApiError};
 use postcard::to_allocvec;
 use types::InvitationRecord;
-use zk::curve::cortado::{CortadoAffine as ARTGroup};
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -100,7 +98,7 @@ pub async fn add_member_invitation(
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    
+
     let invitation = postcard::from_bytes::<InvitationRecord<ARTGroup>>(&payload.invitation)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 

@@ -1,4 +1,4 @@
-use art::{BranchChanges};
+use art::BranchChanges;
 use futures_util::TryStreamExt;
 use mongodb::{
     bson::{doc, Document, Uuid},
@@ -40,8 +40,7 @@ impl MongoARTChangesStorage {
 
 impl MongoARTChangesStorage {
     async fn get_recent_record(&self) -> Result<Cursor<ARTChangesRecord<ARTG>>, Error> {
-        self
-            .art_changes_collection
+        self.art_changes_collection
             .find(doc! {})
             .sort(doc! { "sequence_number": -1 })
             .limit(1)

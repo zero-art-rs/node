@@ -1,7 +1,7 @@
 use ark_std::UniformRand;
 use art::{ART, BranchChanges, BranchChangesType};
-use mongodb::bson::{self, Uuid};
 use mongodb::bson::Document;
+use mongodb::bson::{self, Uuid};
 use std::sync::Arc;
 use storage::{
     ARTChangesStorage, ARTStorage, DataStorage, MongoARTChangesStorage, MongoARTStorage,
@@ -38,17 +38,17 @@ impl ARTService {
 
 impl ARTService {
     pub async fn get_art(&self, chat_id: &Uuid) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let arts_storage =  self
+        let arts_storage = self
             .create_arts_storage()
             .await
             .map_err(|e| ARTServiceError::StorageError(e))?;
         if !arts_storage.chat_exists(chat_id.clone()).await? {
-            return Err(ARTServiceError::InputError("Chat isn't initialized yet.".to_string()));
+            return Err(ARTServiceError::InputError(
+                "Chat isn't initialized yet.".to_string(),
+            ));
         }
-        
-        let record = arts_storage
-            .get_art(chat_id.clone())
-            .await?;
+
+        let record = arts_storage.get_art(chat_id.clone()).await?;
 
         Ok(record)
     }
@@ -87,7 +87,9 @@ impl ARTService {
         let art_storage = self.create_arts_storage().await?;
 
         if art_storage.chat_exists(chat_id.clone()).await? {
-            return Err(ARTServiceError::InputError("Chat is already initialized.".to_string()));
+            return Err(ARTServiceError::InputError(
+                "Chat is already initialized.".to_string(),
+            ));
         }
         art_storage.new_chat(art, chat_id.clone()).await?;
 

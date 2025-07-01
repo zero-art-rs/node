@@ -8,9 +8,9 @@ use mongodb::{
     options::IndexOptions,
     Collection, IndexModel,
 };
-use uuid::Uuid;
 use std::io::Read;
 use types::Message;
+use uuid::Uuid;
 
 pub struct MongoMessageStorage {
     messages_collection: Collection<Message>,

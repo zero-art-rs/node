@@ -1,6 +1,8 @@
+use crate::{container::Container, errors::ApiError};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::{SeedableRng, rngs::StdRng};
 use ark_std::{One, UniformRand, Zero};
+use art::{ART, BranchChanges, BranchChangesType};
 use axum::extract::{Path, Query};
 use axum::{
     Json,
@@ -9,18 +11,14 @@ use axum::{
     http::{self, HeaderMap, Response, StatusCode},
     response::IntoResponse,
 };
-use mongodb::bson::{doc, spec::BinarySubtype, Uuid};
+use mongodb::bson::{Uuid, doc, spec::BinarySubtype};
 use postcard;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
-use crate::{
-    container::Container, errors::ApiError,
-};
-use art::{ART, BranchChanges, BranchChangesType};
-use zk::curve::cortado::{CortadoAffine as ARTGroup};
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 // ########################################
 // init group

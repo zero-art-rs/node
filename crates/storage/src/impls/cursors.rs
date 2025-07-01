@@ -1,9 +1,5 @@
 use log::info;
-use mongodb::{
-    bson::doc,
-    options::IndexOptions,
-    Collection, IndexModel,
-};
+use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::CursorRecord;
 use uuid::Uuid;
 

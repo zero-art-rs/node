@@ -1,10 +1,6 @@
 use crate::DataStorage;
 use mongodb::bson::{doc, from_document, DateTime, Document, Uuid};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use mongodb::{
-    change_stream::{event::ChangeStreamEvent, ChangeStream},
-};
+use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use types::Message;

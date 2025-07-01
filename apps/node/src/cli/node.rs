@@ -4,11 +4,7 @@ use std::time::Duration;
 use crate::config::NodeConfig;
 use api::{ARTService, CentrifugoService, Container, InvitationService, MessengerService};
 use eyre::Ok;
-use mongodb::{
-    Client,
-    bson::doc,
-    options::ClientOptions,
-};
+use mongodb::{Client, bson::doc, options::ClientOptions};
 use storage::{DATABASE, MongoConfig, MongoMessageStorage};
 use tokio::select;
 use tokio::time::sleep;
@@ -72,18 +68,12 @@ impl Node {
     async fn spawn_api(&self) -> eyre::Result<()> {
         let address = self.config.api.address.to_string();
 
-        let (subscription_sender, subscription_receiver) = tokio::sync::mpsc::channel(100);
-
-        let message_watcher = MessageWatcher::new(subscription_receiver);
-        self.task_tracker
-            .spawn(message_watcher.run(self.cancelation.clone()));
-        
-        let art_service = ARTService::new();
         let messenger_service = MessengerService::new();
         let centrifugo_service = CentrifugoService::new(
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
         );
+        let art_service = ARTService::new();
         let invitation_service = InvitationService::new();
 
         let container = Arc::new(Container {
