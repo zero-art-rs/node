@@ -7,7 +7,7 @@ edition = "2024"
 serde = { workspace = true }
 mongodb = { workspace = true }
 hex = { workspace = true }
-art = { path = "../art" }
+art = { workspace = true }
 ark-ec = { workspace = true }
 ark-serialize = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -1,13 +1,12 @@
-use crate::{MessageStorage, DATABASE};
+use crate::{DataStorage, MessageStorage, DATABASE};
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Document},
+    bson::{doc, Uuid},
     change_stream::{event::ChangeStreamEvent, ChangeStream},
     options::IndexOptions,
     Collection, IndexModel,
 };
 use types::Message;
-use uuid::Uuid;
 
 pub struct MongoMessageStorage {
     messages_collection: Collection<Message>,
@@ -53,7 +52,7 @@ impl MessageStorage for MongoMessageStorage {
 
     async fn store_message(
         &self,
-        content: String,
+        content: Vec<u8>,
         sender: String,
     ) -> Result<(), mongodb::error::Error> {
         let message_collection = &self.messages_collection;
@@ -69,7 +68,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number = result.sequence_number + 1;
         }
 
-        let mut message = Message::new(content.into_bytes(), next_sequence_number, sender, None);
+        let mut message = Message::new(content, next_sequence_number, sender, None);
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 
@@ -83,41 +82,13 @@ impl MessageStorage for MongoMessageStorage {
 
         Ok(())
     }
+}
 
-    async fn list_messages(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<Message>, mongodb::error::Error> {
-        let mut cursor = self
-            .messages_collection
-            .find(filter)
-            .skip(skip as u64)
-            .limit(limit)
-            .await?;
+#[async_trait::async_trait]
+impl DataStorage for MongoMessageStorage {
+    type Data = Message;
 
-        let mut messages = Vec::new();
-        while cursor.advance().await? {
-            messages.push(cursor.deserialize_current()?);
-        }
-
-        Ok(messages)
-    }
-
-    async fn delete_messages(
-        &self,
-        filter: Document,
-    ) -> Result<Vec<Message>, mongodb::error::Error> {
-        let mut collection_cursor = self.messages_collection.find(filter.clone()).await?;
-        let mut messages = Vec::new();
-
-        while let Some(message) = collection_cursor.try_next().await? {
-            messages.push(message);
-        }
-
-        self.messages_collection.delete_many(filter).await?;
-
-        Ok(messages)
+    async fn get_collection(&self) -> &'async_trait Collection<Self::Data> {
+        &self.messages_collection
     }
 }

@@ -1,13 +1,12 @@
-use art::art::BranchChanges;
+use art::BranchChanges;
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Document},
+    bson::{doc, Document, Uuid},
     error::Error,
     options::IndexOptions,
     Collection, Cursor, IndexModel,
 };
-use uuid::Uuid;
-use zk::curve::cortado::CortadoProjective as ARTG;
+use zk::curve::cortado::CortadoAffine as ARTG;
 
 use crate::{ARTChangesStorage, DATABASE};
 use types::ARTChangesRecord;

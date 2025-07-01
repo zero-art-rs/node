@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::NodeConfig;
-use api::{CentrifugoService, Container, MessengerService};
+use api::{CentrifugoService, Container, MessengerService, ARTService, InvitationService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use storage::DATABASE;
 use tokio::select;
@@ -72,10 +72,14 @@ impl Node {
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
         );
+        let art_service = ARTService::new();
+        let invitation_service = InvitationService::new();
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),
             centrifugo_service: Arc::new(centrifugo_service),
+            art_service: Arc::new(art_service),
+            invitation_service: Arc::new(invitation_service),
         });
 
         self.task_tracker.spawn(api::run_server(

@@ -25,7 +25,7 @@ jsonwebtoken = { workspace = true }
 mongodb = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 zk = { workspace = true }
-art = { path = "../art" }
+art = { workspace = true }
 ark-ec = { workspace = true }
 ark-serialize = { workspace = true }
 ark-std = { workspace = true }
@@ -34,3 +34,5 @@ log = "0.4.27"
 tokio-stream = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
+base64 = { workspace = true }
+postcard = { workspace = true }

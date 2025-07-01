@@ -14,6 +14,8 @@ mod router;
 pub use container::Container;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
+pub use domains::art::service::ARTService;
+pub use domains::invitation::service::InvitationService;
 
 pub async fn run_server(
     address: String,

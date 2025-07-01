@@ -1,23 +1,20 @@
-use mongodb::bson::Document;
+use mongodb::bson::{Document, Uuid};
 
-use art::art::{BranchChanges, ART};
+use art::{BranchChanges, ART};
 use types::ARTRecord;
-use zk::curve::cortado::CortadoProjective as ARTG;
+use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
 
 /// Storage for art full states
 #[async_trait::async_trait]
 pub trait ARTStorage: Send + Sync {
-    async fn new_art(&self, art: ART<ARTG>) -> Result<(), mongodb::error::Error>;
+    async fn new_chat(&self, art: ART<ARTG>, chat_id: Uuid) -> Result<(), mongodb::error::Error>;
 
-    async fn delete_art(
+    async fn delete_art(&self, chat_id: Uuid) -> Result<(), mongodb::error::Error>;
+
+    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTG>, mongodb::error::Error>;
+    async fn update_art(
         &self,
-        filter: Document,
-    ) -> Result<Vec<ARTRecord<ARTG>>, mongodb::error::Error>;
-
-    async fn get_art(&self, sequence_number: i64)
-        -> Result<ARTRecord<ARTG>, mongodb::error::Error>;
-    async fn find_latest_art(&self) -> Result<ARTRecord<ARTG>, mongodb::error::Error>;
-
-    /// Take the last iteration of art, update it with given changes and append to the end of the storage
-    async fn update_art(&self, changes: BranchChanges<ARTG>) -> Result<(), mongodb::error::Error>;
+        changes: BranchChanges<ARTG>,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error>;
 }
