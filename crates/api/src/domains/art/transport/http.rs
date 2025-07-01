@@ -9,19 +9,18 @@ use axum::{
     http::{self, HeaderMap, Response, StatusCode},
     response::IntoResponse,
 };
-use mongodb::bson::{Document, Uuid, doc, spec::BinarySubtype};
+use mongodb::bson::{doc, spec::BinarySubtype, Uuid};
 use postcard;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
-
 use crate::{
-    container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError,
+    container::Container, errors::ApiError,
 };
 use art::{ART, BranchChanges, BranchChangesType};
-use zk::curve::cortado::{CortadoAffine as ARTGroup, Fr as ScalarField};
+use zk::curve::cortado::{CortadoAffine as ARTGroup};
 
 // ########################################
 // init group
@@ -51,7 +50,6 @@ pub struct InitChatRequestPhase1 {
 #[instrument(skip(state, headers), err)]
 pub async fn init_chat_phase1(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<InitChatRequestPhase1>,
 ) -> Result<StatusCode, ApiError> {
@@ -60,7 +58,6 @@ pub async fn init_chat_phase1(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     let art = ART::deserialize_with_postcard(&payload.art).unwrap();
-    let art_pk = art.root.public_key;
 
     state
         .art_service
@@ -68,19 +65,16 @@ pub async fn init_chat_phase1(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    info!(
-        "Successful phase1 of init-chat request. ART root pk: {}",
-        art_pk
-    );
+    info!("Successful phase1 of init-chat request");
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::CREATED)
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct InitChatQueryPhase2 {
     /// Unique identifier of the chat to send the message to.
-    #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
+    #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
     pub chat_id: Uuid,
 }
 
@@ -96,7 +90,6 @@ pub struct InitChatQueryPhase2 {
 #[instrument(skip(state, headers), err)]
 pub async fn init_chat_phase2(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<InitChatQueryPhase2>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -143,7 +136,6 @@ pub struct InitChatRequestPhase3 {
 #[instrument(skip(state, headers), err)]
 pub async fn init_chat_phase3(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<InitChatRequestPhase3>,
 ) -> Result<StatusCode, ApiError> {
@@ -200,7 +192,6 @@ pub struct AddMemberPhase1 {
 #[instrument(skip(state, headers), err)]
 pub async fn add_member_phase1(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<AddMemberPhase1>,
 ) -> Result<StatusCode, ApiError> {
@@ -233,7 +224,7 @@ pub async fn add_member_phase1(
 #[serde(rename_all = "camelCase")]
 pub struct AddMemberQueryPhase2 {
     /// Unique identifier of the chat to send the message to.
-    #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
+    #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
     pub chat_id: Uuid,
 }
 
@@ -249,7 +240,6 @@ pub struct AddMemberQueryPhase2 {
 #[instrument(skip(state, headers), err)]
 pub async fn add_member_phase2(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<AddMemberQueryPhase2>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -298,7 +288,6 @@ pub struct AddMemberPhase3 {
 #[instrument(skip(state, headers), err)]
 pub async fn add_member_phase3(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<AddMemberPhase3>,
 ) -> Result<StatusCode, ApiError> {
@@ -355,7 +344,6 @@ pub struct RemoveMember {
 #[instrument(skip(state, headers), err)]
 pub async fn remove_member(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<RemoveMember>,
 ) -> Result<StatusCode, ApiError> {
@@ -406,7 +394,6 @@ pub struct LeaveChat {
 #[instrument(skip(state, headers), err)]
 pub async fn leave_chat(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<LeaveChat>,
 ) -> Result<StatusCode, ApiError> {
@@ -447,7 +434,6 @@ pub struct UpdateKey {
 #[instrument(skip(state, headers), err)]
 pub async fn update_key(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<UpdateKey>,
 ) -> Result<StatusCode, ApiError> {
@@ -510,7 +496,6 @@ pub struct GetChangesQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn get_changes(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<GetChangesQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -552,7 +537,6 @@ pub struct DeleteQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn delete_chat(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<DeleteQuery>,
 ) -> Result<impl IntoResponse, ApiError> {

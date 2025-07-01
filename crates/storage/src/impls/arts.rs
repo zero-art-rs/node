@@ -1,19 +1,14 @@
 use crate::{ARTStorage, DATABASE};
-use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
-use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_std::{One, UniformRand, Zero};
 use art::{BranchChanges, ART};
-use futures_util::TryStreamExt;
 use log::info;
 use mongodb::{
-    bson::{doc, Document},
+    bson::{doc, Uuid},
     error::Error,
     options::IndexOptions,
-    Collection, Cursor, IndexModel,
+    Collection, IndexModel,
 };
-use rand::Rng;
-use types::{ARTChangesRecord, ARTRecord};
-use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
+use types::ARTRecord;
+use zk::curve::cortado::CortadoAffine as ARTG;
 
 pub struct MongoARTStorage {
     arts_collection: Collection<ARTRecord<ARTG>>,
@@ -23,7 +18,7 @@ impl MongoARTStorage {
     pub async fn new() -> Result<Self, mongodb::error::Error> {
         let db = DATABASE.get().unwrap();
 
-        let arts_collection_name = format!("chats");
+        let arts_collection_name = "chats".to_string();
         let arts_collection = db.collection(&arts_collection_name);
 
         let arts_index_model = IndexModel::builder()

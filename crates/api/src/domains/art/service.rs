@@ -1,21 +1,14 @@
-use ark_ec::AffineRepr;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError};
 use ark_std::UniformRand;
-use ark_std::rand::SeedableRng;
-use ark_std::rand::prelude::StdRng;
 use art::{ART, BranchChanges, BranchChangesType};
-use bson::{Binary, Bson, doc, spec::BinarySubtype};
-use mongodb::bson::{self, Uuid, to_bson};
-use mongodb::bson::{DateTime, Document};
-use serde::{Serialize, Serializer};
+use mongodb::bson::{self, Uuid};
+use mongodb::bson::Document;
 use std::sync::Arc;
 use storage::{
     ARTChangesStorage, ARTStorage, DataStorage, MongoARTChangesStorage, MongoARTStorage,
-    MongoInvitationStorage,
 };
-use tracing::{debug, error, info};
-use types::{ARTChangesRecord, ARTRecord, CursorRecord, InvitationRecord, Message};
-use zk::curve::cortado::{CortadoAffine as ARTGroup, Fr as ScalarField};
+use tracing::{error, info};
+use types::{ARTChangesRecord, ARTRecord};
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ARTServiceError {

@@ -8,14 +8,13 @@ use mongodb::bson::{DateTime, doc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, instrument};
-use zk::curve::cortado::CortadoProjective as ARTG;
 
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
-    container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError,
+    container::Container, errors::ApiError,
 };
 use art::{ART, BranchChanges, ark_de, ark_se};
 use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};

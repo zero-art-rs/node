@@ -1,6 +1,5 @@
-use art::art::{ART, BranchChanges};
+use art::{ART, BranchChanges};
 use mongodb::bson;
-use mongodb::bson::Uuid;
 use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
 use std::sync::Arc;
 use storage::{
@@ -8,8 +7,8 @@ use storage::{
 };
 use tracing::{debug, error, info};
 use types::{ARTChangesRecord, ARTRecord, CursorRecord, Message};
-use uuid::Uuid;
 use zk::curve::cortado::CortadoProjective as ARTG;
+use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessengerError {
@@ -43,7 +42,7 @@ impl MessengerService {
         self.create_messages_storage(chat_id)
             .await
             .map_err(|e| MessengerError::StorageError(e))?
-            .store_as_latest(message.into_bytes(), sender)
+            .store_message(message.into_bytes(), sender)
             .await?;
         Ok(())
     }

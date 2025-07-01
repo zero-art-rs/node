@@ -8,9 +8,9 @@ use mongodb::{
     options::IndexOptions,
     Collection, IndexModel,
 };
+use uuid::Uuid;
 use std::io::Read;
 use types::Message;
-use uuid::Uuid;
 
 pub struct MongoMessageStorage {
     messages_collection: Collection<Message>,
@@ -72,7 +72,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number = result.sequence_number + 1;
         }
 
-        let mut message = Message::new(content.into_bytes(), next_sequence_number, sender, None);
+        let mut message = Message::new(content, next_sequence_number, sender, None);
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 

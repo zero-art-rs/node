@@ -1,15 +1,12 @@
-use ark_ec::PrimeGroup;
-use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_std::{One, UniformRand, Zero};
-use art::{BranchChanges, ART};
+use art::{BranchChanges};
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Document},
+    bson::{doc, Document, Uuid},
     error::Error,
     options::IndexOptions,
     Collection, Cursor, IndexModel,
 };
-use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
+use zk::curve::cortado::CortadoAffine as ARTG;
 
 use crate::{ARTChangesStorage, DATABASE};
 use types::ARTChangesRecord;
@@ -43,12 +40,12 @@ impl MongoARTChangesStorage {
 
 impl MongoARTChangesStorage {
     async fn get_recent_record(&self) -> Result<Cursor<ARTChangesRecord<ARTG>>, Error> {
-        Ok(self
+        self
             .art_changes_collection
             .find(doc! {})
             .sort(doc! { "sequence_number": -1 })
             .limit(1)
-            .await)
+            .await
     }
 }
 

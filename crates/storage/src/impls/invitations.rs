@@ -1,11 +1,11 @@
 use crate::{DataStorage, InvitationStorage, DATABASE};
 use mongodb::{
-    bson::{doc, Binary, DateTime, Document, Uuid},
-    options::{ClientOptions, IndexOptions},
-    Client, Collection, Cursor, Database, IndexModel,
+    bson::{doc, Uuid},
+    options::IndexOptions,
+    Collection, IndexModel,
 };
 use types::InvitationRecord;
-use zk::curve::cortado::{CortadoAffine as ARTG, CortadoProjective, Fr as ScalarField};
+use zk::curve::cortado::CortadoAffine as ARTG;
 
 pub struct MongoInvitationStorage {
     collection: Collection<InvitationRecord<ARTG>>,

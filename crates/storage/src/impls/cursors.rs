@@ -1,8 +1,6 @@
-use futures_util::TryStreamExt;
 use log::info;
 use mongodb::{
-    bson::{doc, Document},
-    error::Error,
+    bson::doc,
     options::IndexOptions,
     Collection, IndexModel,
 };

@@ -10,25 +10,20 @@ use axum::{
     response::IntoResponse,
 };
 use base64::prelude::*;
-use mongodb::bson::{Document, Uuid, doc, spec::BinarySubtype};
+use mongodb::bson::{doc, spec::BinarySubtype, Uuid};
 use postcard;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 use crate::{
-    container::Container, domains::auth::transport::http::AuthenticatedUser, errors::ApiError,
+    container::Container, errors::ApiError,
 };
-use art::{ART, BranchChanges, BranchChangesType};
 use postcard::to_allocvec;
-use serde_json::json;
 use types::InvitationRecord;
-use zk::curve::cortado::{CortadoAffine as ARTGroup, Fr as ScalarField};
-// ########################################
-// init group
-// ########################################
+use zk::curve::cortado::{CortadoAffine as ARTGroup};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -54,7 +49,6 @@ pub struct AddInvitationsRequest {
 #[instrument(skip(state, headers), err)]
 pub async fn add_invitations(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<AddInvitationsRequest>,
 ) -> Result<StatusCode, ApiError> {
@@ -75,10 +69,6 @@ pub async fn add_invitations(
 
     Ok(StatusCode::OK)
 }
-
-// ########################################
-// add member
-// ########################################
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -104,19 +94,13 @@ pub struct AddInvitationRequest {
 #[instrument(skip(state, headers), err)]
 pub async fn add_member_invitation(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Json(payload): Json<AddInvitationRequest>,
 ) -> Result<StatusCode, ApiError> {
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    // let invite_key = ScalarField::deserialize_uncompressed(&*payload.invite_key)
-    //     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    // let receiver = ARTGroup::deserialize_uncompressed(&*payload.invite_key)
-    //     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
+    
     let invitation = postcard::from_bytes::<InvitationRecord<ARTGroup>>(&payload.invitation)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
@@ -158,7 +142,6 @@ pub struct GetInviteQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn get_invitation(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<GetInviteQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -211,7 +194,6 @@ pub struct DeleteInviteQuery {
 #[instrument(skip(state, headers), err)]
 pub async fn delete_invitation(
     State(state): State<Arc<Container>>,
-    AuthenticatedUser(_claims): AuthenticatedUser,
     headers: HeaderMap,
     Query(payload): Query<DeleteInviteQuery>,
 ) -> Result<StatusCode, ApiError> {
