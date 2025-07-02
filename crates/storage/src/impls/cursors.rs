@@ -1,9 +1,6 @@
 use log::info;
-use mongodb::{
-    bson::{doc, Uuid},
-    options::IndexOptions,
-    Collection, IndexModel,
-};
+use mongodb::bson::Uuid;
+use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::CursorRecord;
 
 use crate::{CursorStorage, DataStorage, DATABASE};

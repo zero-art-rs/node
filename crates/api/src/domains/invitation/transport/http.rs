@@ -10,7 +10,8 @@ use axum::{
     response::IntoResponse,
 };
 use base64::prelude::*;
-use mongodb::bson::{Uuid, doc, spec::BinarySubtype};
+use mongodb::bson::Uuid;
+use mongodb::bson::{doc, spec::BinarySubtype};
 use postcard;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

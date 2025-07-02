@@ -1,5 +1,6 @@
+use mongodb::bson::Uuid;
 use mongodb::{
-    bson::{DateTime, Uuid, doc},
+    bson::{DateTime, doc},
     change_stream::{ChangeStream, event::ChangeStreamEvent},
 };
 use serde::{Deserialize, Serialize};

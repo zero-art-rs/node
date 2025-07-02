@@ -1,9 +1,6 @@
 use crate::{DataStorage, InvitationStorage, DATABASE};
-use mongodb::{
-    bson::{doc, Uuid},
-    options::IndexOptions,
-    Collection, IndexModel,
-};
+use mongodb::bson::Uuid;
+use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::InvitationRecord;
 use zk::curve::cortado::CortadoAffine as ARTG;
 

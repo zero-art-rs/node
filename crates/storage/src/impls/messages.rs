@@ -1,7 +1,8 @@
 use crate::{DataStorage, MessageStorage, DATABASE};
 use futures_util::TryStreamExt;
+use mongodb::bson::Uuid;
 use mongodb::{
-    bson::{doc, Uuid},
+    bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
     options::IndexOptions,
     Collection, IndexModel,

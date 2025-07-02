@@ -1,7 +1,8 @@
 use ark_std::UniformRand;
 use art::{ART, BranchChanges, BranchChangesType};
+use mongodb::bson;
 use mongodb::bson::Document;
-use mongodb::bson::{self, Uuid};
+use mongodb::bson::Uuid;
 use std::sync::Arc;
 use storage::{
     ARTChangesStorage, ARTStorage, DataStorage, MongoARTChangesStorage, MongoARTStorage,
@@ -20,6 +21,8 @@ pub enum ARTServiceError {
     InternalError(String),
     #[error("Input error: {0}")]
     InputError(String),
+    #[error("Record already exists")]
+    AlreadyExists,
 }
 
 impl From<storage::Error> for ARTServiceError {
@@ -53,11 +56,17 @@ impl ARTService {
         Ok(record)
     }
 
-    pub async fn delete_art(&self, chat_id: &Uuid) -> Result<(), ARTServiceError> {
+    pub async fn delete_chat(&self, chat_id: &Uuid) -> Result<(), ARTServiceError> {
         self.create_arts_storage()
             .await
             .map_err(|e| ARTServiceError::StorageError(e))?
             .delete_art(chat_id.clone())
+            .await?;
+
+        self.create_art_changes_storage(chat_id)
+            .await
+            .map_err(|e| ARTServiceError::StorageError(e))?
+            .drop_collection()
             .await?;
 
         Ok(())
@@ -74,7 +83,7 @@ impl ARTService {
             .create_art_changes_storage(chat_id)
             .await
             .map_err(|e| ARTServiceError::StorageError(e))?
-            .list_changes(filter, limit, skip)
+            .list(filter, limit, skip)
             .await?;
         Ok(record)
     }
@@ -83,15 +92,17 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         art: ART<ARTGroup>,
+        is_private: bool,
     ) -> Result<(), ARTServiceError> {
         let art_storage = self.create_arts_storage().await?;
 
         if art_storage.chat_exists(chat_id.clone()).await? {
-            return Err(ARTServiceError::InputError(
-                "Chat is already initialized.".to_string(),
-            ));
+            return Err(ARTServiceError::AlreadyExists);
         }
-        art_storage.new_chat(art, chat_id.clone()).await?;
+
+        art_storage
+            .new_chat(art, chat_id.clone(), is_private)
+            .await?;
 
         Ok(())
     }
@@ -108,7 +119,7 @@ impl ARTService {
 
         self.create_art_changes_storage(chat_id)
             .await?
-            .store_change(changes.clone())
+            .push_change(changes.clone())
             .await?;
 
         Ok(())
@@ -135,10 +146,18 @@ impl ARTService {
 
         self.create_art_changes_storage(&chat_id)
             .await?
-            .store_change(changes.clone())
+            .push_change(changes.clone())
             .await?;
 
         Ok(())
+    }
+
+    pub async fn list_chats(&self, limit: i64, skip: i64) -> Result<Vec<Uuid>, ARTServiceError> {
+        let arts_storage = self.create_arts_storage().await?;
+        arts_storage
+            .list_chats(limit, skip)
+            .await
+            .map_err(|e| ARTServiceError::InternalError(e.to_string()))
     }
 
     async fn create_arts_storage(&self) -> Result<Arc<MongoARTStorage>, mongodb::error::Error> {

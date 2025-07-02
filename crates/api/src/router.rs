@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use axum::Router;
-use utoipa::{Modify, OpenApi};
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{container::Container, domains};
 
-use crate::domains::centrifugo::transport::http as centrifugo_transport;
-use crate::domains::messenger::transport::http as messenger_transport;
 use crate::domains::art::transport::http as art_transport;
+use crate::domains::centrifugo::transport::http as centrifugo_transport;
 use crate::domains::invitation::transport::http as invitation_transport;
+use crate::domains::messenger::transport::http as messenger_transport;
 
 #[utoipa::path(
     get,
@@ -60,17 +60,15 @@ pub fn build_router() -> Router<Arc<Container>> {
         .routes(routes!(messenger_transport::mark_as_read))
         .routes(routes!(messenger_transport::delete_cursors))
         .routes(routes!(messenger_transport::list_cursors))
-        .routes(routes!(art_transport::init_chat_phase1))
-        .routes(routes!(art_transport::init_chat_phase2))
-        .routes(routes!(art_transport::init_chat_phase3))
-        .routes(routes!(art_transport::add_member_phase1))
-        .routes(routes!(art_transport::add_member_phase2))
-        .routes(routes!(art_transport::add_member_phase3))
+        .routes(routes!(art_transport::init_chat))
+        .routes(routes!(art_transport::get_art))
+        .routes(routes!(art_transport::add_member))
         .routes(routes!(art_transport::remove_member))
         // .routes(routes!(art_transport::leave_chat))
         .routes(routes!(art_transport::update_key))
         .routes(routes!(art_transport::get_changes))
         .routes(routes!(art_transport::delete_chat))
+        .routes(routes!(art_transport::list_chats))
         .routes(routes!(invitation_transport::add_invitations))
         .routes(routes!(invitation_transport::add_member_invitation))
         .routes(routes!(invitation_transport::get_invitation))

@@ -2,6 +2,7 @@ use core::fmt;
 
 use axum::{Json, http::StatusCode, response::IntoResponse};
 
+use crate::domains::art::service::ARTServiceError;
 use serde_json::json;
 use utoipa::ToSchema;
 
@@ -40,3 +41,9 @@ impl IntoResponse for ApiError {
         (status, Json(json!({ "error": error_message }))).into_response()
     }
 }
+
+// impl From<ARTServiceError> for ApiError {
+//     fn from(errors: ARTServiceError) -> Self {
+//         ApiError::InternalServerError(errors.to_string())
+//     }
+// }

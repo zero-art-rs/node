@@ -2,12 +2,12 @@ use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use mongodb::bson::Uuid;
 use mongodb::bson::{Binary, spec::BinarySubtype};
-use mongodb::bson::{DateTime, Uuid, doc};
+use mongodb::bson::{DateTime, doc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, instrument};
-
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 

@@ -10,6 +10,7 @@ use std::fmt;
 pub struct ARTRecord<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> {
     pub chat_id: Uuid,
     pub art: ART<G>,
+    pub is_private: bool,
 }
 
 impl<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> fmt::Display for ARTRecord<G> {

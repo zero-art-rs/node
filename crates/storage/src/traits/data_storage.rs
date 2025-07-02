@@ -1,8 +1,11 @@
+use crate::DATABASE;
 use futures_util::TryStreamExt;
 use mongodb::bson::Document;
+use mongodb::error::Error;
 use mongodb::Collection;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use types::ARTChangesRecord;
 
 #[async_trait::async_trait]
 pub trait DataStorage: Send + Sync {
@@ -65,5 +68,11 @@ pub trait DataStorage: Send + Sync {
         collection.delete_many(filter).await?;
 
         Ok(records)
+    }
+
+    async fn drop_collection(&self) -> Result<(), mongodb::error::Error> {
+        self.get_collection().await.drop().await?;
+
+        Ok(())
     }
 }

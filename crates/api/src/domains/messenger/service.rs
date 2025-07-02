@@ -1,5 +1,6 @@
 use mongodb::bson;
-use mongodb::bson::{Document, Uuid, doc};
+use mongodb::bson::Uuid;
+use mongodb::bson::{Document, doc};
 use std::sync::Arc;
 use storage::{
     CursorStorage, DataStorage, MessageStorage, MongoCursorStorage, MongoMessageStorage,

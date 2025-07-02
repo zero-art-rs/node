@@ -1,12 +1,9 @@
 use crate::{ARTStorage, DATABASE};
 use art::{BranchChanges, ART};
+use futures_util::TryStreamExt;
 use log::info;
-use mongodb::{
-    bson::{doc, Uuid},
-    error::Error,
-    options::IndexOptions,
-    Collection, IndexModel,
-};
+use mongodb::bson::Uuid;
+use mongodb::{bson::doc, error::Error, options::IndexOptions, Collection, IndexModel};
 use types::ARTRecord;
 use zk::curve::cortado::CortadoAffine as ARTG;
 
@@ -43,9 +40,13 @@ impl MongoARTStorage {
 
 #[async_trait::async_trait]
 impl ARTStorage for MongoARTStorage {
-    async fn new_chat(&self, art: ART<ARTG>, chat_id: Uuid) -> Result<(), Error> {
+    async fn new_chat(&self, art: ART<ARTG>, chat_id: Uuid, is_private: bool) -> Result<(), Error> {
         self.arts_collection
-            .insert_one(ARTRecord { chat_id, art })
+            .insert_one(ARTRecord {
+                chat_id,
+                art,
+                is_private,
+            })
             .await?;
 
         Ok(())
@@ -91,5 +92,22 @@ impl ARTStorage for MongoARTStorage {
         info!("Art is updated successfully.");
 
         Ok(())
+    }
+
+    async fn list_chats(&self, limit: i64, skip: i64) -> Result<Vec<Uuid>, mongodb::error::Error> {
+        let mut cursor = self
+            .arts_collection
+            .find(doc! {})
+            .skip(skip as u64)
+            .limit(limit)
+            .await?;
+
+        let mut chat_ids = Vec::new();
+
+        while let Some(art_record) = cursor.try_next().await? {
+            chat_ids.push(art_record.chat_id);
+        }
+
+        Ok(chat_ids)
     }
 }

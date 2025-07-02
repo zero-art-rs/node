@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use crate::domains::{
-    centrifugo::service::CentrifugoService,
-    messenger::service::MessengerService,
-    art::service::ARTService,
-    invitation::service::InvitationService,
+    art::service::ARTService, centrifugo::service::CentrifugoService,
+    invitation::service::InvitationService, messenger::service::MessengerService,
 };
 
 pub struct Container {

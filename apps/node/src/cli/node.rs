@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::NodeConfig;
-use api::{CentrifugoService, Container, MessengerService, ARTService, InvitationService};
+use api::{ARTService, CentrifugoService, Container, InvitationService, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use storage::DATABASE;
 use tokio::select;
