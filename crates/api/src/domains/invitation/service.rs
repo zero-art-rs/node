@@ -5,7 +5,6 @@ use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
 use art::{ART, BranchChanges, BranchChangesType};
 use bson::{Binary, Bson, doc, spec::BinarySubtype};
-use mongodb::bson::Uuid;
 use mongodb::bson::{self, to_bson};
 use mongodb::bson::{DateTime, Document};
 use serde::{Serialize, Serializer};
@@ -16,16 +15,15 @@ use storage::{
 };
 use tracing::{debug, error, info};
 use types::{ARTChangesRecord, ARTRecord, CursorRecord, InvitationRecord, Message};
+use uuid::Uuid;
 use zk::curve::cortado::{CortadoAffine as ARTGroup, Fr as ScalarField};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvitationServiceError {
     #[error("Storage error: {0}")]
     StorageError(storage::Error),
-    #[error("Conversion error: {0}")]
-    ConversionError(bson::oid::Error),
-    #[error("Internal error: {0}")]
-    InternalError(String),
+    #[error("Record not found")]
+    NotFound,
 }
 
 impl From<storage::Error> for InvitationServiceError {
@@ -64,10 +62,7 @@ impl InvitationService {
         chat_id: &Uuid,
         invitations: &Vec<InvitationRecord<ARTGroup>>,
     ) -> Result<(), InvitationServiceError> {
-        let storage = self
-            .create_invitations_storage(chat_id)
-            .await
-            .map_err(|e| InvitationServiceError::StorageError(e))?;
+        let storage = self.create_invitations_storage(chat_id).await?;
 
         let mut invitation_records = Vec::new();
         for invite in invitations {
@@ -83,26 +78,18 @@ impl InvitationService {
         chat_id: &Uuid,
         receiver: &Vec<u8>,
     ) -> Result<InvitationRecord<ARTGroup>, InvitationServiceError> {
-        let storage = self
-            .create_invitations_storage(chat_id)
-            .await
-            .map_err(|e| InvitationServiceError::StorageError(e))?;
+        let storage = self.create_invitations_storage(chat_id).await?;
 
         let filter = doc! {"receiver_public_key": Binary {
             subtype: BinarySubtype::Generic,
             bytes: receiver.clone(),
         }};
 
-        let invitation = storage
-            .find_one(filter)
-            .await
-            .map_err(|e| InvitationServiceError::StorageError(e))?;
+        let invitation = storage.find_one(filter).await?;
 
         match invitation {
             Some(invite) => Ok(invite),
-            None => Err(InvitationServiceError::InternalError(
-                "failed to get invitation".to_string(),
-            )),
+            None => Err(InvitationServiceError::NotFound),
         }
     }
 
@@ -111,20 +98,14 @@ impl InvitationService {
         chat_id: &Uuid,
         receiver: &Vec<u8>,
     ) -> Result<(), InvitationServiceError> {
-        let storage = self
-            .create_invitations_storage(chat_id)
-            .await
-            .map_err(|e| InvitationServiceError::StorageError(e))?;
+        let storage = self.create_invitations_storage(chat_id).await?;
 
         let filter = doc! {"receiver_public_key": Binary {
             subtype: BinarySubtype::Generic,
             bytes: receiver.clone(),
         }};
 
-        storage
-            .delete(filter)
-            .await
-            .map_err(|e| InvitationServiceError::StorageError(e))?;
+        storage.delete(filter).await?;
 
         Ok(())
     }

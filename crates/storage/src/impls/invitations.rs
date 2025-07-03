@@ -1,7 +1,7 @@
 use crate::{DataStorage, InvitationStorage, DATABASE};
-use mongodb::bson::Uuid;
 use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::InvitationRecord;
+use uuid::Uuid;
 use zk::curve::cortado::CortadoAffine as ARTG;
 
 pub struct MongoInvitationStorage {

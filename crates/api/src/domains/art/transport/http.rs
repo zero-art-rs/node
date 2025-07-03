@@ -14,7 +14,6 @@ use axum::{
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use chrono::NaiveDateTime;
-use mongodb::bson::Uuid;
 use mongodb::bson::doc;
 use postcard;
 use serde::{Deserialize, Serialize};
@@ -22,6 +21,7 @@ use std::sync::Arc;
 use tracing::{info, instrument};
 use tracing_subscriber::fmt::init;
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 use validator::Validate;
 use zk::curve::cortado::CortadoAffine as ARTGroup;
 
@@ -364,6 +364,11 @@ pub async fn get_changes(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
+    info!("Found changes: {}", changes.len());
+    // for chat_id in &changes {
+    //     info!(" - {:?}", chat_id);
+    // }
+
     let response_body = postcard::to_allocvec(&changes)
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
     let response = (StatusCode::OK, response_body);
@@ -444,8 +449,12 @@ pub async fn list_chats(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
+    match chats_ids.is_empty() {
+        true => info!("Found 0 chats."),
+        false => info!("Found chats: {}", chats_ids.len()),
+    }
     for chat_id in &chats_ids {
-        info!("Found chat {:?}", chat_id);
+        info!(" - {:?}", chat_id);
     }
 
     let body = postcard::to_allocvec(&chats_ids)

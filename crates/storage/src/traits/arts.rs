@@ -1,5 +1,5 @@
 use mongodb::bson::Document;
-use mongodb::bson::Uuid;
+use uuid::Uuid;
 
 use art::{BranchChanges, ART};
 use types::ARTRecord;

@@ -2,9 +2,9 @@ use crate::{ARTStorage, DATABASE};
 use art::{BranchChanges, ART};
 use futures_util::TryStreamExt;
 use log::info;
-use mongodb::bson::Uuid;
 use mongodb::{bson::doc, error::Error, options::IndexOptions, Collection, IndexModel};
 use types::ARTRecord;
+use uuid::Uuid;
 use zk::curve::cortado::CortadoAffine as ARTG;
 
 pub struct MongoARTStorage {
@@ -89,7 +89,7 @@ impl ARTStorage for MongoARTStorage {
                 .await?;
         }
 
-        info!("Art is updated successfully.");
+        info!("Art updated successfully.");
 
         Ok(())
     }

@@ -1,4 +1,3 @@
-use mongodb::bson::Uuid;
 use mongodb::{
     bson::{DateTime, doc},
     change_stream::{ChangeStream, event::ChangeStreamEvent},
@@ -6,6 +5,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct Subscription {

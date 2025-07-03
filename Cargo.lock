@@ -3706,6 +3706,7 @@ dependencies = [
  "ark-ec",
  "ark-serialize",
  "art",
+ "bson",
  "hex",
  "mongodb",
  "serde",

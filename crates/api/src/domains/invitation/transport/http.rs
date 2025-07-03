@@ -10,13 +10,13 @@ use axum::{
     response::IntoResponse,
 };
 use base64::prelude::*;
-use mongodb::bson::Uuid;
 use mongodb::bson::{doc, spec::BinarySubtype};
 use postcard;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::{container::Container, errors::ApiError};

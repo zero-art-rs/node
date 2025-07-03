@@ -1,7 +1,7 @@
 use art::BranchChanges;
 use futures_util::TryStreamExt;
-use mongodb::bson::Uuid;
 use mongodb::{bson::doc, error::Error, options::IndexOptions, Collection, Cursor, IndexModel};
+use uuid::Uuid;
 use zk::curve::cortado::CortadoAffine as ARTG;
 
 use crate::{ARTChangesStorage, DataStorage, DATABASE};

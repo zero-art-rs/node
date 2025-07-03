@@ -1,6 +1,5 @@
 use crate::{DataStorage, MessageStorage, DATABASE};
 use futures_util::TryStreamExt;
-use mongodb::bson::Uuid;
 use mongodb::{
     bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
@@ -8,6 +7,7 @@ use mongodb::{
     Collection, IndexModel,
 };
 use types::Message;
+use uuid::Uuid;
 
 pub struct MongoMessageStorage {
     messages_collection: Collection<Message>,

@@ -1,7 +1,7 @@
 use log::info;
-use mongodb::bson::Uuid;
 use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::CursorRecord;
+use uuid::Uuid;
 
 use crate::{CursorStorage, DataStorage, DATABASE};
 
