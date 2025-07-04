@@ -57,7 +57,9 @@ impl fmt::Display for Message {
             "[content: \"{}\", id: {}, time: {}, sender: {}]",
             content_str,
             self.sequence_number,
-            self.created_at.try_to_rfc3339_string().unwrap(),
+            self.created_at
+                .try_to_rfc3339_string()
+                .map_err(|_| fmt::Error)?,
             self.sender_public_key
         )
     }

@@ -32,11 +32,8 @@ hyper = { version = "1.6.0", default-features = false }
 lazy_static = { version = "1.5.0", default-features = false }
 thiserror = { version = "2.0.12", default-features = false }
 ark-ec = { version = "0.5.0", default-features = false }
-ark-ff = { version = "0.5.0", default-features = false }
 ark-std = { version = "0.5.0", default-features = false }
 ark-serialize = { version = "0.5.0", default-features = false }
-ark-bn254 = { version = "0.5.0", default-features = false }
-criterion = { version = "0.6.0", default-features = false }
 utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "9.0.1", features = ["axum", "reqwest"] }
 utoipa-axum = "0.2"
@@ -44,7 +41,6 @@ axum = { version = "0.8.1", features = ["macros"] }
 validator = { version = "0.20.0", features = ["derive"] }
 mongodb = { version = "3.2.3" }
 bson = { version = "2.15.0", features = ["chrono-0_4"] }
-serde_repr = { version = "0.1.20", default-features = false }
 tracing-subscriber = { version = "0.3.19" }
 uuid = { version = "1.17.0", features = ["v7", "serde"] }
 jsonwebtoken = "9.3.1"

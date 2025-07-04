@@ -1,4 +1,4 @@
-use crate::{DataStorage, MessageStorage, DATABASE};
+use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
 use mongodb::{
     bson::doc,
@@ -16,8 +16,10 @@ pub struct MongoMessageStorage {
 }
 
 impl MongoMessageStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+        let db = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
         let messages_collection_name = format!("chat/{}", chat_id);
         let messages_collection = db.collection(&messages_collection_name);
@@ -45,17 +47,13 @@ impl MongoMessageStorage {
 impl MessageStorage for MongoMessageStorage {
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, mongodb::error::Error> {
+    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, StorageError> {
         let change_stream = self.messages_collection.watch().await?;
 
         Ok(change_stream)
     }
 
-    async fn store_message(
-        &self,
-        content: Vec<u8>,
-        sender: String,
-    ) -> Result<(), mongodb::error::Error> {
+    async fn store_message(&self, content: Vec<u8>, sender: String) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -89,7 +87,7 @@ impl MessageStorage for MongoMessageStorage {
 impl DataStorage for MongoMessageStorage {
     type Data = Message;
 
-    async fn get_collection(&self) -> &'async_trait Collection<Self::Data> {
+    async fn get_collection(&self) -> &Collection<Self::Data> {
         &self.messages_collection
     }
 }

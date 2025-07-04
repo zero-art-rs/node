@@ -1,6 +1,7 @@
-use mongodb::Database;
+use mongodb::{Client, Database};
 use std::sync::OnceLock;
 
+mod errors;
 mod impls;
 mod traits;
 
@@ -17,6 +18,8 @@ pub use traits::DataStorage;
 pub use traits::InvitationStorage;
 pub use traits::MessageStorage;
 
+pub use errors::StorageError;
+
 #[derive(Debug)]
 pub struct MongoConfig {
     pub uri: String,
@@ -24,3 +27,4 @@ pub struct MongoConfig {
 }
 
 pub static DATABASE: OnceLock<Database> = OnceLock::new();
+pub static CLIENT: OnceLock<Client> = OnceLock::new();

@@ -3,7 +3,7 @@ use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::CursorRecord;
 use uuid::Uuid;
 
-use crate::{CursorStorage, DataStorage, DATABASE};
+use crate::{CursorStorage, DataStorage, StorageError, DATABASE};
 
 pub struct MongoCursorStorage {
     cursors_collection: Collection<CursorRecord>,
@@ -11,8 +11,10 @@ pub struct MongoCursorStorage {
 }
 
 impl MongoCursorStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+        let db = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
         let cursors_collection_name = format!("cursors/{}", chat_id);
         let cursors_collection = db.collection(&cursors_collection_name);
@@ -35,7 +37,7 @@ impl CursorStorage for MongoCursorStorage {
         &self,
         user_id: &str,
         sequence_number: i64,
-    ) -> Result<Option<CursorRecord>, mongodb::error::Error> {
+    ) -> Result<Option<CursorRecord>, StorageError> {
         let collection = &self.cursors_collection;
 
         let user_filter = doc! {"user_id": user_id.to_string()};
@@ -70,7 +72,7 @@ impl CursorStorage for MongoCursorStorage {
 impl DataStorage for MongoCursorStorage {
     type Data = CursorRecord;
 
-    async fn get_collection(&self) -> &'async_trait Collection<Self::Data> {
+    async fn get_collection(&self) -> &Collection<Self::Data> {
         &self.cursors_collection
     }
 }

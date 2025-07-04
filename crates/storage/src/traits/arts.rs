@@ -1,28 +1,37 @@
-use mongodb::bson::Document;
 use uuid::Uuid;
 
+use crate::{DataStorage, StorageError};
 use art::{BranchChanges, ART};
+use mongodb::ClientSession;
 use types::ARTRecord;
-use zk::curve::cortado::{CortadoAffine as ARTG, Fr as ScalarField};
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 /// Storage for art full states
 #[async_trait::async_trait]
-pub trait ARTStorage: Send + Sync {
+pub trait ARTStorage: Send + Sync + DataStorage {
     async fn new_chat(
         &self,
-        art: ART<ARTG>,
+        art: ART<ARTGroup>,
         chat_id: Uuid,
         is_private: bool,
-    ) -> Result<(), mongodb::error::Error>;
+    ) -> Result<(), StorageError>;
 
-    async fn delete_art(&self, chat_id: Uuid) -> Result<(), mongodb::error::Error>;
-
-    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTG>, mongodb::error::Error>;
-    async fn update_art(
+    async fn delete_art(
         &self,
-        changes: BranchChanges<ARTG>,
+        session: &mut ClientSession,
         chat_id: Uuid,
     ) -> Result<(), mongodb::error::Error>;
 
-    async fn list_chats(&self, limit: i64, skip: i64) -> Result<Vec<Uuid>, mongodb::error::Error>;
+    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError>;
+    async fn update_art(
+        &self,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
+    ) -> Result<(), StorageError>;
+    async fn update_art_in_session(
+        &self,
+        session: &mut ClientSession,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error>;
 }

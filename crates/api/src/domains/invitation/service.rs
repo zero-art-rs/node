@@ -1,35 +1,17 @@
-use ark_ec::AffineRepr;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError};
-use ark_std::UniformRand;
-use ark_std::rand::SeedableRng;
-use ark_std::rand::prelude::StdRng;
-use art::{ART, BranchChanges, BranchChangesType};
-use bson::{Binary, Bson, doc, spec::BinarySubtype};
-use mongodb::bson::{self, to_bson};
-use mongodb::bson::{DateTime, Document};
-use serde::{Serialize, Serializer};
-use std::sync::Arc;
-use storage::{
-    ARTChangesStorage, ARTStorage, DataStorage, MongoARTChangesStorage, MongoARTStorage,
-    MongoInvitationStorage,
-};
-use tracing::{debug, error, info};
-use types::{ARTChangesRecord, ARTRecord, CursorRecord, InvitationRecord, Message};
+use bson::{Binary, doc, spec::BinarySubtype};
+use mongodb::bson::{self};
+use storage::{DataStorage, MongoInvitationStorage, StorageError};
+use tracing::error;
+use types::InvitationRecord;
 use uuid::Uuid;
-use zk::curve::cortado::{CortadoAffine as ARTGroup, Fr as ScalarField};
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvitationServiceError {
     #[error("Storage error: {0}")]
-    StorageError(storage::Error),
+    Storage(#[from] StorageError),
     #[error("Record not found")]
     NotFound,
-}
-
-impl From<storage::Error> for InvitationServiceError {
-    fn from(error: storage::Error) -> Self {
-        InvitationServiceError::StorageError(error)
-    }
 }
 
 pub struct InvitationService {}
@@ -40,19 +22,21 @@ impl InvitationService {
     }
 }
 
+impl Default for InvitationService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InvitationService {
     pub async fn add_invitation(
         &self,
         chat_id: &Uuid,
         invitation: InvitationRecord<ARTGroup>,
     ) -> Result<(), InvitationServiceError> {
-        let invitation_storage = self.create_invitations_storage(&chat_id).await?;
+        let invitation_storage = MongoInvitationStorage::new(chat_id).await?;
 
-        // invitation_storage.find_one(
-        //     doc! {"receiver": bson_receiver}
-        // ).await?;
-
-        invitation_storage.store(invitation).await?;
+        invitation_storage.insert_one(invitation).await?;
 
         Ok(())
     }
@@ -62,13 +46,13 @@ impl InvitationService {
         chat_id: &Uuid,
         invitations: &Vec<InvitationRecord<ARTGroup>>,
     ) -> Result<(), InvitationServiceError> {
-        let storage = self.create_invitations_storage(chat_id).await?;
+        let storage = MongoInvitationStorage::new(chat_id).await?;
 
         let mut invitation_records = Vec::new();
         for invite in invitations {
             invitation_records.push(invite.clone());
         }
-        storage.store_many(invitation_records).await?;
+        storage.insert_many(invitation_records).await?;
 
         Ok(())
     }
@@ -76,13 +60,13 @@ impl InvitationService {
     pub async fn get_invitation(
         &self,
         chat_id: &Uuid,
-        receiver: &Vec<u8>,
+        receiver: &[u8],
     ) -> Result<InvitationRecord<ARTGroup>, InvitationServiceError> {
-        let storage = self.create_invitations_storage(chat_id).await?;
+        let storage = MongoInvitationStorage::new(chat_id).await?;
 
         let filter = doc! {"receiver_public_key": Binary {
             subtype: BinarySubtype::Generic,
-            bytes: receiver.clone(),
+            bytes: receiver.to_owned(),
         }};
 
         let invitation = storage.find_one(filter).await?;
@@ -96,24 +80,17 @@ impl InvitationService {
     pub async fn delete_invitation(
         &self,
         chat_id: &Uuid,
-        receiver: &Vec<u8>,
+        receiver: &[u8],
     ) -> Result<(), InvitationServiceError> {
-        let storage = self.create_invitations_storage(chat_id).await?;
+        let storage = MongoInvitationStorage::new(chat_id).await?;
 
         let filter = doc! {"receiver_public_key": Binary {
             subtype: BinarySubtype::Generic,
-            bytes: receiver.clone(),
+            bytes: receiver.to_owned(),
         }};
 
         storage.delete(filter).await?;
 
         Ok(())
-    }
-
-    async fn create_invitations_storage(
-        &self,
-        chat_id: &Uuid,
-    ) -> Result<Arc<MongoInvitationStorage>, mongodb::error::Error> {
-        Ok(Arc::new(MongoInvitationStorage::new(chat_id).await?))
     }
 }

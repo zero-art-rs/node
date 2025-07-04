@@ -1,17 +1,18 @@
-use crate::{DataStorage, InvitationStorage, DATABASE};
+use crate::{DataStorage, InvitationStorage, StorageError, DATABASE};
 use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::InvitationRecord;
 use uuid::Uuid;
-use zk::curve::cortado::CortadoAffine as ARTG;
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 pub struct MongoInvitationStorage {
-    collection: Collection<InvitationRecord<ARTG>>,
-    chat_id: Uuid,
+    collection: Collection<InvitationRecord<ARTGroup>>,
 }
 
 impl MongoInvitationStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+        let db = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
         let collection_name = format!("invitations/{}", chat_id);
         let collection = db.collection(&collection_name);
@@ -21,10 +22,7 @@ impl MongoInvitationStorage {
             .build();
         collection.create_index(index_model).await?;
 
-        Ok(Self {
-            collection,
-            chat_id: chat_id.clone(),
-        })
+        Ok(Self { collection })
     }
 }
 
@@ -33,9 +31,9 @@ impl InvitationStorage for MongoInvitationStorage {}
 
 #[async_trait::async_trait]
 impl DataStorage for MongoInvitationStorage {
-    type Data = InvitationRecord<ARTG>;
+    type Data = InvitationRecord<ARTGroup>;
 
-    async fn get_collection(&self) -> &'async_trait Collection<Self::Data> {
+    async fn get_collection(&self) -> &Collection<Self::Data> {
         &self.collection
     }
 }

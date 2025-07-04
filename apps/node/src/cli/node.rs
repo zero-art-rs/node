@@ -1,10 +1,9 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use crate::config::NodeConfig;
 use api::{ARTService, CentrifugoService, Container, InvitationService, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
-use storage::DATABASE;
+use std::sync::Arc;
+use std::time::Duration;
+use storage::{CLIENT, DATABASE};
 use tokio::select;
 use tokio::time::sleep;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -41,6 +40,8 @@ impl Node {
 
         let client_options = ClientOptions::parse(uri).await?;
         let client = Client::with_options(client_options)?;
+
+        CLIENT.set(client.clone()).unwrap();
 
         DATABASE
             .set(

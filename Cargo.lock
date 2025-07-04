@@ -2534,7 +2534,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3211,17 +3211,14 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "storage"
 version = "0.1.0"
 dependencies = [
- "ark-ec",
- "ark-std",
  "art",
  "async-trait",
  "bson",
  "futures-util",
  "log",
  "mongodb",
- "rand 0.9.1",
  "serde",
- "tokio",
+ "thiserror 2.0.12",
  "types",
  "uuid",
  "zk",
@@ -4069,7 +4066,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use axum::Router;
-use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
-use utoipa::{Modify, OpenApi};
+use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -25,20 +24,6 @@ async fn get_health_handler() -> &'static str {
     "healthy"
 }
 
-pub struct SecurityAddon;
-
-impl Modify for SecurityAddon {
-    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        if let Some(components) = &mut openapi.components {
-            let http = Http::new(HttpAuthScheme::Bearer);
-
-            components
-                .security_schemes
-                .insert("bearer_auth".to_string(), SecurityScheme::Http(http));
-        }
-    }
-}
-
 #[derive(utoipa::OpenApi)]
 #[openapi(
     info(title = env!("CARGO_PKG_NAME"),),
@@ -46,7 +31,6 @@ impl Modify for SecurityAddon {
         domains::centrifugo::transport::http::AuthRequest,
         domains::centrifugo::transport::http::AuthResponse,
     )),
-    modifiers(&SecurityAddon),
 )]
 struct PublicApiDoc;
 
@@ -68,7 +52,6 @@ pub fn build_router() -> Router<Arc<Container>> {
         .routes(routes!(art_transport::update_key))
         .routes(routes!(art_transport::get_changes))
         .routes(routes!(art_transport::delete_chat))
-        .routes(routes!(art_transport::list_chats))
         .routes(routes!(invitation_transport::add_invitations))
         .routes(routes!(invitation_transport::add_member_invitation))
         .routes(routes!(invitation_transport::get_invitation))

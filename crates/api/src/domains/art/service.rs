@@ -1,12 +1,12 @@
-use ark_std::UniformRand;
 use art::{ART, BranchChanges, BranchChangesType};
-use mongodb::bson;
+use futures_util::FutureExt;
+use mongodb::ClientSession;
 use mongodb::bson::Document;
-use std::sync::Arc;
 use storage::{
-    ARTChangesStorage, ARTStorage, DataStorage, MongoARTChangesStorage, MongoARTStorage,
+    ARTChangesStorage, ARTStorage, CLIENT, DataStorage, MongoARTChangesStorage, MongoARTStorage,
+    StorageError,
 };
-use tracing::{error, info};
+use tracing::error;
 use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
 use zk::curve::cortado::CortadoAffine as ARTGroup;
@@ -14,21 +14,27 @@ use zk::curve::cortado::CortadoAffine as ARTGroup;
 #[derive(Debug, thiserror::Error)]
 pub enum ARTServiceError {
     #[error("Storage error: {0}")]
-    Storage(storage::Error),
+    Storage(#[from] StorageError),
+    #[error("MongoDB error: {0}")]
+    MongoDB(#[from] mongodb::error::Error),
     #[error("Unexpected internal error")]
     Internal,
     #[error("Invalid input provided")]
     InvalidInput,
+    #[error("Invalid change type provided")]
+    InvalidChangeType,
     #[error("Record already exists")]
     AlreadyExists,
     #[error("Record not found")]
     NotFound,
-}
-
-impl From<storage::Error> for ARTServiceError {
-    fn from(error: storage::Error) -> Self {
-        ARTServiceError::Storage(error)
-    }
+    #[error("The operation can be done only for group chat")]
+    GroupChatOnly,
+    #[error("Failed to retrieve database")]
+    DatabaseRetrieval,
+    #[error("Failed to retrieve client")]
+    ClientRetrieval,
+    #[error("Failed to initiate new session")]
+    SessionInitiation,
 }
 
 pub struct ARTService {}
@@ -39,31 +45,44 @@ impl ARTService {
     }
 }
 
+impl Default for ARTService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ARTService {
     pub async fn get_art(&self, chat_id: &Uuid) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let arts_storage = self
-            .create_arts_storage()
-            .await
-            .map_err(|e| ARTServiceError::Storage(e))?;
-        if !arts_storage.chat_exists(chat_id.clone()).await? {
+        let arts_storage = MongoARTStorage::new().await?;
+        if arts_storage.get_art(*chat_id).await.is_err() {
             return Err(ARTServiceError::NotFound);
         }
 
-        let record = arts_storage.get_art(chat_id.clone()).await?;
+        let record = arts_storage.get_art(*chat_id).await?;
 
         Ok(record)
     }
 
     pub async fn delete_chat(&self, chat_id: &Uuid) -> Result<(), ARTServiceError> {
-        self.create_arts_storage()
-            .await?
-            .delete_art(chat_id.clone())
-            .await?;
+        let client = CLIENT.get().ok_or_else(|| StorageError::ClientRetrieval)?;
+        let mut session = client
+            .start_session()
+            .await
+            .map_err(|_| ARTServiceError::SessionInitiation)?;
 
-        self.create_art_changes_storage(chat_id)
-            .await?
-            .drop_collection()
-            .await?;
+        session
+            .start_transaction()
+            .and_run(chat_id, |session, chat_id| {
+                async move { self.delete_chat_callback(session, chat_id).await }.boxed()
+            })
+            .await
+            .map_err(ARTServiceError::MongoDB)?;
+
+        let arts_storage = MongoARTStorage::get_existing_collection().await?;
+        arts_storage.drop_storage_collection_if_empty().await?;
+
+        let storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
+        storage.drop_storage_collection_if_empty().await?;
 
         Ok(())
     }
@@ -75,8 +94,7 @@ impl ARTService {
         limit: i64,
         skip: i64,
     ) -> Result<Vec<ARTChangesRecord<ARTGroup>>, ARTServiceError> {
-        let record = self
-            .create_art_changes_storage(chat_id)
+        let record = MongoARTChangesStorage::new(chat_id)
             .await?
             .list(filter, limit, skip)
             .await?;
@@ -89,17 +107,13 @@ impl ARTService {
         art: ART<ARTGroup>,
         is_private: bool,
     ) -> Result<(), ARTServiceError> {
-        let art_storage = self.create_arts_storage().await?;
+        let arts_storage = MongoARTStorage::new().await?;
 
-        let b = art_storage.chat_exists(chat_id.clone()).await?;
-        info!("chat_exists: {}", b);
-        if art_storage.chat_exists(chat_id.clone()).await? {
+        if arts_storage.get_art(*chat_id).await.is_ok() {
             return Err(ARTServiceError::AlreadyExists);
         }
 
-        art_storage
-            .new_chat(art, chat_id.clone(), is_private)
-            .await?;
+        arts_storage.new_chat(art, *chat_id, is_private).await?;
 
         Ok(())
     }
@@ -109,57 +123,62 @@ impl ARTService {
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
     ) -> Result<(), ARTServiceError> {
-        self.create_arts_storage()
-            .await?
-            .update_art(changes.clone(), chat_id.clone())
-            .await?;
-
-        self.create_art_changes_storage(chat_id)
-            .await?
-            .push_change(changes.clone())
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn add_user(
-        &self,
-        chat_id: &Uuid,
-        changes: &BranchChanges<ARTGroup>,
-    ) -> Result<(), ARTServiceError> {
-        match changes.change_type {
-            BranchChangesType::AppendNode(_) => {}
-            _ => {
-                return Err(ARTServiceError::InvalidInput);
+        let arts_storage = MongoARTStorage::new().await?;
+        if arts_storage.get_art(*chat_id).await?.is_private {
+            match changes.change_type {
+                BranchChangesType::UpdateKeys => {}
+                _ => return Err(ARTServiceError::InvalidChangeType),
             }
         }
 
-        self.create_arts_storage()
-            .await?
-            .update_art(changes.clone(), chat_id.clone())
-            .await?;
+        let client = CLIENT.get().ok_or_else(|| StorageError::ClientRetrieval)?;
+        let mut session = client
+            .start_session()
+            .await
+            .map_err(|_| ARTServiceError::SessionInitiation)?;
 
-        self.create_art_changes_storage(&chat_id)
-            .await?
-            .push_change(changes.clone())
-            .await?;
+        session
+            .start_transaction()
+            .and_run((chat_id, changes), |session, (chat_id, changes)| {
+                async move { self.update_art_callback(session, chat_id, changes).await }.boxed()
+            })
+            .await
+            .map_err(ARTServiceError::MongoDB)?;
 
         Ok(())
     }
 
-    pub async fn list_chats(&self, limit: i64, skip: i64) -> Result<Vec<Uuid>, ARTServiceError> {
-        let arts_storage = self.create_arts_storage().await?;
-        Ok(arts_storage.list_chats(limit, skip).await?)
-    }
-
-    async fn create_arts_storage(&self) -> Result<Arc<MongoARTStorage>, mongodb::error::Error> {
-        Ok(Arc::new(MongoARTStorage::new().await?))
-    }
-
-    async fn create_art_changes_storage(
+    async fn delete_chat_callback(
         &self,
+        session: &mut ClientSession,
         chat_id: &Uuid,
-    ) -> Result<Arc<MongoARTChangesStorage>, mongodb::error::Error> {
-        Ok(Arc::new(MongoARTChangesStorage::new(chat_id).await?))
+    ) -> mongodb::error::Result<()> {
+        let arts_storage = MongoARTStorage::get_existing_collection().await?;
+        let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
+
+        arts_storage.delete_art(session, *chat_id).await?;
+        art_changes_storage.clear(session).await?;
+
+        Ok(())
+    }
+
+    pub async fn update_art_callback(
+        &self,
+        session: &mut ClientSession,
+        chat_id: &Uuid,
+        changes: &BranchChanges<ARTGroup>,
+    ) -> Result<(), mongodb::error::Error> {
+        let arts_storage = MongoARTStorage::get_existing_collection().await?;
+        let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
+
+        arts_storage
+            .update_art_in_session(session, changes.clone(), *chat_id)
+            .await?;
+
+        art_changes_storage
+            .push_change(session, changes.clone())
+            .await?;
+
+        Ok(())
     }
 }

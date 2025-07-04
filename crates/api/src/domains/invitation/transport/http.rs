@@ -1,17 +1,12 @@
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::rand::{SeedableRng, rngs::StdRng};
-use ark_std::{One, UniformRand, Zero};
-use axum::extract::{Path, Query};
+use axum::extract::Query;
 use axum::{
     Json,
-    body::Body,
     extract::State,
-    http::{self, HeaderMap, Response, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use base64::prelude::*;
-use mongodb::bson::{doc, spec::BinarySubtype};
-use postcard;
+use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, instrument};
@@ -42,13 +37,12 @@ pub struct AddInvitationsRequest {
     post,
     path = "/v1/messenger/invitations/init",
     request_body = AddInvitationsRequest,
-    security(("bearer_auth" = [])),
     tag = "Invite operation"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state, _headers), err)]
 pub async fn add_invitations(
     State(state): State<Arc<Container>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Json(payload): Json<AddInvitationsRequest>,
 ) -> Result<StatusCode, ApiError> {
     payload
@@ -87,13 +81,12 @@ pub struct AddInvitationRequest {
     post,
     path = "/v1/messenger/invitations",
     request_body = AddInvitationRequest,
-    security(("bearer_auth" = [])),
     tag = "Invite operation"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state, _headers), err)]
 pub async fn add_member_invitation(
     State(state): State<Arc<Container>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Json(payload): Json<AddInvitationRequest>,
 ) -> Result<StatusCode, ApiError> {
     payload
@@ -132,16 +125,13 @@ pub struct GetInviteQuery {
 #[utoipa::path(
     get,
     path = "/v1/messenger/invitations",
-    params(
-        GetInviteQuery
-    ),
-    security(("bearer_auth" = [])),
+    params(GetInviteQuery),
     tag = "Invite operation"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state, _headers), err)]
 pub async fn get_invitation(
     State(state): State<Arc<Container>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Query(payload): Query<GetInviteQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload
@@ -184,16 +174,13 @@ pub struct DeleteInviteQuery {
 #[utoipa::path(
     delete,
     path = "/v1/messenger/invitations",
-    params(
-        DeleteInviteQuery
-    ),
-    security(("bearer_auth" = [])),
+    params(DeleteInviteQuery),
     tag = "Invite operation"
 )]
-#[instrument(skip(state, headers), err)]
+#[instrument(skip(state, _headers), err)]
 pub async fn delete_invitation(
     State(state): State<Arc<Container>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Query(payload): Query<DeleteInviteQuery>,
 ) -> Result<StatusCode, ApiError> {
     payload

@@ -36,9 +36,6 @@ pub struct SendMessageRequest {
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "Messages"
 )]
 #[instrument(skip(state), err)]
@@ -93,9 +90,6 @@ pub struct GetMessageQuery {
         (status = 400, description = "Bad request", body = ApiError),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
-    ),
-    security(
-        ("bearer_auth" = [])
     ),
     tag = "Messages"
 )]
@@ -185,9 +179,6 @@ pub struct DeleteMessageQuery {
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "Messages"
 )]
 #[instrument(skip(state), err)]
@@ -270,9 +261,6 @@ pub struct MarkAsRead {
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "Messages"
 )]
 #[instrument(skip(state), err)]
@@ -332,9 +320,6 @@ pub struct GetCursorsQuery {
         (status = 400, description = "Bad request", body = ApiError),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
-    ),
-    security(
-        ("bearer_auth" = [])
     ),
     tag = "Messages"
 )]
@@ -407,9 +392,6 @@ pub struct DeleteCursorsQuery {
         (status = 400, description = "Bad request", body = ApiError),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
-    ),
-    security(
-        ("bearer_auth" = [])
     ),
     tag = "Messages"
 )]
