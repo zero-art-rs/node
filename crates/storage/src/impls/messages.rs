@@ -73,11 +73,17 @@ impl MessageStorage for MongoMessageStorage {
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 
-        message_collection.insert_one(message.clone()).await?;
+        message_collection
+            .insert_one(message.clone())
+            .session(&mut session)
+            .await?;
 
         message.chat_id = Some(self.chat_id);
 
-        self.messages_outbox_collection.insert_one(message).await?;
+        self.messages_outbox_collection
+            .insert_one(message)
+            .session(&mut session)
+            .await?;
 
         session.commit_transaction().await?;
 
