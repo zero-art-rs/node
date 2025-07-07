@@ -54,16 +54,34 @@ impl Default for ARTService {
 impl ARTService {
     pub async fn get_art(&self, chat_id: &Uuid) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
-        if arts_storage.get_art(*chat_id).await.is_err() {
-            return Err(ARTServiceError::NotFound);
-        }
+        let record = arts_storage
+            .get_art(*chat_id)
+            .await
+            .map_err(|_| ARTServiceError::NotFound)?;
 
-        let record = arts_storage.get_art(*chat_id).await?;
+        Ok(record)
+    }
+
+    pub async fn get_initial_art(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        let arts_storage = MongoARTStorage::new().await?;
+        let record = arts_storage
+            .get_initial_art(*chat_id)
+            .await
+            .map_err(|_| ARTServiceError::NotFound)?;
 
         Ok(record)
     }
 
     pub async fn delete_chat(&self, chat_id: &Uuid) -> Result<(), ARTServiceError> {
+        let arts_storage = MongoARTStorage::get_existing_storage().await?;
+
+        if arts_storage.get_art(*chat_id).await.is_err() {
+            return Err(ARTServiceError::NotFound);
+        }
+
         let client = CLIENT.get().ok_or_else(|| StorageError::ClientRetrieval)?;
         let mut session = client
             .start_session()
@@ -78,11 +96,11 @@ impl ARTService {
             .await
             .map_err(ARTServiceError::MongoDB)?;
 
-        let arts_storage = MongoARTStorage::get_existing_collection().await?;
-        arts_storage.drop_storage_collection_if_empty().await?;
+        let arts_storage = MongoARTStorage::get_existing_storage().await?;
+        arts_storage.drop_collection_if_empty().await?;
 
-        let storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
-        storage.drop_storage_collection_if_empty().await?;
+        let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
+        art_changes_storage.drop_collection_if_empty().await?;
 
         Ok(())
     }
@@ -153,10 +171,11 @@ impl ARTService {
         session: &mut ClientSession,
         chat_id: &Uuid,
     ) -> mongodb::error::Result<()> {
-        let arts_storage = MongoARTStorage::get_existing_collection().await?;
+        let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
 
         arts_storage.delete_art(session, *chat_id).await?;
+        arts_storage.delete_initial_art(session, *chat_id).await?;
         art_changes_storage.clear(session).await?;
 
         Ok(())
@@ -168,7 +187,7 @@ impl ARTService {
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
     ) -> Result<(), mongodb::error::Error> {
-        let arts_storage = MongoARTStorage::get_existing_collection().await?;
+        let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
 
         arts_storage

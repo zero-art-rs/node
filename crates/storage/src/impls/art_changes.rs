@@ -20,14 +20,14 @@ impl MongoARTChangesStorage {
 
     /// Creates new MongoARTChangesStorage, and maps error to StorageError
     pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
-        Self::get_collection(chat_id)
+        Self::get_storage(chat_id)
             .await
             .map_err(StorageError::MongoDB)
     }
 
     /// Creates new MongoARTChangesStorage but in case of error, returns mongodb::error::Error. Can be
     /// used for transactions.
-    pub async fn get_collection(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
+    pub async fn get_storage(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
         let db = DATABASE.get().ok_or_else(|| {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;

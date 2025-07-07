@@ -1,3 +1,5 @@
+use crate::domains::art::service::ARTServiceError;
+use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 use crate::{container::Container, errors::ApiError};
 use art::BranchChangesType;
 use axum::extract::Query;
@@ -16,8 +18,6 @@ use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
-
-use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +70,10 @@ pub struct GetARTQuery {
     /// Unique identifier of the chat to send the message to.
     #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
     pub chat_id: Uuid,
+
+    /// Sequence number of the requested art. If not set, return the latest.
+    #[param(example = 1)]
+    pub sequence_number: Option<i64>,
 }
 
 #[utoipa::path(
@@ -88,14 +92,49 @@ pub async fn get_art(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    let art = state
-        .art_service
-        .get_art(&payload.chat_id)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+    let art = match &payload.sequence_number {
+        Some(sequence_number) => {
+            let mut initial_art = state
+                .art_service
+                .get_initial_art(&payload.chat_id)
+                .await
+                .map_err(|e| ApiError::InternalServerError(e.to_string()))?
+                .art;
+
+            let filter = doc! { "sequence_number": { "$lt": sequence_number } };
+            let mut changes = state
+                .art_service
+                .list_changes(&payload.chat_id, filter, *sequence_number, 0)
+                .await
+                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+
+            if changes.len() < *sequence_number as usize {
+                return Err(ApiError::InternalServerError(
+                    ARTServiceError::NotFound.to_string(),
+                ));
+            }
+
+            changes.sort_by(|a, b| a.sequence_number.cmp(&b.sequence_number));
+
+            for change in &changes {
+                initial_art
+                    .update_art(&change.change)
+                    .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+            }
+
+            initial_art
+        }
+        None => {
+            state
+                .art_service
+                .get_art(&payload.chat_id)
+                .await
+                .map_err(|e| ApiError::InternalServerError(e.to_string()))?
+                .art
+        }
+    };
 
     let art_bytes = art
-        .art
         .serialise_with_postcard()
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
