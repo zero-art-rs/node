@@ -127,6 +127,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "cortado",
  "eyre",
  "futures-util",
  "hex",
@@ -368,7 +369,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "art"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#b96fccd1978522ac61045981ae31b74d6678cdf0"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#6af0f393d58f7c7aba098e13bba61d0524ad92bc"
 dependencies = [
  "ark-ec",
  "ark-ed25519",
@@ -376,6 +377,7 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "bulletproofs 5.0.0 (git+https://github.com/zk-messenger/bulletproofs)",
+ "cortado",
  "criterion",
  "curve25519-dalek",
  "display_tree",
@@ -640,9 +642,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.27"
+version = "1.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d487aa071b5f64da6f19a3e848e3578944b726ee5a4854b82172f02aa876bfdc"
+checksum = "5c1599538de2394445747c8cf7935946e3cc27e9625f889d979bfb2aaf569362"
 dependencies = [
  "shlex",
 ]
@@ -667,8 +669,10 @@ checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -822,6 +826,19 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+
+[[package]]
+name = "cortado"
+version = "0.1.0"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#6af0f393d58f7c7aba098e13bba61d0524ad92bc"
+dependencies = [
+ "ark-algebra-test-templates",
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+ "curve25519-dalek",
+]
 
 [[package]]
 name = "cpufeatures"
@@ -1595,9 +1612,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc2fdfdbff08affe55bb779f33b053aa1fe5dd5b54c257343c17edfa55711bdb"
+checksum = "7f66d5bd4c6f02bf0542fad85d626775bab9258cf795a4256dcaf3161114d1df"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1780,6 +1797,17 @@ dependencies = [
  "equivalent",
  "hashbrown 0.15.4",
  "serde",
+]
+
+[[package]]
+name = "io-uring"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b86e202f00093dcba4275d4636b93ef9dd75d025ae560d2521b45ea28ab49013"
+dependencies = [
+ "bitflags 2.9.1",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -2712,9 +2740,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"
-version = "0.12.21"
+version = "0.12.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c8cea6b35bcceb099f30173754403d2eba0a5dc18cea3630fccd88251909288"
+checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2818,13 +2846,12 @@ dependencies = [
 
 [[package]]
 name = "rust-ini"
-version = "0.21.1"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e310ef0e1b6eeb79169a1171daf9abcb87a2e17c03bee2c4bb100b55c75409f"
+checksum = "e7295b7ce3bf4806b419dc3420745998b447178b7005e2011947b38fc5aa6791"
 dependencies = [
  "cfg-if",
  "ordered-multimap",
- "trim-in-place",
 ]
 
 [[package]]
@@ -2959,9 +2986,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1375ba8ef45a6f15d83fa8748f1079428295d403d6ea991d09ab100155fbc06d"
+checksum = "82d20c4491bc164fa2f6c5d44565947a52ad80b9505d8e36f8d54c27c739fcd0"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -3076,7 +3103,7 @@ dependencies = [
  "indexmap 1.9.3",
  "indexmap 2.10.0",
  "schemars 0.9.0",
- "schemars 1.0.3",
+ "schemars 1.0.4",
  "serde",
  "serde_derive",
  "serde_json",
@@ -3214,6 +3241,7 @@ dependencies = [
  "art",
  "async-trait",
  "bson",
+ "cortado",
  "futures-util",
  "log",
  "mongodb",
@@ -3427,17 +3455,19 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.45.1"
+version = "1.46.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
+checksum = "0cc3a2344dafbe23a245241fe8b09735b521110d30fcefbbd5feb1797ca35d17"
 dependencies = [
  "backtrace",
  "bytes",
+ "io-uring",
  "libc",
  "mio",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
+ "slab",
  "socket2",
  "tokio-macros",
  "windows-sys 0.52.0",
@@ -3666,12 +3696,6 @@ dependencies = [
  "tracing-log",
  "tracing-serde",
 ]
-
-[[package]]
-name = "trim-in-place"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "343e926fc669bc8cde4fa3129ab681c63671bae288b1f1081ceee6d9d37904fc"
 
 [[package]]
 name = "try-lock"
@@ -4471,18 +4495,20 @@ dependencies = [
 [[package]]
 name = "zk"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#b96fccd1978522ac61045981ae31b74d6678cdf0"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#6af0f393d58f7c7aba098e13bba61d0524ad92bc"
 dependencies = [
- "ark-algebra-test-templates",
  "ark-ec",
  "ark-ed25519",
  "ark-ff",
  "ark-serialize",
  "ark-std",
  "bulletproofs 5.0.0 (git+https://github.com/zk-messenger/bulletproofs)",
+ "chrono",
+ "cortado",
  "curve25519-dalek",
  "hex",
  "merlin",
+ "once_cell",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "tracing",
@@ -4492,8 +4518,8 @@ dependencies = [
 
 [[package]]
 name = "zkp"
-version = "0.9.3"
-source = "git+https://github.com/juja256/zkp#e2a3a779202662ab5290bb81a07a783676528c84"
+version = "0.10.0"
+source = "git+https://github.com/juja256/zkp#cd89db6eb0ebd1727b5cebdec8bdfd1c89016b53"
 dependencies = [
  "ark-ec",
  "ark-ed25519",

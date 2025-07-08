@@ -2,7 +2,7 @@ use crate::errors::ApiError;
 use art::{ART, BranchChanges};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 /// Decode branch changes from base64 string
 pub(crate) fn decode_branch_changes(

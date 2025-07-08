@@ -3,7 +3,7 @@ use mongodb::{
     bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel, SessionCursor,
 };
 use uuid::Uuid;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 use crate::{ARTChangesStorage, DataStorage, StorageError, DATABASE};
 use types::ARTChangesRecord;

@@ -4,7 +4,7 @@ use crate::StorageError;
 use art::{BranchChanges, ART};
 use mongodb::ClientSession;
 use types::ARTRecord;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 /// Storage for art full states
 #[async_trait::async_trait]

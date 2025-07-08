@@ -4,7 +4,7 @@ use storage::{DataStorage, MongoInvitationStorage, StorageError};
 use tracing::error;
 use types::InvitationRecord;
 use uuid::Uuid;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvitationServiceError {

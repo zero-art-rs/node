@@ -4,7 +4,7 @@ use art::{BranchChanges, ART};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 pub struct MongoARTStorage {
     /// Collection for the initial art state for every chat.

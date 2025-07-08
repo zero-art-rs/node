@@ -17,7 +17,7 @@ use validator::Validate;
 use crate::{container::Container, errors::ApiError};
 use postcard::to_allocvec;
 use types::InvitationRecord;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]

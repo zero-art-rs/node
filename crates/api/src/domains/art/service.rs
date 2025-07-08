@@ -9,7 +9,7 @@ use storage::{
 use tracing::error;
 use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
-use zk::curve::cortado::CortadoAffine as ARTGroup;
+use cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ARTServiceError {
