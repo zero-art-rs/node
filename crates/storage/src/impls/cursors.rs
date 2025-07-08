@@ -1,15 +1,9 @@
-use futures_util::TryStreamExt;
 use log::info;
-use mongodb::{
-    bson::{doc, Document},
-    error::Error,
-    options::IndexOptions,
-    Collection, IndexModel,
-};
+use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
 use types::CursorRecord;
 use uuid::Uuid;
 
-use crate::{CursorStorage, DATABASE};
+use crate::{CursorStorage, DataStorage, StorageError, DATABASE};
 
 pub struct MongoCursorStorage {
     cursors_collection: Collection<CursorRecord>,
@@ -17,8 +11,10 @@ pub struct MongoCursorStorage {
 }
 
 impl MongoCursorStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+        let db = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
         let cursors_collection_name = format!("cursors/{}", chat_id);
         let cursors_collection = db.collection(&cursors_collection_name);
@@ -41,7 +37,7 @@ impl CursorStorage for MongoCursorStorage {
         &self,
         user_id: &str,
         sequence_number: i64,
-    ) -> Result<Option<CursorRecord>, mongodb::error::Error> {
+    ) -> Result<Option<CursorRecord>, StorageError> {
         let collection = &self.cursors_collection;
 
         let user_filter = doc! {"user_id": user_id.to_string()};
@@ -70,38 +66,13 @@ impl CursorStorage for MongoCursorStorage {
             }
         }
     }
+}
 
-    async fn list_cursors(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<CursorRecord>, mongodb::error::Error> {
-        let mut cursor = self
-            .cursors_collection
-            .find(filter)
-            .skip(skip as u64)
-            .limit(limit)
-            .await?;
+#[async_trait::async_trait]
+impl DataStorage for MongoCursorStorage {
+    type Data = CursorRecord;
 
-        let mut records = Vec::new();
-        while cursor.advance().await? {
-            records.push(cursor.deserialize_current()?);
-        }
-
-        Ok(records)
-    }
-
-    async fn delete_cursors(&self, filter: Document) -> Result<Vec<CursorRecord>, Error> {
-        let mut collection_cursor = self.cursors_collection.find(filter.clone()).await?;
-        let mut cursors = Vec::new();
-
-        while let Some(cursor) = collection_cursor.try_next().await? {
-            cursors.push(cursor);
-        }
-
-        self.cursors_collection.delete_many(filter).await?;
-
-        Ok(cursors)
+    async fn get_collection(&self) -> &Collection<Self::Data> {
+        &self.cursors_collection
     }
 }

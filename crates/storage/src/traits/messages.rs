@@ -1,27 +1,11 @@
-use mongodb::{
-    bson::Document,
-    change_stream::{event::ChangeStreamEvent, ChangeStream},
-};
+use crate::StorageError;
+use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use types::Message;
 
 #[async_trait::async_trait]
 pub trait MessageStorage: Send + Sync {
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, mongodb::error::Error>;
-    async fn store_message(
-        &self,
-        message: String,
-        sender: String,
-    ) -> Result<(), mongodb::error::Error>;
-    async fn list_messages(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<Message>, mongodb::error::Error>;
-    async fn delete_messages(
-        &self,
-        filter: Document,
-    ) -> Result<Vec<Message>, mongodb::error::Error>;
+    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, StorageError>;
+    async fn store_message(&self, content: Vec<u8>, sender: String) -> Result<(), StorageError>;
 }

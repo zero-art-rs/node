@@ -1,10 +1,9 @@
+use crate::config::NodeConfig;
+use api::{ARTService, CentrifugoService, Container, InvitationService, MessengerService};
+use mongodb::{Client, bson::doc, options::ClientOptions};
 use std::sync::Arc;
 use std::time::Duration;
-
-use crate::config::NodeConfig;
-use api::{CentrifugoService, Container, MessengerService};
-use mongodb::{Client, bson::doc, options::ClientOptions};
-use storage::DATABASE;
+use storage::{CLIENT, DATABASE};
 use tokio::select;
 use tokio::time::sleep;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -42,6 +41,8 @@ impl Node {
         let client_options = ClientOptions::parse(uri).await?;
         let client = Client::with_options(client_options)?;
 
+        CLIENT.set(client.clone()).unwrap();
+
         DATABASE
             .set(
                 client
@@ -72,10 +73,14 @@ impl Node {
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
         );
+        let art_service = ARTService::new();
+        let invitation_service = InvitationService::new();
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),
             centrifugo_service: Arc::new(centrifugo_service),
+            art_service: Arc::new(art_service),
+            invitation_service: Arc::new(invitation_service),
         });
 
         self.task_tracker.spawn(api::run_server(

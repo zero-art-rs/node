@@ -1,23 +1,47 @@
-use mongodb::bson::Document;
+use uuid::Uuid;
 
-use art::art::{BranchChanges, ART};
+use crate::StorageError;
+use art::{BranchChanges, ART};
+use mongodb::ClientSession;
 use types::ARTRecord;
-use zk::curve::cortado::CortadoProjective as ARTG;
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 /// Storage for art full states
 #[async_trait::async_trait]
 pub trait ARTStorage: Send + Sync {
-    async fn new_art(&self, art: ART<ARTG>) -> Result<(), mongodb::error::Error>;
+    async fn new_chat(
+        &self,
+        art: ART<ARTGroup>,
+        chat_id: Uuid,
+        is_private: bool,
+    ) -> Result<(), StorageError>;
 
     async fn delete_art(
         &self,
-        filter: Document,
-    ) -> Result<Vec<ARTRecord<ARTG>>, mongodb::error::Error>;
+        session: &mut ClientSession,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error>;
 
-    async fn get_art(&self, sequence_number: i64)
-        -> Result<ARTRecord<ARTG>, mongodb::error::Error>;
-    async fn find_latest_art(&self) -> Result<ARTRecord<ARTG>, mongodb::error::Error>;
+    async fn delete_initial_art(
+        &self,
+        session: &mut ClientSession,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error>;
 
-    /// Take the last iteration of art, update it with given changes and append to the end of the storage
-    async fn update_art(&self, changes: BranchChanges<ARTG>) -> Result<(), mongodb::error::Error>;
+    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError>;
+    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError>;
+    async fn update_art(
+        &self,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
+    ) -> Result<(), StorageError>;
+    async fn update_art_in_session(
+        &self,
+        session: &mut ClientSession,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error>;
+
+    /// Drop initial_arts_collection and/or arts_collection if empty
+    async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;
 }

@@ -1,23 +1,14 @@
-use mongodb::bson::Document;
+use crate::DataStorage;
+use art::BranchChanges;
+use mongodb::ClientSession;
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
-use art::art::BranchChanges;
-use types::ARTChangesRecord;
-use zk::curve::cortado::CortadoProjective as ARTG;
-
-/// Storage for art full states
+/// Storage for art states
 #[async_trait::async_trait]
-pub trait ARTChangesStorage: Send + Sync {
-    async fn store_change(&self, change: BranchChanges<ARTG>) -> Result<(), mongodb::error::Error>;
-
-    async fn list_changes(
+pub trait ARTChangesStorage: Send + Sync + DataStorage {
+    async fn push_change(
         &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<ARTChangesRecord<ARTG>>, mongodb::error::Error>;
-
-    async fn delete_changes(
-        &self,
-        filter: Document,
-    ) -> Result<Vec<ARTChangesRecord<ARTG>>, mongodb::error::Error>;
+        session: &mut ClientSession,
+        change: BranchChanges<ARTGroup>,
+    ) -> Result<(), mongodb::error::Error>;
 }

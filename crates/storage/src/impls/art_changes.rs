@@ -1,28 +1,38 @@
-use art::art::BranchChanges;
-use futures_util::TryStreamExt;
+use art::BranchChanges;
 use mongodb::{
-    bson::{doc, Document},
-    error::Error,
-    options::IndexOptions,
-    Collection, Cursor, IndexModel,
+    bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel, SessionCursor,
 };
 use uuid::Uuid;
-use zk::curve::cortado::CortadoProjective as ARTG;
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
-use crate::{ARTChangesStorage, DATABASE};
+use crate::{ARTChangesStorage, DataStorage, StorageError, DATABASE};
 use types::ARTChangesRecord;
 
 pub struct MongoARTChangesStorage {
-    art_changes_collection: Collection<ARTChangesRecord<ARTG>>,
-    _chat_id: Uuid,
+    art_changes_collection: Collection<ARTChangesRecord<ARTGroup>>,
 }
 
 impl MongoARTChangesStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    #[inline]
+    fn collection_name(chat_id: &Uuid) -> String {
+        format!("art_changes/{}", chat_id)
+    }
 
-        let art_changes_collection_name = format!("art_changes/{}", chat_id);
-        let art_changes_collection = db.collection(&art_changes_collection_name);
+    /// Creates new MongoARTChangesStorage, and maps error to StorageError
+    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+        Self::get_storage(chat_id)
+            .await
+            .map_err(StorageError::MongoDB)
+    }
+
+    /// Creates new MongoARTChangesStorage but in case of error, returns mongodb::error::Error. Can be
+    /// used for transactions.
+    pub async fn get_storage(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
+        let db = DATABASE.get().ok_or_else(|| {
+            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
+
+        let art_changes_collection = db.collection(&Self::collection_name(chat_id));
 
         let art_changes_index_model = IndexModel::builder()
             .keys(doc! { "sequence_number": -1})
@@ -34,26 +44,55 @@ impl MongoARTChangesStorage {
 
         Ok(Self {
             art_changes_collection,
-            _chat_id: *chat_id,
         })
     }
-}
 
-impl MongoARTChangesStorage {
-    async fn get_recent_record(&self) -> Result<Cursor<ARTChangesRecord<ARTG>>, Error> {
-        self.art_changes_collection
+    pub async fn get_existing_collection(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
+        let db = DATABASE.get().ok_or_else(|| {
+            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
+
+        let art_changes_collection = db.collection(&Self::collection_name(chat_id));
+
+        Ok(Self {
+            art_changes_collection,
+        })
+    }
+
+    async fn get_recent_record(
+        &self,
+        session: &mut ClientSession,
+    ) -> Result<SessionCursor<ARTChangesRecord<ARTGroup>>, mongodb::error::Error> {
+        let records = self
+            .art_changes_collection
             .find(doc! {})
             .sort(doc! { "sequence_number": -1 })
             .limit(1)
-            .await
+            .session(session)
+            .await?;
+
+        Ok(records)
+    }
+}
+
+#[async_trait::async_trait]
+impl DataStorage for MongoARTChangesStorage {
+    type Data = ARTChangesRecord<ARTGroup>;
+
+    async fn get_collection(&self) -> &Collection<Self::Data> {
+        &self.art_changes_collection
     }
 }
 
 #[async_trait::async_trait]
 impl ARTChangesStorage for MongoARTChangesStorage {
-    async fn store_change(&self, change: BranchChanges<ARTG>) -> Result<(), Error> {
-        let sequence_number = match self.get_recent_record().await?.try_next().await? {
-            Some(recent_record) => recent_record.sequence_number + 1,
+    async fn push_change(
+        &self,
+        session: &mut ClientSession,
+        change: BranchChanges<ARTGroup>,
+    ) -> Result<(), mongodb::error::Error> {
+        let sequence_number = match self.get_recent_record(session).await?.next(session).await {
+            Some(recent_record) => recent_record?.sequence_number + 1,
             None => 0,
         };
 
@@ -62,42 +101,9 @@ impl ARTChangesStorage for MongoARTChangesStorage {
                 sequence_number,
                 change,
             })
+            .session(session)
             .await?;
 
         Ok(())
-    }
-
-    async fn list_changes(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<ARTChangesRecord<ARTG>>, Error> {
-        let mut cursor = self
-            .art_changes_collection
-            .find(filter)
-            .skip(skip as u64)
-            .limit(limit)
-            .await?;
-
-        let mut records = Vec::new();
-        while cursor.advance().await? {
-            records.push(cursor.deserialize_current()?);
-        }
-
-        Ok(records)
-    }
-
-    async fn delete_changes(&self, filter: Document) -> Result<Vec<ARTChangesRecord<ARTG>>, Error> {
-        let mut collection_cursor = self.art_changes_collection.find(filter.clone()).await?;
-        let mut cursors = Vec::new();
-
-        while let Some(cursor) = collection_cursor.try_next().await? {
-            cursors.push(cursor);
-        }
-
-        self.art_changes_collection.delete_many(filter).await?;
-
-        Ok(cursors)
     }
 }

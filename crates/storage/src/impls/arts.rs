@@ -1,65 +1,80 @@
-use art::art::{BranchChanges, ART};
-use futures_util::TryStreamExt;
-use log::info;
-use mongodb::{
-    bson::{doc, Document},
-    error::Error,
-    options::IndexOptions,
-    Collection, Cursor, IndexModel,
-};
-use uuid::Uuid;
-use zk::curve::cortado::CortadoProjective as ARTG;
-
+use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
+use art::{BranchChanges, ART};
+use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
+use uuid::Uuid;
+use zk::curve::cortado::CortadoAffine as ARTGroup;
 
 pub struct MongoARTStorage {
-    arts_collection: Collection<ARTRecord<ARTG>>,
-    _chat_id: Uuid,
+    /// Collection for the initial art state for every chat.
+    initial_arts_collection: Collection<ARTRecord<ARTGroup>>,
+    /// Collection for the current state of the art for the chat.
+    arts_collection: Collection<ARTRecord<ARTGroup>>,
 }
 
 impl MongoARTStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    /// Creates new MongoARTStorage, and maps error to StorageError
+    pub async fn new() -> Result<Self, StorageError> {
+        let db = DATABASE.get().ok_or_else(|| {
+            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
 
-        let arts_collection_name = format!("arts/{}", chat_id);
-        let arts_collection = db.collection(&arts_collection_name);
+        let arts_collection = db.collection("chats".as_ref());
+        let initial_arts_collection = db.collection("initial_chats".as_ref());
 
-        let arts_index_model = IndexModel::builder()
-            .keys(doc! { "sequence_number": -1})
+        let index_model = IndexModel::builder()
+            .keys(doc! { "chat_id": -1})
             .options(IndexOptions::builder().build())
             .build();
-        arts_collection.create_index(arts_index_model).await?;
+
+        arts_collection.create_index(index_model.clone()).await?;
+        initial_arts_collection
+            .create_index(index_model.clone())
+            .await?;
 
         Ok(Self {
             arts_collection,
-            _chat_id: *chat_id,
+            initial_arts_collection,
         })
     }
-}
 
-impl MongoARTStorage {
-    pub async fn get_recent_art_record(&self) -> Result<Cursor<ARTRecord<ARTG>>, Error> {
-        let cursor = self
-            .arts_collection
-            .find(doc! {})
-            .sort(doc! { "sequence_number": -1 })
-            .limit(1)
-            .await?;
+    pub async fn get_existing_storage() -> Result<Self, mongodb::error::Error> {
+        let db = DATABASE.get().ok_or_else(|| {
+            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
 
-        Ok(cursor)
+        let arts_collection = db.collection("chats".as_ref());
+        let initial_arts_collection = db.collection("initial_chats".as_ref());
+
+        Ok(Self {
+            arts_collection,
+            initial_arts_collection,
+        })
     }
 }
 
 #[async_trait::async_trait]
 impl ARTStorage for MongoARTStorage {
-    async fn new_art(&self, art: ART<ARTG>) -> Result<(), Error> {
-        self.arts_collection.delete_many(doc! {}).await?;
-
+    async fn new_chat(
+        &self,
+        art: ART<ARTGroup>,
+        chat_id: Uuid,
+        is_private: bool,
+    ) -> Result<(), StorageError> {
         self.arts_collection
             .insert_one(ARTRecord {
-                sequence_number: 0,
+                chat_id,
                 art: art.clone(),
+                is_private,
+            })
+            .await?;
+
+        self.initial_arts_collection
+            .insert_one(ARTRecord {
+                chat_id,
+                art,
+                is_private,
             })
             .await?;
 
@@ -68,65 +83,109 @@ impl ARTStorage for MongoARTStorage {
 
     async fn delete_art(
         &self,
-        filter: Document,
-    ) -> Result<Vec<ARTRecord<ARTG>>, mongodb::error::Error> {
-        let mut collection_cursor = self.arts_collection.find(filter.clone()).await?;
-        let mut art_records = Vec::new();
+        session: &mut ClientSession,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error> {
+        let filter = doc! { "chat_id": chat_id };
 
-        while let Some(art_record) = collection_cursor.try_next().await? {
-            art_records.push(art_record);
-        }
+        self.arts_collection
+            .delete_one(filter.clone())
+            .session(session)
+            .await?;
 
-        self.arts_collection.delete_many(filter).await?;
-
-        Ok(art_records)
+        Ok(())
     }
 
-    async fn get_art(
+    async fn delete_initial_art(
         &self,
-        sequence_number: i64,
-    ) -> Result<ARTRecord<ARTG>, mongodb::error::Error> {
-        let mut cursor = self
+        session: &mut ClientSession,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error> {
+        let filter = doc! { "chat_id": chat_id };
+
+        self.initial_arts_collection
+            .delete_one(filter)
+            .session(session)
+            .await?;
+
+        Ok(())
+    }
+
+    /// return the latest art
+    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
+        let art = self
             .arts_collection
-            .find(doc! {"sequence_number": sequence_number})
+            .find_one(doc! {"chat_id": chat_id})
             .await?;
 
-        if let Some(result) = cursor.try_next().await? {
-            return Ok(result);
-        }
-
-        info!("There is no instance of arts collection for given sequence_number");
-        Err(Error::custom(
-            "There is no instance of arts collection for given sequence_number",
-        ))
+        art.ok_or_else(|| StorageError::NotFound)
     }
 
-    async fn find_latest_art(&self) -> Result<ARTRecord<ARTG>, mongodb::error::Error> {
-        let message_collection = &self.arts_collection;
-
-        let mut cursor = message_collection
-            .find(doc! {})
-            .sort(doc! { "sequence_number": -1 })
-            .limit(1)
+    /// Return the first art state in the chat
+    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
+        let art = self
+            .initial_arts_collection
+            .find_one(doc! {"chat_id": chat_id})
             .await?;
 
-        if let Some(result) = cursor.try_next().await? {
-            return Ok(result);
-        }
-
-        info!("The chat isn't initialized yet");
-        Err(Error::custom("The chat isn't initialized yet"))
+        art.ok_or_else(|| StorageError::NotFound)
     }
 
-    async fn update_art(&self, changes: BranchChanges<ARTG>) -> Result<(), mongodb::error::Error> {
-        let mut recent_record = self.get_recent_art_record().await?;
+    async fn update_art(
+        &self,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
+    ) -> Result<(), StorageError> {
+        let filter = doc! { "chat_id": chat_id };
 
-        if let Some(mut recent_record) = recent_record.try_next().await? {
-            recent_record.art.update_branch(&changes).unwrap();
+        if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
+            art_record.art.update_art(&changes)?;
 
-            recent_record.sequence_number += 1;
-            self.arts_collection.insert_one(recent_record).await?;
+            self.arts_collection
+                .find_one_and_replace(filter, art_record)
+                .await?;
         }
+
+        Ok(())
+    }
+
+    async fn update_art_in_session(
+        &self,
+        session: &mut ClientSession,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
+    ) -> Result<(), mongodb::error::Error> {
+        let filter = doc! { "chat_id": chat_id };
+
+        if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
+            art_record
+                .art
+                .update_art(&changes)
+                .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?;
+
+            self.arts_collection
+                .find_one_and_replace(filter, art_record)
+                .session(session)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error> {
+        if self.arts_collection.find_one(doc! {}).await?.is_none() {
+            self.arts_collection.drop().await?;
+        }
+
+        if self
+            .initial_arts_collection
+            .find_one(doc! {})
+            .await?
+            .is_none()
+        {
+            self.initial_arts_collection.drop().await?;
+        }
+
         Ok(())
     }
 }

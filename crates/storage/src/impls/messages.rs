@@ -1,7 +1,7 @@
-use crate::{MessageStorage, DATABASE};
+use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Document},
+    bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
     options::IndexOptions,
     Collection, IndexModel,
@@ -16,8 +16,10 @@ pub struct MongoMessageStorage {
 }
 
 impl MongoMessageStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
-        let db = DATABASE.get().unwrap();
+    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+        let db = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
         let messages_collection_name = format!("chat/{}", chat_id);
         let messages_collection = db.collection(&messages_collection_name);
@@ -45,17 +47,13 @@ impl MongoMessageStorage {
 impl MessageStorage for MongoMessageStorage {
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, mongodb::error::Error> {
+    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, StorageError> {
         let change_stream = self.messages_collection.watch().await?;
 
         Ok(change_stream)
     }
 
-    async fn store_message(
-        &self,
-        content: String,
-        sender: String,
-    ) -> Result<(), mongodb::error::Error> {
+    async fn store_message(&self, content: Vec<u8>, sender: String) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -69,7 +67,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number = result.sequence_number + 1;
         }
 
-        let mut message = Message::new(content.into_bytes(), next_sequence_number, sender, None);
+        let mut message = Message::new(content, next_sequence_number, sender, None);
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 
@@ -89,41 +87,13 @@ impl MessageStorage for MongoMessageStorage {
 
         Ok(())
     }
+}
 
-    async fn list_messages(
-        &self,
-        filter: Document,
-        limit: i64,
-        skip: i64,
-    ) -> Result<Vec<Message>, mongodb::error::Error> {
-        let mut cursor = self
-            .messages_collection
-            .find(filter)
-            .skip(skip as u64)
-            .limit(limit)
-            .await?;
+#[async_trait::async_trait]
+impl DataStorage for MongoMessageStorage {
+    type Data = Message;
 
-        let mut messages = Vec::new();
-        while cursor.advance().await? {
-            messages.push(cursor.deserialize_current()?);
-        }
-
-        Ok(messages)
-    }
-
-    async fn delete_messages(
-        &self,
-        filter: Document,
-    ) -> Result<Vec<Message>, mongodb::error::Error> {
-        let mut collection_cursor = self.messages_collection.find(filter.clone()).await?;
-        let mut messages = Vec::new();
-
-        while let Some(message) = collection_cursor.try_next().await? {
-            messages.push(message);
-        }
-
-        self.messages_collection.delete_many(filter).await?;
-
-        Ok(messages)
+    async fn get_collection(&self) -> &Collection<Self::Data> {
+        &self.messages_collection
     }
 }
