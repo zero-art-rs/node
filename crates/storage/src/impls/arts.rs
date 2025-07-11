@@ -1,16 +1,19 @@
 use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
-use art::{BranchChanges, ART};
+use art::{
+    traits::ARTPublicAPI,
+    types::{BranchChanges, PublicART},
+};
+use cortado::CortadoAffine as ARTGroup;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
-use cortado::CortadoAffine as ARTGroup;
 
 pub struct MongoARTStorage {
     /// Collection for the initial art state for every chat.
-    initial_arts_collection: Collection<ARTRecord<ARTGroup>>,
+    pub initial_arts_collection: Collection<ARTRecord<ARTGroup>>,
     /// Collection for the current state of the art for the chat.
-    arts_collection: Collection<ARTRecord<ARTGroup>>,
+    pub arts_collection: Collection<ARTRecord<ARTGroup>>,
 }
 
 impl MongoARTStorage {
@@ -58,7 +61,7 @@ impl MongoARTStorage {
 impl ARTStorage for MongoARTStorage {
     async fn new_chat(
         &self,
-        art: ART<ARTGroup>,
+        art: PublicART<ARTGroup>,
         chat_id: Uuid,
         is_private: bool,
     ) -> Result<(), StorageError> {
@@ -139,7 +142,7 @@ impl ARTStorage for MongoARTStorage {
         let filter = doc! { "chat_id": chat_id };
 
         if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
-            art_record.art.update_art(&changes)?;
+            art_record.art.update_public_art(&changes)?;
 
             self.arts_collection
                 .find_one_and_replace(filter, art_record)
@@ -160,7 +163,7 @@ impl ARTStorage for MongoARTStorage {
         if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
             art_record
                 .art
-                .update_art(&changes)
+                .update_public_art(&changes)
                 .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?;
 
             self.arts_collection

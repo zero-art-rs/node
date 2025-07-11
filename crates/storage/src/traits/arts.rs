@@ -1,17 +1,17 @@
 use uuid::Uuid;
 
 use crate::StorageError;
-use art::{BranchChanges, ART};
+use art::types::{BranchChanges, PublicART};
+use cortado::CortadoAffine as ARTGroup;
 use mongodb::ClientSession;
 use types::ARTRecord;
-use cortado::CortadoAffine as ARTGroup;
 
 /// Storage for art full states
 #[async_trait::async_trait]
 pub trait ARTStorage: Send + Sync {
     async fn new_chat(
         &self,
-        art: ART<ARTGroup>,
+        art: PublicART<ARTGroup>,
         chat_id: Uuid,
         is_private: bool,
     ) -> Result<(), StorageError>;

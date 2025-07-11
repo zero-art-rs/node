@@ -1,5 +1,5 @@
 use crate::errors::ApiError;
-use art::{ART, BranchChanges};
+use art::types::{BranchChanges, PublicART};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use cortado::CortadoAffine as ARTGroup;
@@ -17,11 +17,10 @@ pub(crate) fn decode_branch_changes(
 }
 
 /// Decode art from base64 string
-pub(crate) fn decode_art(art: &str) -> Result<ART<ARTGroup>, ApiError> {
+pub(crate) fn decode_art(art: &str) -> Result<PublicART<ARTGroup>, ApiError> {
     let art_bytes = BASE64_STANDARD
         .decode(art)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    ART::<ARTGroup>::deserialize_with_postcard(&art_bytes)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))
+    PublicART::<ARTGroup>::deserialize(&art_bytes).map_err(|e| ApiError::BadRequest(e.to_string()))
 }

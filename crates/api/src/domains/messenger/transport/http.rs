@@ -23,6 +23,7 @@ pub struct SendMessageRequest {
     pub sender_public_key: String,
 
     /// Unique identifier of the chat to send the message to.
+    #[schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 }
 
@@ -61,6 +62,7 @@ pub async fn send_message(
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
     /// Unique identifier of the chat to send the message to.
+    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Message creation time
@@ -73,9 +75,11 @@ pub struct GetMessageQuery {
     pub sequence_number: Option<i64>,
 
     /// Number of results to be returned
+    #[param(example = 10)]
     pub limit: i64,
 
     /// The amount or results to skip
+    #[param(example = 0)]
     pub skip: i64,
 }
 
@@ -154,6 +158,7 @@ pub async fn list_messages(
 #[serde(rename_all = "camelCase")]
 pub struct DeleteMessageQuery {
     /// Unique identifier of the chat to send the message to.
+    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Message creation time
@@ -231,207 +236,6 @@ pub async fn delete_messages(
     }
 
     let response = (status_code, Json(removed_messages));
-
-    Ok(response)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct MarkAsRead {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// Unique user id
-    pub user_id: String,
-
-    /// Message sequence_number to be set for the user
-    pub sequence_number: i64,
-}
-
-#[utoipa::path(
-    put,
-    path = "/v1/messenger/cursors",
-    params(
-        MarkAsRead,
-    ),
-    responses(
-        (status = 202, description = "Message sent."),
-        (status = 204, description = "No Content. Remove successfully."),
-        (status = 400, description = "Bad request", body = ApiError),
-        (status = 401, description = "Unauthorized", body = ApiError),
-        (status = 500, description = "Internal server error", body = ApiError)
-    ),
-    tag = "Messages"
-)]
-#[instrument(skip(state), err)]
-pub async fn mark_as_read(
-    State(state): State<Arc<Container>>,
-    Query(payload): Query<MarkAsRead>,
-) -> Result<impl IntoResponse, ApiError> {
-    // Validate the request payload.
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let result = state
-        .messenger_service
-        .mark_as_read(&payload.user_id, payload.sequence_number, &payload.chat_id)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    let response = match result {
-        Some(result) => {
-            info!("Successfully read. The previous cursor was: {}", result);
-            (StatusCode::OK, Json(Some(result)))
-        }
-        None => (StatusCode::NO_CONTENT, Json(None)),
-    };
-
-    Ok(response)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetCursorsQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// User unique identifier
-    pub user_id: Option<String>,
-
-    /// Sequence number of the message, which user already read
-    pub cursor: Option<i64>,
-
-    /// Number of results to be returned
-    pub limit: i64,
-
-    /// The amount or results to skip
-    pub skip: i64,
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/messenger/cursors",
-    params(
-        GetCursorsQuery,
-    ),
-    responses(
-        (status = 202, description = "Message sent."),
-        (status = 400, description = "Bad request", body = ApiError),
-        (status = 401, description = "Unauthorized", body = ApiError),
-        (status = 500, description = "Internal server error", body = ApiError)
-    ),
-    tag = "Messages"
-)]
-#[instrument(skip(state), err)]
-pub async fn list_cursors(
-    State(state): State<Arc<Container>>,
-    Query(payload): Query<GetCursorsQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let mut filter = doc! {};
-
-    if let Some(user_id) = payload.user_id {
-        _ = filter.insert("user_id", user_id);
-    }
-
-    if let Some(cursor) = payload.cursor {
-        _ = filter.insert("cursor", cursor);
-    }
-
-    let cursors = state
-        .messenger_service
-        .list_cursors(
-            &payload.chat_id,
-            filter.clone(),
-            payload.limit,
-            payload.skip,
-        )
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    if cursors.is_empty() {
-        info!("No cursors found for filter {}", filter);
-    } else {
-        info!("Found next cursors for the filter {}", filter);
-        for cursor in &cursors {
-            info!("Found cursor: {}", cursor);
-        }
-    }
-
-    let response = (StatusCode::ACCEPTED, Json(cursors));
-
-    Ok(response)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteCursorsQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// User unique identifier
-    pub user_id: Option<String>,
-
-    /// Sequence number of the message, which user already read
-    pub cursor: Option<i64>,
-}
-
-#[utoipa::path(
-    delete,
-    path = "/v1/messenger/cursors",
-    params(
-        DeleteCursorsQuery,
-    ),
-    responses(
-        (status = 202, description = "Message sent."),
-        (status = 204, description = "No Content. Removed successfully."),
-        (status = 400, description = "Bad request", body = ApiError),
-        (status = 401, description = "Unauthorized", body = ApiError),
-        (status = 500, description = "Internal server error", body = ApiError)
-    ),
-    tag = "Messages"
-)]
-#[instrument(skip(state), err)]
-pub async fn delete_cursors(
-    State(state): State<Arc<Container>>,
-    Query(payload): Query<DeleteCursorsQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let mut filter = doc! {};
-
-    if let Some(user_id) = payload.user_id {
-        _ = filter.insert("user_id", user_id);
-    }
-
-    if let Some(cursor) = payload.cursor {
-        _ = filter.insert("cursor", cursor);
-    }
-
-    let removed_cursors = state
-        .messenger_service
-        .delete_cursors(&payload.chat_id, filter.clone())
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    let mut status_code = StatusCode::OK;
-    if removed_cursors.is_empty() {
-        info!("No cursors found for filter {}", filter);
-        status_code = StatusCode::NO_CONTENT;
-    } else {
-        info!("Found and removed cursors for the filter {}:", filter);
-        for message in &removed_cursors {
-            info!("Successfully deleted cursor: {}", message);
-        }
-    }
-
-    let response = (status_code, Json(removed_cursors));
 
     Ok(response)
 }

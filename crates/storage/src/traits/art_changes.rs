@@ -1,7 +1,7 @@
 use crate::DataStorage;
-use art::BranchChanges;
-use mongodb::ClientSession;
+use art::types::BranchChanges;
 use cortado::CortadoAffine as ARTGroup;
+use mongodb::ClientSession;
 
 /// Storage for art states
 #[async_trait::async_trait]
