@@ -1,10 +1,10 @@
 use bson::{Binary, doc, spec::BinarySubtype};
+use cortado::CortadoAffine as ARTGroup;
 use mongodb::bson::{self};
 use storage::{DataStorage, MongoInvitationStorage, StorageError};
 use tracing::error;
 use types::InvitationRecord;
 use uuid::Uuid;
-use cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvitationServiceError {
