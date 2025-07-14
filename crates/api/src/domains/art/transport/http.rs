@@ -1,5 +1,5 @@
 use crate::domains::art::service::ARTServiceError;
-use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
+use crate::domains::art::transport::utils::{as_base64, decode_art, decode_branch_changes};
 use crate::{container::Container, errors::ApiError};
 use art::{traits::ARTPublicAPI, types::BranchChangesType};
 use axum::{
@@ -24,7 +24,8 @@ pub struct InitChatRequest {
     #[schema(
         example = "QHVOIsS7aF9klJHKUrxekAPKV+33NbmB4J5NK/mh6IQEGL8+nmZHd7rRwbWDOGRq0g9woVvX+rkmxu0tUHNIPYwBQMw5OnIemJkFNHnm8HCsN+99ekIxBgYotCVAYwdDPZAP5HTFQe45VuD23SI2mxW8D8j3KknDPepDEmg8n0j+1AIBQOuX8YX/e0i16YbSJ2lpURvM+0QcuToiM9UyBPvadnEDbZNGFdiQL3ULmmOtRtL2+BP9DTmBeNxx3fhYGU95FAIBQH/P/s7p2KJZctpWuukfHNEAK/oQrZfQ0j5hs+Qm6ecEaiBYdyjJ1FggyqqDkbfDEsjtebcPuZhp5u/cEQtd2wEAAAABAAFAahDbRHi2H9n/6hkYlFvT+EykOrS3Hd9fe9/yhehPeAx458pBSNKYPFXt+zjMTnrm4EMBYPy1boslBDoZBC+cAAAAAAEAAAIAAUCRRwLnU975oL83p+ZFh/zi6+8IfyqHlX9mZ3f6rVU6As4ao2I5tVFmfuuqhkQBjIZRxMfm/rSOIA4yrF5/53mMAUC9TfgZxLFEsOVYQsrnA59gb2Vr6qYW2PaMXfM/aTclAdcCotgt00eyxNt+EgWJ8JrjVVxZIt6RMzmvnmz0NwSPAAAAAQABQPVlwjO+3CsDj5QABAm2nwGO5ZEkZ8SCnzQK1m0tG/INK8L/ZBea3aK0weGxV2aWDtZul1Zf72mO+udih9HdP44AAAABAAACAAAEAAFA0DtiBydl146UurHWfv/bO6YSBkVWLxG3Cpxykz7ZJwJu6sGgmhc5gBRTs5Wq6+fZZh4+iplHCO+PY71NIrXOBwFASx7wVwl1/xvn4u0LYvN0XqsJxtgKehRInq7TO1UEyQ6UHnYb/1oa1sIlHrOs2GoMS5RdFCr8TybWxZDobwTRAwFAyiSMcuKbWNbI1809Y7g3neYpF4+BnhLWmU9Ea3oWOgoIeNPNQKQJ9TQ9eXOzmmCfXw81UGtrE6z39p/fyG+LAwAAAAEAAUBr5E3m12kSS8uDciloIUALp+VvI77c+54dtMdwaT/jDruUOc20HJ2CIbUs3b7cDA8Gae1bHVcGDDXOxB8HHaOPAAAAAQAAAgABQE2+Ilu7OJj6fMBlJLUmYmHU/rQO0U4nRwKyRH7CH6wNzxvjyz3rYSXq1rm72pt8hwJ4vKZtIEv23rVnuZ86p4sBQOZJ/qh4RDUjWBl9010Pa+YP2Kq781NS23Gk6/h6BxYNmT2emqCBuimYo+xrTLDFslQdpWuOQSYaZz+d0u9264wAAAABAAFAjE/8rW2OG9VVZ4vmzKuE0bFnjgMzSnNtkxgh1752lwxFI56bmXf95h4ZE9RRrup+AAE/qU7lpBJBsuqJwllAjgAAAAEAAAIAAAQAAAgAQBb0nJfwNLo+g8mUCYwoe7xHMdoOH8lBUPbSxGO4ZU4L5MbvfV1rfEC5ESVj2skQDLeEMMWdQeH9uM2NQl/Vbos="
     )]
-    art: String,
+    #[serde(with = "as_base64")]
+    art: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
@@ -148,7 +149,8 @@ pub struct AddMemberRequest {
     #[schema(
         example = "AUB0urTTqwXgQt9FnyA0DzPCkHbfZPx5Tnbtu4ApwNNAAt3A68AFXBv6RU+dOJ2uft6tRml2W6HSPktlP3PS66iNAAAAAQDIAgUAAAAAAAAA2vrTKjDNUuMjI/9/VQBjWMsycwz55AGdDgml5yXHKwkxwmm+Fb+26mRv7d/Wfhi9wpscXZHFXBQZXwgqod8Kioqy60ZImTb3xVNlt74eTzEOmAXKK5uQ2cHzPr6cITcHKmzAqUY8f5s2mRWBDHOsl1/BrUVmH4aKzhBZCGyoBgIRdfOd/IRv0iwex8PFx/V+DaFVTLxhnRcGWk0qaA4bDlwJy0+22eqpdO8xxgc4hsBgz9ImAlz9h7ZjhqbJ10eOJzYF1QxsgHS6g7wsHjJPZqxxkq4mN8vLatzsfnP58QNHfTNlqUMIhXD5IcgR+UELutN9AIxqt0sKTGJCAj8aAHS6tNOrBeBC30WfIDQPM8KQdt9k/HlOdu27gCnA00AC3cDrwAVcG/pFT504na5+3q1GaXZbodI+S2U/c9LrqI0ACA=="
     )]
-    branch_changes: String,
+    #[serde(with = "as_base64")]
+    branch_changes: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
@@ -198,7 +200,8 @@ pub struct RemoveMember {
     #[schema(
         example = r#"AEBqENtEeLYf2f/qGRiUW9P4TKQ6tLcd31973/KF6E94DHjnykFI0pg8Ve37OMxOeubgQwFg/LVuiyUEOhkEL5wAIDef4VDfd4IpU5zytQEbb07HasgN+7uh8Nuy+Z9sKqAHiAIEAAAAAAAAAOe9K4Vv22xfOUmaL9Lw+/zDisVnTsJcitnAXAiCz38ESx1h3sa/HXUURlpHmKnzwkeSGL0gbTnUNzbjhkSIIohNxl5CFfLAQ2DfRt+Z+egwjgAGY9H22ly4R8I0ekkHC33f34mqKtdccZfRbfnTvzqE/inTg2IAO2BqPQz+lKGP3lpeFTKKD5neWN8xOjEJgJhVZuntoYoWXFmCuZeB6wCXbogsc8vcPKNGte/jiAb7VWfyvgF/vja9v7eusCcziuj2vYhZaT9ROhTy+jhbZDeKcdT2dzo1SvqL3VhbLyMHJkRBbh1WKWhshFlWRLrDN8OohOIxfyIfKTnuNJKhgYwACQ=="#
     )]
-    branch_changes: String,
+    #[serde(with = "as_base64")]
+    branch_changes: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
@@ -248,7 +251,8 @@ pub struct UpdateKey {
     #[schema(
         example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
     )]
-    branch_changes: String,
+    #[serde(with = "as_base64")]
+    branch_changes: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]

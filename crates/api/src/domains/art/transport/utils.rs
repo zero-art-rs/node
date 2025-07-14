@@ -6,13 +6,9 @@ use cortado::CortadoAffine as ARTGroup;
 
 /// Decode branch changes from base64 string
 pub(crate) fn decode_branch_changes(
-    branch_changes: &String,
+    branch_changes_bytes: &Vec<u8>,
 ) -> Result<BranchChanges<ARTGroup>, ApiError> {
-    let branch_changes_bytes = BASE64_STANDARD
-        .decode(branch_changes)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    BranchChanges::<ARTGroup>::deserialize(&branch_changes_bytes)
+    BranchChanges::<ARTGroup>::deserialize(branch_changes_bytes)
         .map_err(|e| ApiError::BadRequest(e.to_string()))
 }
 
@@ -23,4 +19,27 @@ pub(crate) fn decode_art(art: &str) -> Result<PublicART<ARTGroup>, ApiError> {
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     PublicART::<ARTGroup>::deserialize(&art_bytes).map_err(|e| ApiError::BadRequest(e.to_string()))
+pub(crate) fn decode_art(art_bytes: &Vec<u8>) -> Result<ART<ARTGroup>, ApiError> {
+    ART::<ARTGroup>::deserialize_with_postcard(art_bytes)
+        .map_err(|e| ApiError::BadRequest(e.to_string()))
+}
+
+/// Helper for base64 serialization and deserialization
+pub(crate) mod as_base64 {
+    use base64::Engine;
+    use base64::prelude::BASE64_STANDARD;
+    use serde::{Deserialize, Serialize};
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+        let base64 = BASE64_STANDARD.encode(v);
+        String::serialize(&base64, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let base64 = String::deserialize(d)?;
+        BASE64_STANDARD
+            .decode(base64.as_bytes())
+            .map_err(serde::de::Error::custom)
+    }
 }
