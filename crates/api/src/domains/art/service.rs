@@ -1,4 +1,5 @@
 use art::{ART, BranchChanges, BranchChangesType};
+use cortado::CortadoAffine as ARTGroup;
 use futures_util::FutureExt;
 use mongodb::ClientSession;
 use mongodb::bson::Document;
@@ -9,7 +10,6 @@ use storage::{
 use tracing::error;
 use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
-use cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ARTServiceError {

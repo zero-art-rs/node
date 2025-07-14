@@ -15,9 +15,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{container::Container, errors::ApiError};
+use cortado::CortadoAffine as ARTGroup;
 use postcard::to_allocvec;
 use types::InvitationRecord;
-use cortado::CortadoAffine as ARTGroup;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]

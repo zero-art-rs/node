@@ -2,9 +2,9 @@ use uuid::Uuid;
 
 use crate::StorageError;
 use art::{BranchChanges, ART};
+use cortado::CortadoAffine as ARTGroup;
 use mongodb::ClientSession;
 use types::ARTRecord;
-use cortado::CortadoAffine as ARTGroup;
 
 /// Storage for art full states
 #[async_trait::async_trait]

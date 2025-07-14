@@ -1,10 +1,10 @@
 use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
 use art::{BranchChanges, ART};
+use cortado::CortadoAffine as ARTGroup;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
-use cortado::CortadoAffine as ARTGroup;
 
 pub struct MongoARTStorage {
     /// Collection for the initial art state for every chat.
