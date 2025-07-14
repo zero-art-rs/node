@@ -1,6 +1,6 @@
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::ART;
+use art::types::PublicART;
 use bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub struct ARTRecord<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> {
     #[serde(with = "uuid_1_as_binary")]
     pub chat_id: Uuid,
-    pub art: ART<G>,
+    pub art: PublicART<G>,
     pub is_private: bool,
 }
 

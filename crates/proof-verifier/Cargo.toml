@@ -10,3 +10,10 @@ callbacks = { path = "../callback" }
 types = { path = "../types" }
 tracing = { workspace = true }
 eyre = { workspace = true }
+ark-ed25519 = { workspace = true }
+ark-serialize = { workspace = true }
+bulletproofs = { workspace = true }
+cortado = { workspace = true }
+zk = { workspace = true }
+zkp = { workspace = true }
+crypto = { workspace = true }

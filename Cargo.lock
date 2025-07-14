@@ -127,7 +127,6 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "callbacks",
- "callbacks",
  "chrono",
  "cortado",
  "eyre",
@@ -137,7 +136,6 @@ dependencies = [
  "log",
  "mongodb",
  "postcard",
- "proof-verifier",
  "proof-verifier",
  "rand 0.9.1",
  "serde",
@@ -373,7 +371,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "art"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#6af0f393d58f7c7aba098e13bba61d0524ad92bc"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#2662b837ff822eed609a48b91cc389edd2aa945f"
 dependencies = [
  "ark-ec",
  "ark-ed25519",
@@ -842,7 +840,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cortado"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#6af0f393d58f7c7aba098e13bba61d0524ad92bc"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#2662b837ff822eed609a48b91cc389edd2aa945f"
 dependencies = [
  "ark-algebra-test-templates",
  "ark-ec",
@@ -939,6 +937,21 @@ name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
+name = "crypto"
+version = "0.1.0"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#2662b837ff822eed609a48b91cc389edd2aa945f"
+dependencies = [
+ "ark-serialize",
+ "cortado",
+ "hkdf",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "sha3",
+ "thiserror 2.0.12",
+ "zkp",
+]
 
 [[package]]
 name = "crypto-common"
@@ -1522,6 +1535,15 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "hkdf"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
+dependencies = [
+ "hmac",
 ]
 
 [[package]]
@@ -2524,12 +2546,19 @@ dependencies = [
 name = "proof-verifier"
 version = "0.1.0"
 dependencies = [
+ "ark-ed25519",
+ "ark-serialize",
+ "bulletproofs 5.0.0 (git+https://github.com/zk-messenger/bulletproofs)",
  "callbacks",
+ "cortado",
+ "crypto",
  "eyre",
  "tokio",
  "tokio-util",
  "tracing",
  "types",
+ "zk",
+ "zkp",
 ]
 
 [[package]]
@@ -2584,7 +2613,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3752,8 +3781,6 @@ dependencies = [
  "bson",
  "callbacks",
  "eyre",
- "callbacks",
- "eyre",
  "hex",
  "mongodb",
  "serde",
@@ -4116,7 +4143,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4521,7 +4548,7 @@ dependencies = [
 [[package]]
 name = "zk"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#6af0f393d58f7c7aba098e13bba61d0524ad92bc"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#2662b837ff822eed609a48b91cc389edd2aa945f"
 dependencies = [
  "ark-ec",
  "ark-ed25519",
@@ -4545,7 +4572,7 @@ dependencies = [
 [[package]]
 name = "zkp"
 version = "0.10.0"
-source = "git+https://github.com/juja256/zkp#cd89db6eb0ebd1727b5cebdec8bdfd1c89016b53"
+source = "git+https://github.com/juja256/zkp#609840f977441cc46ed011795b23b3c52aa70359"
 dependencies = [
  "ark-ec",
  "ark-ed25519",

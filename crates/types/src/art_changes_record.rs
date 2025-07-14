@@ -1,6 +1,6 @@
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::BranchChanges;
+use art::types::BranchChanges;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

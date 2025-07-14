@@ -1,5 +1,5 @@
 use crate::config::NodeConfig;
-use api::{ARTService, CentrifugoService, Container, InvitationService, MessengerService};
+use api::{ARTService, CentrifugoService, Container, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use std::sync::Arc;
 use std::time::Duration;
@@ -79,13 +79,11 @@ impl Node {
             self.config.centrifugo.ttl,
         );
         let art_service = ARTService::new();
-        let invitation_service = InvitationService::new();
 
         let container = Arc::new(Container {
             messenger_service: Arc::new(messenger_service),
             centrifugo_service: Arc::new(centrifugo_service),
             art_service: Arc::new(art_service),
-            invitation_service: Arc::new(invitation_service),
             proof_verifier_sender,
         });
 

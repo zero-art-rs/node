@@ -30,6 +30,7 @@ hyper = { version = "1.6.0", default-features = false }
 lazy_static = { version = "1.5.0", default-features = false }
 thiserror = { version = "2.0.12", default-features = false }
 ark-ec = { version = "0.5.0", default-features = false }
+ark-ed25519 = { version = "0.5.0"}
 ark-std = { version = "0.5.0", default-features = false }
 ark-serialize = { version = "0.5.0", default-features = false }
 utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
@@ -45,8 +46,11 @@ jsonwebtoken = "9.3.1"
 zk = { git = "ssh://git@github.com/zk-messenger/project-m.git" }
 tokio-stream = { version = "0.1.10" }
 art = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
+crypto = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
 cortado = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
 postcard = { version = "1.1.2"  }
+bulletproofs = { version = "5.0.0", git="https://github.com/zk-messenger/bulletproofs"}
+zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 
 [workspace.lints.clippy]
 all = "warn"

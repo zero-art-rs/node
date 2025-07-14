@@ -7,15 +7,11 @@ mod traits;
 
 pub use impls::MongoARTChangesStorage;
 pub use impls::MongoARTStorage;
-pub use impls::MongoCursorStorage;
-pub use impls::MongoInvitationStorage;
 pub use impls::MongoMessageStorage;
 pub use mongodb::error::Error;
 pub use traits::ARTChangesStorage;
 pub use traits::ARTStorage;
-pub use traits::CursorStorage;
 pub use traits::DataStorage;
-pub use traits::InvitationStorage;
 pub use traits::MessageStorage;
 
 pub use errors::StorageError;

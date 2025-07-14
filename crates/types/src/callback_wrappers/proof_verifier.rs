@@ -4,7 +4,8 @@ use callbacks::{CallbackSender, CallbackWrapper};
 pub enum ProofVerifierMessage {
     AddMember {
         proof: Vec<u8>,
-        // TODO: add operation specific data
+        co_path: Vec<u8>,
+        associated_data: Vec<u8>,
     },
     ModifyArt {
         proof: Vec<u8>,

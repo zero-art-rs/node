@@ -1,10 +1,10 @@
-use art::{ART, BranchChanges, BranchChangesType};
+use art::types::{BranchChanges, BranchChangesType, PublicART};
 use cortado::CortadoAffine as ARTGroup;
 use futures_util::FutureExt;
 use mongodb::ClientSession;
 use mongodb::bson::Document;
 use storage::{
-    ARTChangesStorage, ARTStorage, CLIENT, DataStorage, MongoARTChangesStorage, MongoARTStorage,
+    ARTChangesStorage, ARTStorage, DATABASE, DataStorage, MongoARTChangesStorage, MongoARTStorage,
     StorageError,
 };
 use tracing::error;
@@ -82,11 +82,12 @@ impl ARTService {
             return Err(ARTServiceError::NotFound);
         }
 
-        let client = CLIENT.get().ok_or_else(|| StorageError::ClientRetrieval)?;
-        let mut session = client
+        let mut session = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+            .client()
             .start_session()
-            .await
-            .map_err(|_| ARTServiceError::SessionInitiation)?;
+            .await?;
 
         session
             .start_transaction()
@@ -122,7 +123,7 @@ impl ARTService {
     pub async fn init_chat(
         &self,
         chat_id: &Uuid,
-        art: ART<ARTGroup>,
+        art: PublicART<ARTGroup>,
         is_private: bool,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
@@ -144,16 +145,17 @@ impl ARTService {
         let arts_storage = MongoARTStorage::new().await?;
         if arts_storage.get_art(*chat_id).await?.is_private {
             match changes.change_type {
-                BranchChangesType::UpdateKeys => {}
+                BranchChangesType::UpdateKey => {}
                 _ => return Err(ARTServiceError::InvalidChangeType),
             }
         }
 
-        let client = CLIENT.get().ok_or_else(|| StorageError::ClientRetrieval)?;
-        let mut session = client
+        let mut session = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+            .client()
             .start_session()
-            .await
-            .map_err(|_| ARTServiceError::SessionInitiation)?;
+            .await?;
 
         session
             .start_transaction()
