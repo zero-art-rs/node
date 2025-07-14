@@ -1,4 +1,4 @@
-use art::BranchChanges;
+use art::types::BranchChanges;
 use cortado::CortadoAffine as ARTGroup;
 use mongodb::{
     bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel, SessionCursor,

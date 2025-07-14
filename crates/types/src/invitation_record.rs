@@ -1,6 +1,6 @@
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::{ark_de, ark_se};
+use art::helper_tools::{ark_de, ark_se};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

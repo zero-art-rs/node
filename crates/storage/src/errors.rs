@@ -1,4 +1,4 @@
-use art::ARTError;
+use art::errors::ARTError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
@@ -6,8 +6,6 @@ pub enum StorageError {
     MongoDB(#[from] mongodb::error::Error),
     #[error("Failed to retrieve database")]
     DatabaseRetrieval,
-    #[error("Failed to retrieve client")]
-    ClientRetrieval,
     #[error("Failed to update art")]
     ARTError(#[from] ARTError),
     #[error("Record Not Found")]
