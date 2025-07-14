@@ -11,6 +11,7 @@ callbacks = { path = "../callback" }
 art = { workspace = true }
 ark-ec = { workspace = true }
 eyre = { workspace = true }
+eyre = { workspace = true }
 ark-serialize = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 utoipa = { workspace = true }

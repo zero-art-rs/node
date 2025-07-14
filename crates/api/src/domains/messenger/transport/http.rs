@@ -646,6 +646,25 @@ pub async fn update_art(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
+    let modify_art_message = ProofVerifierMessage::ModifyArt { proof: vec![] };
+    match callback(&state.proof_verifier_sender, modify_art_message).await {
+        Ok(message) => {
+            let ProofVerifierResult::ModifyArt { verdict } = message else {
+                return Err(ApiError::InternalServerError(
+                    "Invalid message from proof verifier".to_string(),
+                ));
+            };
+
+            if !verdict {
+                return Err(ApiError::BadRequest("Invalid proof".to_string()));
+            }
+        }
+        Err(e) => {
+            error!("Failed to send message to proof verifier: {}", e);
+            return Err(ApiError::InternalServerError(e.to_string()));
+        }
+    };
+
     let changes = serde_json::from_str::<BranchChanges<ARTG>>(&payload.changes)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
