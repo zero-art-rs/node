@@ -5,6 +5,7 @@ use art::{
     types::{BranchChanges, PublicART},
 };
 use cortado::CortadoAffine as ARTGroup;
+use futures_util::TryStreamExt;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
@@ -65,20 +66,19 @@ impl ARTStorage for MongoARTStorage {
         chat_id: Uuid,
         is_private: bool,
     ) -> Result<(), StorageError> {
+        let initial_art_record = ARTRecord {
+            chat_id,
+            art: art.clone(),
+            is_private,
+            sequence_number: 0,
+        };
+
         self.arts_collection
-            .insert_one(ARTRecord {
-                chat_id,
-                art: art.clone(),
-                is_private,
-            })
+            .insert_one(initial_art_record.clone())
             .await?;
 
         self.initial_arts_collection
-            .insert_one(ARTRecord {
-                chat_id,
-                art,
-                is_private,
-            })
+            .insert_one(initial_art_record)
             .await?;
 
         Ok(())
@@ -165,6 +165,7 @@ impl ARTStorage for MongoARTStorage {
                 .art
                 .update_public_art(&changes)
                 .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?;
+            art_record.sequence_number += 1;
 
             self.arts_collection
                 .find_one_and_replace(filter, art_record)
@@ -190,5 +191,21 @@ impl ARTStorage for MongoARTStorage {
         }
 
         Ok(())
+    }
+
+    async fn get_latest_sequence_number(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<i64, mongodb::error::Error> {
+        let cursor = self
+            .arts_collection
+            .find_one(doc! { "chat_id": chat_id })
+            .await?;
+
+        let sequence_number = cursor
+            .ok_or_else(|| mongodb::error::Error::from(std::io::Error::other("No records Found")))?
+            .sequence_number;
+
+        Ok(sequence_number)
     }
 }

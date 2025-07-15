@@ -1,14 +1,17 @@
+use ark_std::iterable::Iterable;
+use art::errors::ARTError;
+use art::traits::ARTPublicAPI;
 use art::types::{BranchChanges, BranchChangesType, PublicART};
 use cortado::CortadoAffine as ARTGroup;
 use futures_util::FutureExt;
 use mongodb::ClientSession;
-use mongodb::bson::Document;
+use mongodb::bson::{Document, doc};
 use storage::{
     ARTChangesStorage, ARTStorage, DATABASE, DataStorage, MongoARTChangesStorage, MongoARTStorage,
     StorageError,
 };
 use tracing::error;
-use types::{ARTChangesRecord, ARTRecord};
+use types::{ARTChangesRecord, ARTRecord, ProofRecord};
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +38,8 @@ pub enum ARTServiceError {
     ClientRetrieval,
     #[error("Failed to initiate new session")]
     SessionInitiation,
+    #[error("Failed to use ART {0}")]
+    ArtError(#[from] ARTError),
 }
 
 pub struct ARTService {}
@@ -52,14 +57,81 @@ impl Default for ARTService {
 }
 
 impl ARTService {
-    pub async fn get_art(&self, chat_id: &Uuid) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+    pub async fn get_art(
+        &self,
+        chat_id: &Uuid,
+        sequence_number: Option<i64>,
+    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
-        let record = arts_storage
-            .get_art(*chat_id)
-            .await
-            .map_err(|_| ARTServiceError::NotFound)?;
+        let record = match &sequence_number {
+            Some(sequence_number) => {
+                self.get_art_by_sequence_number(chat_id, *sequence_number)
+                    .await?
+            }
+            None => arts_storage
+                .get_art(*chat_id)
+                .await
+                .map_err(|_| ARTServiceError::NotFound)?,
+        };
 
         Ok(record)
+    }
+
+    pub async fn get_previous_art(
+        &self,
+        chat_id: &Uuid,
+        sequence_number: Option<i64>,
+    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        let arts_storage = MongoARTStorage::new().await?;
+        let latest_sequence_number = arts_storage.get_latest_sequence_number(chat_id).await?;
+
+        let previous_art = match sequence_number {
+            Some(sequence_number) => {
+                if sequence_number < 1 || latest_sequence_number < sequence_number {
+                    return Err(ARTServiceError::InvalidInput);
+                }
+
+                self.get_art_by_sequence_number(chat_id, sequence_number - 1)
+                    .await?
+            }
+            None => {
+                self.get_art_by_sequence_number(chat_id, latest_sequence_number - 1)
+                    .await?
+            }
+        };
+
+        Ok(previous_art)
+    }
+
+    pub async fn get_art_by_sequence_number(
+        &self,
+        chat_id: &Uuid,
+        sequence_number: i64,
+    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        let art_record = self.get_initial_art(chat_id).await?;
+        let mut initial_art = art_record.art;
+
+        let filter = doc! { "sequence_number": { "$lt": sequence_number } };
+        let mut changes = self
+            .list_changes(chat_id, filter, sequence_number, 0)
+            .await?;
+
+        if changes.len() < sequence_number as usize {
+            return Err(ARTServiceError::NotFound);
+        }
+
+        changes.sort_by(|a, b| a.sequence_number.cmp(&b.sequence_number));
+
+        for change in &changes {
+            initial_art.update_public_art(&change.change)?;
+        }
+
+        Ok(ARTRecord {
+            chat_id: *chat_id,
+            art: initial_art,
+            is_private: art_record.is_private,
+            sequence_number,
+        })
     }
 
     pub async fn get_initial_art(
@@ -137,10 +209,47 @@ impl ARTService {
         Ok(())
     }
 
-    pub async fn update_art(
+    pub async fn update_key(
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
+        proof_record: &ProofRecord,
+    ) -> Result<(), ARTServiceError> {
+        match changes.change_type {
+            BranchChangesType::UpdateKey => self.update_art(chat_id, changes, proof_record).await,
+            _ => Err(ARTServiceError::InvalidChangeType)
+        }
+    }
+
+    pub async fn append_member(
+        &self,
+        chat_id: &Uuid,
+        changes: &BranchChanges<ARTGroup>,
+        proof_record: &ProofRecord,
+    ) -> Result<(), ARTServiceError> {
+        match changes.change_type {
+            BranchChangesType::AppendNode(_) => self.update_art(chat_id, changes, proof_record).await,
+            _ => Err(ARTServiceError::InvalidChangeType)
+        }
+    }
+
+    pub async fn remove_member(
+        &self,
+        chat_id: &Uuid,
+        changes: &BranchChanges<ARTGroup>,
+        proof_record: &ProofRecord,
+    ) -> Result<(), ARTServiceError> {
+        match changes.change_type {
+            BranchChangesType::RemoveNode(_) => self.update_art(chat_id, changes, proof_record).await,
+            _ => Err(ARTServiceError::InvalidChangeType)
+        }
+    }
+
+    async fn update_art(
+        &self,
+        chat_id: &Uuid,
+        changes: &BranchChanges<ARTGroup>,
+        proof_record: &ProofRecord,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         if arts_storage.get_art(*chat_id).await?.is_private {
@@ -159,9 +268,16 @@ impl ARTService {
 
         session
             .start_transaction()
-            .and_run((chat_id, changes), |session, (chat_id, changes)| {
-                async move { self.update_art_callback(session, chat_id, changes).await }.boxed()
-            })
+            .and_run(
+                (chat_id, changes, proof_record),
+                |session, (chat_id, changes, proof_record)| {
+                    async move {
+                        self.update_art_callback(session, chat_id, changes, proof_record)
+                            .await
+                    }
+                    .boxed()
+                },
+            )
             .await
             .map_err(ARTServiceError::MongoDB)?;
 
@@ -188,6 +304,7 @@ impl ARTService {
         session: &mut ClientSession,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
+        proof_record: &ProofRecord,
     ) -> Result<(), mongodb::error::Error> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
@@ -197,7 +314,7 @@ impl ARTService {
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone())
+            .push_change(session, changes.clone(), proof_record.clone())
             .await?;
 
         Ok(())

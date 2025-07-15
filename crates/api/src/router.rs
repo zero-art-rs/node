@@ -42,9 +42,9 @@ pub fn build_router() -> Router<Arc<Container>> {
         .routes(routes!(messenger_transport::delete_messages))
         .routes(routes!(art_transport::init_chat))
         .routes(routes!(art_transport::get_art))
+        .routes(routes!(art_transport::get_initial_art))
         .routes(routes!(art_transport::add_member))
         .routes(routes!(art_transport::remove_member))
-        // .routes(routes!(art_transport::leave_chat))
         .routes(routes!(art_transport::update_key))
         .routes(routes!(art_transport::get_changes))
         .routes(routes!(art_transport::delete_chat));

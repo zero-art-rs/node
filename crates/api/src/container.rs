@@ -1,9 +1,9 @@
+use proof_verifier::ProofVerifierSender;
 use std::sync::Arc;
 
-use proof_verifier::ProofVerifierSender;
-
 use crate::domains::{
-    art::service::ARTService, centrifugo::service::CentrifugoService, messenger::service::MessengerService,
+    art::service::ARTService, centrifugo::service::CentrifugoService,
+    messenger::service::MessengerService,
 };
 
 pub struct Container {

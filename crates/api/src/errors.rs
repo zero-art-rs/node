@@ -1,8 +1,10 @@
+use art::errors::ARTError;
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 
-use axum::{Json, http::StatusCode, response::IntoResponse};
-
+use crate::domains::art::service::ARTServiceError;
 use serde_json::json;
+use tracing::error;
 use utoipa::ToSchema;
 
 /// Errors that can occur in the API
@@ -16,6 +18,31 @@ pub enum ApiError {
     InternalServerError(String),
     /// Resource not found
     NotFound(String),
+}
+
+impl From<ARTError> for ApiError {
+    fn from(value: ARTError) -> Self {
+        Self::InternalServerError(value.to_string())
+    }
+}
+
+impl From<ARTServiceError> for ApiError {
+    fn from(value: ARTServiceError) -> Self {
+        match value {
+            ARTServiceError::AlreadyExists
+            | ARTServiceError::InvalidInput
+            | ARTServiceError::InvalidChangeType
+            | ARTServiceError::NotFound
+            | ARTServiceError::GroupChatOnly => Self::BadRequest(value.to_string()),
+            _ => Self::InternalServerError(value.to_string()),
+        }
+    }
+}
+
+impl From<validator::ValidationErrors> for ApiError {
+    fn from(value: validator::ValidationErrors) -> Self {
+        Self::BadRequest(value.to_string())
+    }
 }
 
 impl fmt::Display for ApiError {

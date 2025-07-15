@@ -1,8 +1,5 @@
 use mongodb::bson::Document;
-use storage::{
-    DataStorage, MessageStorage, MongoMessageStorage,
-    StorageError,
-};
+use storage::{DataStorage, MessageStorage, MongoMessageStorage, StorageError};
 use types::Message;
 use uuid::Uuid;
 

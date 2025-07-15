@@ -3780,6 +3780,7 @@ dependencies = [
  "art",
  "bson",
  "callbacks",
+ "cortado",
  "eyre",
  "hex",
  "mongodb",
@@ -3788,6 +3789,7 @@ dependencies = [
  "tokio",
  "utoipa",
  "uuid",
+ "zk",
 ]
 
 [[package]]

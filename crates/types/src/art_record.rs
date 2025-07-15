@@ -13,14 +13,15 @@ pub struct ARTRecord<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> 
     pub chat_id: Uuid,
     pub art: PublicART<G>,
     pub is_private: bool,
+    pub sequence_number: i64,
 }
 
 impl<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> fmt::Display for ARTRecord<G> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "[sequence_number: {}, root public key: {}]",
-            self.chat_id, self.art.root.public_key
+            "[sequence_number: {}, chat_id: {}, root public key: {}]",
+            self.sequence_number, self.chat_id, self.art.root.public_key
         )
     }
 }

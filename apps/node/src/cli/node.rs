@@ -1,9 +1,9 @@
 use crate::config::NodeConfig;
 use api::{ARTService, CentrifugoService, Container, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
+use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
 use std::sync::Arc;
 use std::time::Duration;
-use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
 use storage::{CLIENT, DATABASE};
 use tokio::time::sleep;
 use tokio::{select, sync::mpsc};

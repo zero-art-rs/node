@@ -1,3 +1,5 @@
+use crate::ProofRecord;
+use crate::callback_wrappers::ProofVerifierMessage;
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::types::BranchChanges;
@@ -9,6 +11,7 @@ use std::fmt;
 pub struct ARTChangesRecord<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> {
     pub sequence_number: i64,
     pub change: BranchChanges<G>,
+    pub proof_record: ProofRecord,
 }
 
 impl<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> fmt::Display

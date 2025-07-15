@@ -6,7 +6,7 @@ use mongodb::{
 use uuid::Uuid;
 
 use crate::{ARTChangesStorage, DataStorage, StorageError, DATABASE};
-use types::ARTChangesRecord;
+use types::{ARTChangesRecord, ProofRecord};
 
 pub struct MongoARTChangesStorage {
     art_changes_collection: Collection<ARTChangesRecord<ARTGroup>>,
@@ -90,6 +90,7 @@ impl ARTChangesStorage for MongoARTChangesStorage {
         &self,
         session: &mut ClientSession,
         change: BranchChanges<ARTGroup>,
+        proof_record: ProofRecord,
     ) -> Result<(), mongodb::error::Error> {
         let sequence_number = match self.get_recent_record(session).await?.next(session).await {
             Some(recent_record) => recent_record?.sequence_number + 1,
@@ -100,6 +101,7 @@ impl ARTChangesStorage for MongoARTChangesStorage {
             .insert_one(ARTChangesRecord {
                 sequence_number,
                 change,
+                proof_record,
             })
             .session(session)
             .await?;

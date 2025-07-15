@@ -10,11 +10,11 @@ use std::sync::Arc;
 use tracing::{error, info, instrument};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 
+use crate::{container::Container, errors::ApiError};
+use proof_verifier::ProofVerifierSender;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
-
-use crate::{container::Container, errors::ApiError};
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -54,9 +54,9 @@ pub async fn send_message(
     let add_member_message = ProofVerifierMessage::AddMember {
         proof: vec![],
         co_path: vec![],
-        associated_data: vec![]
+        associated_data: vec![],
     };
-    
+
     match callback(&state.proof_verifier_sender, add_member_message).await {
         Ok(message) => {
             let ProofVerifierResult::AddMember { verdict } = message else {

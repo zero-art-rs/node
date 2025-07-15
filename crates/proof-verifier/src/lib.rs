@@ -2,6 +2,7 @@ use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalDeserialize;
 use bulletproofs::{BulletproofGens, PedersenGens};
 use cortado::CortadoAffine;
+use crypto::schnorr;
 use tokio::sync::mpsc;
 use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
@@ -12,7 +13,6 @@ use types::callback_wrappers::{
 use zk::art::{ARTProof, art_verify};
 use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use crypto::schnorr;
 
 pub type ProofVerifierSender = mpsc::Sender<ProofVerifierMessageWrapper>;
 
@@ -61,7 +61,30 @@ impl ProofVerifier {
                 self.verify_add_member_proof(proof, co_path, associated_data)
                     .await
             }
-            ProofVerifierMessage::ModifyArt { proof } => self.verify_modify_art_proof(proof).await,
+            ProofVerifierMessage::KeyUpdate {
+                proof,
+                co_path,
+                associated_data,
+            } => {
+                self.verify_key_update_proof(proof, co_path, associated_data)
+                    .await
+            }
+            ProofVerifierMessage::RemoveMember {
+                proof,
+                co_path,
+                associated_data,
+            } => {
+                self.verify_remove_member_proof(proof, co_path, associated_data)
+                    .await
+            }
+            ProofVerifierMessage::SchnorrSignature {
+                signature,
+                public_keys,
+                msg,
+            } => {
+                self.verify_schnorr_signature(signature.as_slice(), &public_keys, msg.as_slice())
+                    .await
+            }
         };
 
         let eyre_result = match result {
@@ -79,7 +102,7 @@ impl ProofVerifier {
     async fn verify_add_member_proof(
         &self,
         proof: Vec<u8>,
-        co_path: Vec<u8>,
+        co_path: Vec<CortadoAffine>,
         associated_data: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
         info!("Verifying add member proof");
@@ -87,7 +110,7 @@ impl ProofVerifier {
             &get_bulletproof_gens(),
             get_pedersen_basis(),
             associated_data.as_slice(),
-            Vec::<CortadoAffine>::deserialize_uncompressed(co_path.reader())?,
+            co_path,
             ARTProof::deserialize_uncompressed(proof.reader())?,
         );
 
@@ -98,17 +121,12 @@ impl ProofVerifier {
                 Ok(ProofVerifierResult::AddMember { verdict: false })
             }
         }
-    }
-
-    async fn verify_modify_art_proof(&self, _proof: Vec<u8>) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying modify art proof");
-        Ok(ProofVerifierResult::ModifyArt { verdict: true })
     }
 
     async fn verify_key_update_proof(
         &self,
         proof: Vec<u8>,
-        co_path: Vec<u8>,
+        co_path: Vec<CortadoAffine>,
         associated_data: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
         info!("Verifying key update proof");
@@ -116,39 +134,15 @@ impl ProofVerifier {
             &get_bulletproof_gens(),
             get_pedersen_basis(),
             associated_data.as_slice(),
-            Vec::<CortadoAffine>::deserialize_uncompressed(co_path.reader())?,
+            co_path,
             ARTProof::deserialize_uncompressed(proof.reader())?,
         );
 
         match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::AddMember { verdict: true }),
+            Ok(_) => Ok(ProofVerifierResult::KeyUpdate { verdict: true }),
             Err(e) => {
-                info!("Failed to verify add_member_proof: {}", e);
-                Ok(ProofVerifierResult::AddMember { verdict: false })
-            }
-        }
-    }
-
-    async fn verify_init_group_proof(
-        &self,
-        proof: Vec<u8>,
-        co_path: Vec<u8>,
-        associated_data: Vec<u8>,
-    ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying key update proof");
-        let verification_result = art_verify(
-            &get_bulletproof_gens(),
-            get_pedersen_basis(),
-            associated_data.as_slice(),
-            Vec::<CortadoAffine>::deserialize_uncompressed(co_path.reader())?,
-            ARTProof::deserialize_uncompressed(proof.reader())?,
-        );
-
-        match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::AddMember { verdict: true }),
-            Err(e) => {
-                info!("Failed to verify add_member_proof: {}", e);
-                Ok(ProofVerifierResult::AddMember { verdict: false })
+                info!("Failed to verify key_update: {}", e);
+                Ok(ProofVerifierResult::KeyUpdate { verdict: false })
             }
         }
     }
@@ -156,34 +150,39 @@ impl ProofVerifier {
     async fn verify_remove_member_proof(
         &self,
         proof: Vec<u8>,
-        co_path: Vec<u8>,
+        co_path: Vec<CortadoAffine>,
         associated_data: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying key update proof");
+        info!("Verifying remove member proof");
         let verification_result = art_verify(
             &get_bulletproof_gens(),
             get_pedersen_basis(),
             associated_data.as_slice(),
-            Vec::<CortadoAffine>::deserialize_uncompressed(co_path.reader())?,
+            co_path,
             ARTProof::deserialize_uncompressed(proof.reader())?,
         );
 
         match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::AddMember { verdict: true }),
+            Ok(_) => Ok(ProofVerifierResult::RemoveMember { verdict: true }),
             Err(e) => {
-                info!("Failed to verify add_member_proof: {}", e);
-                Ok(ProofVerifierResult::AddMember { verdict: false })
+                info!("Failed to verify remove_member: {}", e);
+                Ok(ProofVerifierResult::RemoveMember { verdict: false })
             }
         }
     }
 
-    async fn verify_schnorr_signature (signature: &[u8], public_keys: &Vec<CortadoAffine>, msg: &[u8]) -> bool {
+    async fn verify_schnorr_signature(
+        &self,
+        signature: &[u8],
+        public_keys: &Vec<CortadoAffine>,
+        msg: &[u8],
+    ) -> eyre::Result<ProofVerifierResult> {
         info!("Verifying schnorr signature");
         match schnorr::verify(signature, public_keys, msg) {
-            Ok(_) => true,
+            Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
             Err(e) => {
                 info!("Failed to verify schnorr_signature: {}", e);
-                false
+                Ok(ProofVerifierResult::SchnorrSignature { verdict: false })
             }
         }
     }
