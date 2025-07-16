@@ -11,8 +11,7 @@ pub(crate) mod domains;
 mod errors;
 mod router;
 
-#[cfg(test)]
-#[cfg(feature = "integration-tests")]
+#[cfg(all(test, feature = "integration-tests"))]
 mod tests;
 
 pub use container::Container;
