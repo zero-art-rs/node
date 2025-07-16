@@ -117,7 +117,7 @@ pub async fn get_art(
 
             for change in &changes {
                 initial_art
-                    .update_public_art(&change.change)
+                    .update_public_art(&change.changes)
                     .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
             }
 
@@ -179,7 +179,7 @@ pub async fn add_member(
         BranchChangesType::AppendNode(_) => {
             state
                 .art_service
-                .update_art(&payload.chat_id, &branch_changes)
+                .update_art(payload.chat_id, &branch_changes)
                 .await
                 .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
         }
@@ -230,7 +230,7 @@ pub async fn remove_member(
         BranchChangesType::MakeBlank(_, _) => {
             state
                 .art_service
-                .update_art(&payload.chat_id, &branch_changes)
+                .update_art(payload.chat_id, &branch_changes)
                 .await
                 .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
         }
@@ -281,7 +281,7 @@ pub async fn update_key(
         BranchChangesType::UpdateKey => {
             state
                 .art_service
-                .update_art(&payload.chat_id, &branch_changes)
+                .update_art(payload.chat_id, &branch_changes)
                 .await
                 .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
         }

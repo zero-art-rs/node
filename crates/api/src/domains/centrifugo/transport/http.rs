@@ -11,7 +11,7 @@ pub struct AuthRequest {
     pub public_key: Vec<u8>,
     #[schema(example = r#"[1]"#)]
     pub proof: Vec<u8>,
-    #[schema(example = r#"["personal:3fa85f64-5717-4562-b3fc-2c963f66afa6"]"#)]
+    #[schema(example = r#"["personal:3fa85f64-5717-4562-b3fc-2c963f66afa6", "art_events:3fa85f64-5717-4562-b3fc-2c963f66afa6"]"#)]
     pub channels: Vec<String>,
 }
 
