@@ -11,6 +11,10 @@ pub(crate) mod domains;
 mod errors;
 mod router;
 
+#[cfg(test)]
+#[cfg(feature = "integration-tests")]
+mod tests;
+
 pub use container::Container;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
