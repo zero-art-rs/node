@@ -139,11 +139,11 @@ impl ARTService {
 
     pub async fn update_art(
         &self,
-        chat_id: &Uuid,
+        chat_id: Uuid,
         changes: &BranchChanges<ARTGroup>,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
-        if arts_storage.get_art(*chat_id).await?.is_private {
+        if arts_storage.get_art(chat_id).await?.is_private {
             match changes.change_type {
                 BranchChangesType::UpdateKey => {}
                 _ => return Err(ARTServiceError::InvalidChangeType),
@@ -160,7 +160,7 @@ impl ARTService {
         session
             .start_transaction()
             .and_run((chat_id, changes), |session, (chat_id, changes)| {
-                async move { self.update_art_callback(session, chat_id, changes).await }.boxed()
+                async move { self.update_art_callback(session, *chat_id, changes).await }.boxed()
             })
             .await
             .map_err(ARTServiceError::MongoDB)?;
@@ -186,18 +186,18 @@ impl ARTService {
     pub async fn update_art_callback(
         &self,
         session: &mut ClientSession,
-        chat_id: &Uuid,
+        chat_id: Uuid,
         changes: &BranchChanges<ARTGroup>,
     ) -> Result<(), mongodb::error::Error> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
-        let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
+        let art_changes_storage = MongoARTChangesStorage::get_existing_collection(&chat_id).await?;
 
         arts_storage
-            .update_art_in_session(session, changes.clone(), *chat_id)
+            .update_art_in_session(session, changes.clone(), chat_id)
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone())
+            .push_change(session, changes.clone(), chat_id)
             .await?;
 
         Ok(())
