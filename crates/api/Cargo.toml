@@ -3,6 +3,9 @@ name = "api"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+integration-tests = []
+
 [dependencies]
 storage = { path = "../storage" }
 proof-verifier = { path = "../proof-verifier" }
@@ -39,3 +42,9 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
 postcard = { workspace = true }
+
+[dev-dependencies]
+reqwest = { version = "0.12.22", features = ["json", "stream"] }
+serde_json = { version = "1.0.140" }
+eventsource-stream = { version = "0.2.3" }
+futures = { version = "0.3.31" }
