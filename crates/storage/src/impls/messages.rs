@@ -53,7 +53,7 @@ impl MessageStorage for MongoMessageStorage {
         Ok(change_stream)
     }
 
-    async fn store_message(&self, content: Vec<u8>, sender: String) -> Result<(), StorageError> {
+    async fn store_message(&self, content: Vec<u8>) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -67,7 +67,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number = result.sequence_number + 1;
         }
 
-        let mut message = Message::new(content, next_sequence_number, sender, None);
+        let mut message = Message::new(content, next_sequence_number, None);
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 

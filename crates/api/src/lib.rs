@@ -1,10 +1,20 @@
-use axum::{extract::MatchedPath, http::Request, response::Response};
+use crate::router::build_router;
+use art::traits::ARTPublicAPI;
+use axum::{
+    Json,
+    body::{Body, Bytes},
+    extract::{MatchedPath, Request, State},
+    http::{HeaderMap, StatusCode},
+    middleware,
+    middleware::Next,
+    response::Response,
+};
+use axum_core::response::IntoResponse;
+use callbacks::callback;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tower_http::{classify::ServerErrorsFailureClass, cors::CorsLayer, trace::TraceLayer};
-use tracing::{Span, info, info_span};
-
-use crate::router::build_router;
+use tracing::{Span, error, info, info_span};
 
 mod container;
 pub(crate) mod domains;
@@ -13,11 +23,15 @@ mod router;
 
 #[cfg(all(test, feature = "integration-tests"))]
 mod tests;
+mod utils;
+mod verification_middleware;
 
 pub use container::Container;
 pub use domains::art::service::ARTService;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
+use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
+pub(crate) use utils::as_base64;
 
 pub async fn run_server(
     address: String,
@@ -57,6 +71,7 @@ pub async fn run_server(
                     },
                 ),
             )
+            .layer(middleware::from_fn_with_state(container.clone(), verification_middleware::verification_middleware))
             .with_state(container),
     ).with_graceful_shutdown(cancellation.cancelled_owned()).await?;
 

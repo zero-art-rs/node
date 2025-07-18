@@ -26,13 +26,12 @@ impl Default for MessengerService {
 impl MessengerService {
     pub async fn send_message(
         &self,
-        message: String,
-        sender: String,
+        message: Vec<u8>,
         chat_id: &Uuid,
     ) -> Result<(), MessengerError> {
         MongoMessageStorage::new(chat_id)
             .await?
-            .store_message(message.into_bytes(), sender)
+            .store_message(message)
             .await?;
         Ok(())
     }

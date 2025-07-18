@@ -217,7 +217,7 @@ impl ARTService {
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
             BranchChangesType::UpdateKey => self.update_art(chat_id, changes, proof_record).await,
-            _ => Err(ARTServiceError::InvalidChangeType)
+            _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
 
@@ -228,8 +228,10 @@ impl ARTService {
         proof_record: &ProofRecord,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::AppendNode(_) => self.update_art(chat_id, changes, proof_record).await,
-            _ => Err(ARTServiceError::InvalidChangeType)
+            BranchChangesType::AppendNode(_) => {
+                self.update_art(chat_id, changes, proof_record).await
+            }
+            _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
 
@@ -240,8 +242,10 @@ impl ARTService {
         proof_record: &ProofRecord,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::RemoveNode(_) => self.update_art(chat_id, changes, proof_record).await,
-            _ => Err(ARTServiceError::InvalidChangeType)
+            BranchChangesType::RemoveNode(_) => {
+                self.update_art(chat_id, changes, proof_record).await
+            }
+            _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
 

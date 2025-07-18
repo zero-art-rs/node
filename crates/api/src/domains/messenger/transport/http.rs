@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::{error, info, instrument};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 
-use crate::{container::Container, errors::ApiError};
+use crate::{as_base64, container::Container, errors::ApiError};
 use proof_verifier::ProofVerifierSender;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -20,13 +20,22 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageRequest {
     /// Message content
-    pub message: String,
-
-    /// Sender public key
-    pub sender_public_key: String,
+    #[serde(with = "as_base64")]
+    pub message: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Uuid,
+
+    /// Serialized proof.
+    #[serde(with = "as_base64")]
+    pub signature: Vec<u8>,
+
+    /// User provided nonce
+    #[serde(with = "as_base64")]
+    pub nonce: Vec<u8>,
+
+    /// Sequence number of the requested art. If not set, return the latest.
+    pub sequence_number: Option<i64>,
 }
 
 #[utoipa::path(
@@ -52,32 +61,9 @@ pub async fn send_message(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    let add_member_message = ProofVerifierMessage::AddMember {
-        proof: vec![],
-        co_path: vec![],
-        associated_data: vec![],
-    };
-    // match callback(&state.proof_verifier_sender, add_member_message).await {
-    //     Ok(message) => {
-    //         let ProofVerifierResult::AddMember { verdict } = message else {
-    //             return Err(ApiError::InternalServerError(
-    //                 "Invalid message from proof verifier".to_string(),
-    //             ));
-    //         };
-    //
-    //         if !verdict {
-    //             return Err(ApiError::BadRequest("Invalid proof".to_string()));
-    //         }
-    //     }
-    //     Err(e) => {
-    //         error!("Failed to send message to proof verifier: {}", e);
-    //         return Err(ApiError::InternalServerError(e.to_string()));
-    //     }
-    // };
-
     state
         .messenger_service
-        .send_message(payload.message, payload.sender_public_key, &payload.chat_id)
+        .send_message(payload.message, &payload.chat_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
@@ -93,17 +79,25 @@ pub struct GetMessageQuery {
     /// Message creation time
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 
-    // Content of the message as bytes
-    pub content: Option<String>,
-
     // Unique sequence number of the message
-    pub sequence_number: Option<i64>,
+    pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
     pub limit: i64,
 
     /// The amount or results to skip
     pub skip: i64,
+
+    /// Serialized proof.
+    #[serde(with = "as_base64")]
+    pub signature: Vec<u8>,
+
+    /// User provided nonce
+    #[serde(with = "as_base64")]
+    pub nonce: Vec<u8>,
+
+    /// Sequence number of the requested art. If not set, return the latest.
+    pub sequence_number: Option<i64>,
 }
 
 #[utoipa::path(
@@ -138,17 +132,7 @@ pub async fn list_messages(
         );
     }
 
-    if let Some(content) = payload.content {
-        _ = filter.insert(
-            "content",
-            Binary {
-                subtype: BinarySubtype::Generic,
-                bytes: content.into_bytes(),
-            },
-        );
-    }
-
-    if let Some(sequence_number) = payload.sequence_number {
+    if let Some(sequence_number) = payload.message_sequence_number {
         _ = filter.insert("sequence_number", sequence_number);
     }
 
@@ -186,11 +170,16 @@ pub struct DeleteMessageQuery {
     /// Message creation time
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 
-    // Content of the message as bytes
-    pub content: Option<String>,
-
     // Unique sequence number of the message
     pub sequence_number: Option<i64>,
+
+    /// Serialized proof.
+    #[serde(with = "as_base64")]
+    pub signature: Vec<u8>,
+
+    /// User provided nonce
+    #[serde(with = "as_base64")]
+    pub nonce: Vec<u8>,
 }
 
 #[utoipa::path(
@@ -223,16 +212,6 @@ pub async fn delete_messages(
         _ = filter.insert(
             "created_at",
             DateTime::from_millis(creation_time.timestamp_millis()),
-        );
-    }
-
-    if let Some(content) = payload.content {
-        _ = filter.insert(
-            "content",
-            Binary {
-                subtype: BinarySubtype::Generic,
-                bytes: content.into_bytes(),
-            },
         );
     }
 
