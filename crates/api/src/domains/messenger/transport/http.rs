@@ -47,6 +47,7 @@ pub async fn send_message(
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<StatusCode, ApiError> {
     // Validate the request payload.
+    info!("Validate payload");
     payload
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -56,24 +57,23 @@ pub async fn send_message(
         co_path: vec![],
         associated_data: vec![],
     };
-
-    match callback(&state.proof_verifier_sender, add_member_message).await {
-        Ok(message) => {
-            let ProofVerifierResult::AddMember { verdict } = message else {
-                return Err(ApiError::InternalServerError(
-                    "Invalid message from proof verifier".to_string(),
-                ));
-            };
-
-            if !verdict {
-                return Err(ApiError::BadRequest("Invalid proof".to_string()));
-            }
-        }
-        Err(e) => {
-            error!("Failed to send message to proof verifier: {}", e);
-            return Err(ApiError::InternalServerError(e.to_string()));
-        }
-    };
+    // match callback(&state.proof_verifier_sender, add_member_message).await {
+    //     Ok(message) => {
+    //         let ProofVerifierResult::AddMember { verdict } = message else {
+    //             return Err(ApiError::InternalServerError(
+    //                 "Invalid message from proof verifier".to_string(),
+    //             ));
+    //         };
+    //
+    //         if !verdict {
+    //             return Err(ApiError::BadRequest("Invalid proof".to_string()));
+    //         }
+    //     }
+    //     Err(e) => {
+    //         error!("Failed to send message to proof verifier: {}", e);
+    //         return Err(ApiError::InternalServerError(e.to_string()));
+    //     }
+    // };
 
     state
         .messenger_service
