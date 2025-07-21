@@ -55,3 +55,4 @@ zkp = { workspace = true }
 bulletproofs = { workspace = true }
 curve25519-dalek = { workspace = true }
 ark-ed25519 = { workspace = true }
+crypto = { workspace = true }

@@ -1,17 +1,12 @@
+use crate::{as_base64, container::Container, errors::ApiError};
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use callbacks::callback;
-use mongodb::bson::{Binary, spec::BinarySubtype};
 use mongodb::bson::{DateTime, doc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{error, info, instrument};
-use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
-
-use crate::{as_base64, container::Container, errors::ApiError};
-use proof_verifier::ProofVerifierSender;
+use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -21,6 +16,7 @@ use validator::Validate;
 pub struct SendMessageRequest {
     /// Message content
     #[serde(with = "as_base64")]
+    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
     pub message: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
@@ -28,14 +24,13 @@ pub struct SendMessageRequest {
 
     /// Serialized proof.
     #[serde(with = "as_base64")]
+    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
     #[serde(with = "as_base64")]
+    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
     pub nonce: Vec<u8>,
-
-    /// Sequence number of the requested art. If not set, return the latest.
-    pub sequence_number: Option<i64>,
 }
 
 #[utoipa::path(

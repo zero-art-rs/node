@@ -242,7 +242,7 @@ impl ARTService {
         proof_record: &ProofRecord,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::RemoveNode(_) => {
+            BranchChangesType::MakeBlank(_, _) => {
                 self.update_art(chat_id, changes, proof_record).await
             }
             _ => Err(ARTServiceError::InvalidChangeType),

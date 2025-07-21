@@ -24,13 +24,12 @@ mod router;
 #[cfg(all(test, feature = "integration-tests"))]
 mod tests;
 mod utils;
-mod verification_middleware;
+pub mod verification;
 
 pub use container::Container;
 pub use domains::art::service::ARTService;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
-use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 pub(crate) use utils::as_base64;
 
 pub async fn run_server(
@@ -71,7 +70,7 @@ pub async fn run_server(
                     },
                 ),
             )
-            .layer(middleware::from_fn_with_state(container.clone(), verification_middleware::verification_middleware))
+            .layer(middleware::from_fn_with_state(container.clone(), verification::verification_middleware))
             .with_state(container),
     ).with_graceful_shutdown(cancellation.cancelled_owned()).await?;
 
