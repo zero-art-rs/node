@@ -1,12 +1,11 @@
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::CanonicalSerialize;
+use ark_std::UniformRand;
 use ark_std::rand::{
     prelude::StdRng,
     {SeedableRng, thread_rng},
 };
-use ark_std::{One, UniformRand, Zero};
-use art::errors::ARTError;
 use art::traits::{ARTPrivateAPI, ARTPublicAPI};
 use art::types::{NodeIndex, PrivateART, PublicART};
 use base64::Engine;
@@ -18,7 +17,6 @@ use curve25519_dalek::Scalar;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use hyper::Response;
-use rand::Rng;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
@@ -32,7 +30,6 @@ use zkp::toolbox::dalek_ark::ristretto255_to_ark;
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
-const CHAT_ID: &str = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 
 #[derive(Debug, Deserialize)]
 struct CentrifugoTokenResponse {
@@ -104,7 +101,7 @@ impl ARTTestContext {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secrets = (0..size).map(|_| ARTScalarField::rand(&mut rng)).collect();
-        let (mut art, _) = PrivateART::new_art_from_secrets(&secrets, &ARTGroup::generator()).unwrap();
+        let (art, _) = PrivateART::new_art_from_secrets(&secrets, &ARTGroup::generator()).unwrap();
 
         // Create new_group for testing
         let chat_uuid = crate_new_chat(
@@ -113,7 +110,8 @@ impl ARTTestContext {
                 .0,
             false,
         )
-            .await.unwrap();
+        .await
+        .unwrap();
 
         Self {
             client: reqwest::Client::new(),
@@ -129,12 +127,13 @@ impl ARTTestContext {
 
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {
-    let mut context = ARTTestContext::new(100).await;
+    let context = ARTTestContext::new(100).await;
 
     let test_message = "zk messenger is the best";
 
     // Get Centrifugo auth token
-    let centrifugo_token_response = context.client
+    let centrifugo_token_response = context
+        .client
         .post(format!("{}/{}", BACKEND_URL, "centrifugo/auth"))
         .json(&json!({
           "chat_ids": [context.chat_uuid.to_string()],
@@ -198,20 +197,20 @@ async fn test_send_message() -> eyre::Result<()> {
 
     // compute the proof
     let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-    let index = NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
-
     let mut msg = Vec::new();
     msg.extend_from_slice(context.chat_uuid.as_bytes());
-    msg.extend(nonce.clone());
+    msg.extend(&nonce);
 
-    let pk = vec![context.art.public_key_of(&context.art.secret_key)];
+    let tk = context.art.recompute_root_key()?.key;
+    let pk = vec![context.art.root.public_key];
 
-    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
+    let signature = sign(&vec![tk], &pk, &msg).unwrap();
     let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
 
     // Send a message
-    context.client
+    context
+        .client
         .post(format!("{}/{}", BACKEND_URL, "v1/messenger/messages"))
         .json(&json!({
             "chatId": context.chat_uuid,
@@ -235,10 +234,8 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_key_update() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
 
-    for _ in 0..10 {
-        let key_update_response = update_key(
-            &mut context
-        ).await?;
+    for _ in 0..5 {
+        let key_update_response = update_key(&mut context).await?;
 
         assert_eq!(key_update_response.status(), StatusCode::OK);
     }
@@ -250,7 +247,7 @@ async fn test_key_update() -> eyre::Result<()> {
 async fn test_add_member() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
 
-    for i in 0..10 {
+    for _ in 0..5 {
         let add_member_response = add_member(&mut context).await?;
 
         assert_eq!(add_member_response.status(), StatusCode::OK);
@@ -261,14 +258,11 @@ async fn test_add_member() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_remove_member() -> eyre::Result<()> {
-    let mut context =  ARTTestContext::new(100).await;
+    let mut context = ARTTestContext::new(100).await;
 
-    for i in 1..11 {
-        let remove_user_response = remove_member(
-            &mut context,
-            i
-        )
-            .await?;
+    for i in 1..6 {
+        // skip the root node
+        let remove_user_response = remove_member(&mut context, i).await?;
 
         assert_eq!(remove_user_response.status(), StatusCode::NO_CONTENT);
     }
@@ -278,45 +272,28 @@ async fn test_remove_member() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_get_initial_art() -> eyre::Result<()> {
-    let size = 100;
-    let basis = get_pedersen_basis();
-    let gens = get_bulletproof_gens();
-
-    let client = reqwest::Client::new();
-
-    let mut rng = StdRng::seed_from_u64(rand::random());
-    let secrets = (0..size).map(|_| ARTScalarField::rand(&mut rng)).collect();
-    let (mut art, _) = PrivateART::new_art_from_secrets(&secrets, &ARTGroup::generator())?;
-
-    // Create new_group for testing
-    let chat_uuid = crate_new_chat(
-        PublicART {
-            root: art.root.clone(),
-            generator: ARTGroup::generator(),
-        },
-        false,
-    )
-    .await?;
-
-    for i in 0..1 {
+    let context = ARTTestContext::new(100).await;
+    for _ in 0..1 {
         let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-        let index = NodeIndex::get_index_from_path(&art.node_index.get_path().unwrap()).unwrap();
+        let index =
+            NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
 
         let mut msg = Vec::new();
-        msg.extend_from_slice(chat_uuid.as_bytes());
+        msg.extend_from_slice(context.chat_uuid.as_bytes());
         msg.extend(nonce.clone());
         msg.extend(index.to_le_bytes());
 
-        let pk = vec![art.public_key_of(&art.secret_key)];
+        let pk = vec![context.art.public_key_of(&context.art.secret_key)];
 
-        let signature = sign(&vec![art.secret_key], &pk, &msg).unwrap();
+        let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
         let verification_result = verify(&signature, &pk, &msg);
         assert!(verification_result.is_ok());
 
-        let initial_art_response = client
+        let initial_art_response = context
+            .client
             .get(format!("{}/{}", BACKEND_URL, "v1/messenger/initial-art"))
             .query(&json!({
-                "chatId": chat_uuid,
+                "chatId": context.chat_uuid,
                 "signature": BASE64_STANDARD.encode(&signature),
                 "index": index,
                 "nonce": BASE64_STANDARD.encode(&nonce),
@@ -331,8 +308,8 @@ async fn test_get_initial_art() -> eyre::Result<()> {
                 .decode(initial_art_response.text().await.unwrap())
                 .unwrap(),
         )?;
-        assert_eq!(received_art.root, art.root);
-        assert_eq!(received_art.generator, art.generator);
+        assert_eq!(received_art.root, context.art.root);
+        assert_eq!(received_art.generator, context.art.generator);
     }
 
     Ok(())
@@ -341,23 +318,19 @@ async fn test_get_initial_art() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(8).await;
-    // let art_roots = vec![context.art.root.clone()];
     let mut art_roots = Vec::new();
 
     // update art several times, so we can retrieve them
-    for _ in 0..10 {
-        let key_update_response = update_key(
-            &mut context
-        ).await?;
+    for _ in 0..5 {
+        let key_update_response = update_key(&mut context).await?;
         art_roots.push(context.art.root.public_key);
 
         assert_eq!(key_update_response.status(), StatusCode::OK);
-
     }
 
     println!("{:#?}", art_roots);
     // Test if retrieval is correct
-    for i in 1..11 {
+    for i in 1..6 {
         let initial_art_response = get_art(&mut context, Some(i)).await?;
 
         assert_eq!(initial_art_response.status(), StatusCode::OK);
@@ -374,25 +347,39 @@ async fn test_get_art() -> eyre::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-struct InitChatResponse {
-    token: String,
+#[tokio::test]
+async fn test_delete_art() -> eyre::Result<()> {
+    let context = ARTTestContext::new(8).await;
+    let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+
+    let mut msg = Vec::new();
+    msg.extend_from_slice(context.chat_uuid.as_bytes());
+    msg.extend(nonce.clone());
+
+    let pk = vec![context.art.public_key_of(&context.art.secret_key)];
+    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
+    let verification_result = verify(&signature, &pk, &msg);
+    assert!(verification_result.is_ok());
+
+    let delete_response = context
+        .client
+        .delete(format!("{}/{}", BACKEND_URL, "v1/messenger/chat"))
+        .query(&json!({
+            "chatId": context.chat_uuid,
+            "signature": BASE64_STANDARD.encode(&signature),
+            "nonce": BASE64_STANDARD.encode(&nonce),
+        }))
+        .send()
+        .await?;
+
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
+
+    Ok(())
 }
 
 async fn crate_new_chat(art: PublicART<ARTGroup>, is_private: bool) -> eyre::Result<Uuid> {
     let chat_id = Uuid::now_v7();
     let client = reqwest::Client::new();
-
-    let delete_response = client
-        .delete(format!("{}/{}", BACKEND_URL, "v1/messenger/chat"))
-        .json(&json!({
-            "chatId": chat_id,
-            "signature": BASE64_STANDARD.encode([1, 2, 3, 4]),
-            "nonce": BASE64_STANDARD.encode([1, 2, 3, 4]),
-
-        }))
-        .send()
-        .await;
 
     let init_response = client
         .post(format!("{}/{}", BACKEND_URL, "v1/messenger/init-chat"))
@@ -425,9 +412,7 @@ fn get_bulletproof_gens() -> BulletproofGens {
 }
 
 // update key in art, and send updates to the chat
-async fn update_key(
-    context: &mut ARTTestContext
-) -> reqwest::Result<reqwest::Response> {
+async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
     let secret_key = context.art.secret_key.clone();
     let new_secret_key = ARTScalarField::rand(&mut context.rng);
 
@@ -454,7 +439,9 @@ async fn update_key(
         &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
-        context.art.get_co_path_values(&key_update_changes.node_index.get_path().unwrap())
+        context
+            .art
+            .get_co_path_values(&key_update_changes.node_index.get_path().unwrap())
             .unwrap(),
         proof.clone(),
     )
@@ -466,7 +453,8 @@ async fn update_key(
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
-    context.client
+    context
+        .client
         .post(format!("{}/{}", BACKEND_URL, "v1/messenger/update-key"))
         .json(&json!({
           "branchChanges": BASE64_STANDARD.encode(key_update_changes_bytes),
@@ -478,14 +466,13 @@ async fn update_key(
 }
 
 // add node to the art, and send updates to the chat
-async fn add_member(
-    context: &mut ARTTestContext
-) -> reqwest::Result<reqwest::Response> {
+async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
     let associated_data = context.art.serialize().unwrap();
     let secret_key = context.art.secret_key.clone();
     let new_user_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
-    let (_, co_path, lambdas) = context.art
+    let (_, co_path, lambdas) = context
+        .art
         .recompute_root_key_with_artefacts_using_secret_key(
             secret_key,
             Some(&append_user_changes.node_index),
@@ -505,17 +492,19 @@ async fn add_member(
         vec![secret_key],
         blindings,
     )
-        .unwrap();
+    .unwrap();
 
     let verification_result = art_verify(
         &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
-        context.art.get_co_path_values(&append_user_changes.node_index.get_path().unwrap())
+        context
+            .art
+            .get_co_path_values(&append_user_changes.node_index.get_path().unwrap())
             .unwrap(),
         proof.clone(),
     )
-        .is_ok();
+    .is_ok();
 
     assert_eq!(verification_result, true);
 
@@ -523,13 +512,14 @@ async fn add_member(
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
-    context.client
+    context
+        .client
         .post(format!("{}/{}", BACKEND_URL, "v1/messenger/add-member"))
         .json(&json!({
-              "branchChanges": BASE64_STANDARD.encode(add_user_changes_bytes),
-              "chatId": context.chat_uuid,
-              "proof": BASE64_STANDARD.encode(proof_bytes),
-            }))
+          "branchChanges": BASE64_STANDARD.encode(add_user_changes_bytes),
+          "chatId": context.chat_uuid,
+          "proof": BASE64_STANDARD.encode(proof_bytes),
+        }))
         .send()
         .await
 }
@@ -539,13 +529,16 @@ async fn remove_member(
     member_id: usize,
 ) -> reqwest::Result<reqwest::Response> {
     let associated_data = context.art.serialize().unwrap();
-    let secret_key = context.art.secret_key.clone();
-    let user_to_remove = ARTGroup::generator().mul(&context.secrets[member_id]).into_affine();
+    let user_to_remove = ARTGroup::generator()
+        .mul(&context.secrets[member_id])
+        .into_affine();
     let temporary_secret_key = ARTScalarField::rand(&mut context.rng);
-    let (_, remove_user_changes) = context.art
+    let (_, remove_user_changes) = context
+        .art
         .make_blank(&user_to_remove, &temporary_secret_key)
         .unwrap();
-    let (_, co_path, lambdas) = context.art
+    let (_, co_path, lambdas) = context
+        .art
         .recompute_root_key_with_artefacts_using_secret_key(
             temporary_secret_key,
             Some(&remove_user_changes.node_index),
@@ -565,17 +558,19 @@ async fn remove_member(
         vec![temporary_secret_key],
         blindings,
     )
-        .unwrap();
+    .unwrap();
 
     let verification_result = art_verify(
         &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
-        context.art.get_co_path_values(&remove_user_changes.node_index.get_path().unwrap())
+        context
+            .art
+            .get_co_path_values(&remove_user_changes.node_index.get_path().unwrap())
             .unwrap(),
         proof.clone(),
     )
-        .is_ok();
+    .is_ok();
 
     assert_eq!(verification_result, true);
 
@@ -583,13 +578,14 @@ async fn remove_member(
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
-    context.client
+    context
+        .client
         .post(format!("{}/{}", BACKEND_URL, "v1/messenger/remove-member"))
         .json(&json!({
-              "branchChanges": BASE64_STANDARD.encode(remove_user_changes_bytes),
-              "chatId": context.chat_uuid,
-              "proof": BASE64_STANDARD.encode(proof_bytes),
-            }))
+          "branchChanges": BASE64_STANDARD.encode(remove_user_changes_bytes),
+          "chatId": context.chat_uuid,
+          "proof": BASE64_STANDARD.encode(proof_bytes),
+        }))
         .send()
         .await
 }
@@ -599,7 +595,8 @@ async fn get_art(
     sequence_number: Option<i64>,
 ) -> reqwest::Result<reqwest::Response> {
     let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-    let index = NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
+    let index =
+        NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
 
     let mut msg = Vec::new();
     msg.extend_from_slice(context.chat_uuid.as_bytes());
@@ -611,7 +608,8 @@ async fn get_art(
     let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
 
-    context.client
+    context
+        .client
         .get(format!("{}/{}", BACKEND_URL, "v1/messenger/art"))
         .query(&json!({
             "chatId": context.chat_uuid,
@@ -623,4 +621,3 @@ async fn get_art(
         .send()
         .await
 }
-

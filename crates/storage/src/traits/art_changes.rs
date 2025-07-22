@@ -2,8 +2,8 @@ use crate::DataStorage;
 use art::types::BranchChanges;
 use cortado::CortadoAffine as ARTGroup;
 use mongodb::ClientSession;
-use uuid::Uuid;
 use types::ProofRecord;
+use uuid::Uuid;
 
 /// Storage for art states
 #[async_trait::async_trait]

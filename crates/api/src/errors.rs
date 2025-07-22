@@ -4,7 +4,6 @@ use core::fmt;
 
 use crate::domains::art::service::ARTServiceError;
 use serde_json::json;
-use tracing::error;
 use utoipa::ToSchema;
 
 /// Errors that can occur in the API

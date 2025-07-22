@@ -6,7 +6,7 @@ use mongodb::{
 use uuid::Uuid;
 
 use crate::{ARTChangesStorage, DataStorage, StorageError, DATABASE};
-use types::{ARTChangesRecord, ProofRecord, ARTChangesOutboxRecord};
+use types::{ARTChangesOutboxRecord, ARTChangesRecord, ProofRecord};
 
 pub struct MongoARTChangesStorage {
     art_changes_collection: Collection<ARTChangesRecord<ARTGroup>>,

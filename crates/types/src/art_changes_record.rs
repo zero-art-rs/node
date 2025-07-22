@@ -42,7 +42,12 @@ impl<G> ARTChangesRecord<G>
 where
     G: AffineRepr + CanonicalSerialize + CanonicalDeserialize,
 {
-    pub fn new(data: BranchChanges<G>, sequence_number: i64, chat_id: Uuid, proof_record: ProofRecord) -> Self {
+    pub fn new(
+        data: BranchChanges<G>,
+        sequence_number: i64,
+        chat_id: Uuid,
+        proof_record: ProofRecord,
+    ) -> Self {
         Self {
             changes: data,
             created_at: DateTime::now(),
@@ -54,7 +59,12 @@ where
 }
 
 impl ARTChangesOutboxRecord {
-    pub fn new(data: Vec<u8>, sequence_number: i64, chat_id: Uuid, proof_record: ProofRecord) -> Self {
+    pub fn new(
+        data: Vec<u8>,
+        sequence_number: i64,
+        chat_id: Uuid,
+        proof_record: ProofRecord,
+    ) -> Self {
         Self {
             data,
             created_at: DateTime::now(),

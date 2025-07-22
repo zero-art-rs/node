@@ -1,7 +1,5 @@
 use crate::router::build_router;
-use art::traits::ARTPublicAPI;
 use axum::{
-    Json,
     body::{Body, Bytes},
     extract::{MatchedPath, Request, State},
     http::{HeaderMap, StatusCode},
@@ -9,12 +7,10 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use axum_core::response::IntoResponse;
-use callbacks::callback;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tower_http::{classify::ServerErrorsFailureClass, cors::CorsLayer, trace::TraceLayer};
-use tracing::{Span, error, info, info_span};
+use tracing::{Span, info, info_span};
 
 mod container;
 pub(crate) mod domains;

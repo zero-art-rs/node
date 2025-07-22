@@ -1,4 +1,3 @@
-use ark_std::iterable::Iterable;
 use art::errors::ARTError;
 use art::traits::ARTPublicAPI;
 use art::types::{BranchChanges, BranchChangesType, PublicART};

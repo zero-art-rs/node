@@ -1,12 +1,11 @@
-use crate::{as_base64, container::Container, errors::ApiError};
-use art::types::NodeIndex;
-use crate::domains::art::service::ARTServiceError;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
-use art::{traits::ARTPublicAPI, types::BranchChangesType};
+use crate::{as_base64, container::Container, errors::ApiError};
+use art::traits::ARTPublicAPI;
+use art::types::NodeIndex;
 use axum::{
     Json,
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -429,5 +428,5 @@ pub async fn delete_chat(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }

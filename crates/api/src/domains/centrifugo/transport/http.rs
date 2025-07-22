@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use crate::as_base64;
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
-use crate::as_base64;
 
-use uuid::Uuid;
 use crate::{container::Container, errors::ApiError};
+use uuid::Uuid;
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct AuthRequest {

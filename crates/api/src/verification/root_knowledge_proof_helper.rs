@@ -1,0 +1,117 @@
+use crate::domains::messenger::transport::http::{
+    DeleteMessageQuery, GetMessageQuery, SendMessageRequest,
+};
+use crate::errors::ApiError;
+use crate::{Container, as_base64};
+use callbacks::callback;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tracing::error;
+use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
+use utoipa::ToSchema;
+use uuid::Uuid;
+use validator::Validate;
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RootKnowledgeProofHelper {
+    chat_id: Uuid,
+    sequence_number: Option<i64>,
+    #[serde(with = "as_base64")]
+    nonce: Vec<u8>,
+    #[serde(with = "as_base64")]
+    signature: Vec<u8>,
+}
+
+impl From<SendMessageRequest> for RootKnowledgeProofHelper {
+    fn from(query: SendMessageRequest) -> Self {
+        Self {
+            chat_id: query.chat_id,
+            sequence_number: None,
+            nonce: query.nonce,
+            signature: query.signature,
+        }
+    }
+}
+
+impl From<GetMessageQuery> for RootKnowledgeProofHelper {
+    fn from(query: GetMessageQuery) -> Self {
+        Self {
+            chat_id: query.chat_id,
+            sequence_number: query.sequence_number,
+            nonce: query.nonce,
+            signature: query.signature,
+        }
+    }
+}
+
+impl From<DeleteMessageQuery> for RootKnowledgeProofHelper {
+    fn from(query: DeleteMessageQuery) -> Self {
+        Self {
+            chat_id: query.chat_id,
+            sequence_number: query.sequence_number,
+            nonce: query.nonce,
+            signature: query.signature,
+        }
+    }
+}
+
+impl TryFrom<&[u8]> for RootKnowledgeProofHelper {
+    type Error = ApiError;
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if let Ok(query) = serde_json::from_slice::<SendMessageRequest>(value) {
+            return Ok(Self::from(query));
+        }
+
+        if let Ok(query) = serde_json::from_slice::<GetMessageQuery>(value) {
+            return Ok(Self::from(query));
+        }
+
+        if let Ok(query) = serde_json::from_slice::<DeleteMessageQuery>(value) {
+            return Ok(Self::from(query));
+        }
+
+        Err(ApiError::BadRequest(
+            "Failed to decode art-update request".to_string(),
+        ))
+    }
+}
+
+impl RootKnowledgeProofHelper {
+    pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
+        let art_record = state
+            .art_service
+            .get_art(&self.chat_id, self.sequence_number)
+            .await?;
+
+        let mut msg = Vec::new();
+        msg.extend_from_slice(self.chat_id.as_bytes());
+        msg.extend(&self.nonce);
+
+        let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
+            signature: self.signature.clone(),
+            public_keys: vec![art_record.art.root.public_key],
+            msg,
+        };
+
+        match callback(&state.proof_verifier_sender, schnorr_signature_message).await {
+            Ok(message) => {
+                let ProofVerifierResult::SchnorrSignature { verdict } = message else {
+                    return Err(ApiError::InternalServerError(
+                        "Invalid message from proof verifier".to_string(),
+                    ));
+                };
+
+                if !verdict {
+                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
+                }
+            }
+            Err(e) => {
+                error!("Failed to send message to proof verifier: {}", e);
+                return Err(ApiError::InternalServerError(e.to_string()));
+            }
+        };
+
+        Ok(())
+    }
+}

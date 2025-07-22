@@ -1,11 +1,4 @@
-use axum::{
-    Router,
-    extract::{Request, State},
-    http::StatusCode,
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::get,
-};
+use axum::Router;
 use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
