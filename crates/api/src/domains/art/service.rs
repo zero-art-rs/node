@@ -123,7 +123,7 @@ impl ARTService {
         changes.sort_by(|a, b| a.sequence_number.cmp(&b.sequence_number));
 
         for change in &changes {
-            initial_art.update_public_art(&change.change)?;
+            initial_art.update_public_art(&change.changes)?;
         }
 
         Ok(ARTRecord {
@@ -318,7 +318,7 @@ impl ARTService {
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone(), proof_record.clone(), chat_id)
+            .push_change(session, changes.clone(), *chat_id, proof_record.clone())
             .await?;
 
         Ok(())

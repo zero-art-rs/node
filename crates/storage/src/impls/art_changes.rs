@@ -115,6 +115,7 @@ impl ARTChangesStorage for MongoARTChangesStorage {
                 })?,
                 sequence_number,
                 chat_id,
+                proof_record.clone(),
             ))
             .session(&mut *session)
             .await?;
@@ -123,8 +124,8 @@ impl ARTChangesStorage for MongoARTChangesStorage {
             .insert_one(ARTChangesRecord::<ARTGroup>::new(
                 changes,
                 sequence_number,
-                proof_record,
                 chat_id,
+                proof_record,
             ))
             .session(&mut *session)
             .await?;

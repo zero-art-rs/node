@@ -137,7 +137,7 @@ async fn test_send_message() -> eyre::Result<()> {
     let centrifugo_token_response = context.client
         .post(format!("{}/{}", BACKEND_URL, "centrifugo/auth"))
         .json(&json!({
-          "channels": [format!("personal:{}", context.chat_uuid)],
+          "chat_ids": [context.chat_uuid.to_string()],
           "proof": BASE64_STANDARD.encode([1,2,3,4]),
           "public_key": BASE64_STANDARD.encode([1,2,3,4]),
         }))

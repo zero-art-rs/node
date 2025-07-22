@@ -1,5 +1,4 @@
 use crate::ProofRecord;
-use crate::callback_wrappers::ProofVerifierMessage;
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::types::BranchChanges;
@@ -43,23 +42,25 @@ impl<G> ARTChangesRecord<G>
 where
     G: AffineRepr + CanonicalSerialize + CanonicalDeserialize,
 {
-    pub fn new(data: BranchChanges<G>, sequence_number: i64, chat_id: Uuid) -> Self {
+    pub fn new(data: BranchChanges<G>, sequence_number: i64, chat_id: Uuid, proof_record: ProofRecord) -> Self {
         Self {
             changes: data,
             created_at: DateTime::now(),
             sequence_number,
             chat_id,
+            proof_record,
         }
     }
 }
 
 impl ARTChangesOutboxRecord {
-    pub fn new(data: Vec<u8>, sequence_number: i64, chat_id: Uuid) -> Self {
+    pub fn new(data: Vec<u8>, sequence_number: i64, chat_id: Uuid, proof_record: ProofRecord) -> Self {
         Self {
             data,
             created_at: DateTime::now(),
             sequence_number,
             chat_id,
+            proof_record,
         }
     }
 }

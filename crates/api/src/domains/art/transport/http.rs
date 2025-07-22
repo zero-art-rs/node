@@ -1,7 +1,7 @@
 use crate::{as_base64, container::Container, errors::ApiError};
 use art::types::NodeIndex;
 use crate::domains::art::service::ARTServiceError;
-use crate::domains::art::transport::utils::{as_base64, decode_art, decode_branch_changes};
+use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 use art::{traits::ARTPublicAPI, types::BranchChangesType};
 use axum::{
     Json,

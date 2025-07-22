@@ -5,7 +5,6 @@ use art::{
     types::{BranchChanges, PublicART},
 };
 use cortado::CortadoAffine as ARTGroup;
-use futures_util::TryStreamExt;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
