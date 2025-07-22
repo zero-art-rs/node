@@ -11,63 +11,106 @@ use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
+use crate::domains::art::transport::http::{GetARTQuery, GetChangesQuery};
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
+pub enum KnowledgeVerificationType {
+    VerifyCurrent,
+    VerifyPrevious,
+}
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct RootKnowledgeProofHelper {
+pub struct RootKnowledgeHelper {
     chat_id: Uuid,
     sequence_number: Option<i64>,
     #[serde(with = "as_base64")]
     nonce: Vec<u8>,
     #[serde(with = "as_base64")]
     signature: Vec<u8>,
+    verification_type: KnowledgeVerificationType,
 }
 
-impl From<SendMessageRequest> for RootKnowledgeProofHelper {
+impl From<SendMessageRequest> for RootKnowledgeHelper {
     fn from(query: SendMessageRequest) -> Self {
         Self {
             chat_id: query.chat_id,
             sequence_number: None,
             nonce: query.nonce,
             signature: query.signature,
+            verification_type: KnowledgeVerificationType::VerifyCurrent,
         }
     }
 }
 
-impl From<GetMessageQuery> for RootKnowledgeProofHelper {
+impl From<GetMessageQuery> for RootKnowledgeHelper {
     fn from(query: GetMessageQuery) -> Self {
         Self {
             chat_id: query.chat_id,
             sequence_number: query.sequence_number,
             nonce: query.nonce,
             signature: query.signature,
+            verification_type: KnowledgeVerificationType::VerifyCurrent,
         }
     }
 }
 
-impl From<DeleteMessageQuery> for RootKnowledgeProofHelper {
+impl From<DeleteMessageQuery> for RootKnowledgeHelper {
     fn from(query: DeleteMessageQuery) -> Self {
         Self {
             chat_id: query.chat_id,
             sequence_number: query.sequence_number,
             nonce: query.nonce,
             signature: query.signature,
+            verification_type: KnowledgeVerificationType::VerifyCurrent,
         }
     }
 }
 
-impl TryFrom<&[u8]> for RootKnowledgeProofHelper {
+impl From<GetChangesQuery> for RootKnowledgeHelper {
+    fn from(query: GetChangesQuery) -> Self {
+        Self {
+            chat_id: query.chat_id,
+            sequence_number: query.sequence_number,
+            nonce: query.nonce,
+            signature: query.signature,
+            verification_type: KnowledgeVerificationType::VerifyPrevious,
+        }
+    }
+}
+
+impl From<GetARTQuery> for RootKnowledgeHelper {
+    fn from(query: GetARTQuery) -> Self {
+        Self {
+            chat_id: query.chat_id,
+            sequence_number: query.sequence_number,
+            nonce: query.nonce,
+            signature: query.signature,
+            verification_type: KnowledgeVerificationType::VerifyPrevious
+        }
+    }
+}
+
+impl TryFrom<&[u8]> for RootKnowledgeHelper {
     type Error = ApiError;
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if let Ok(query) = serde_json::from_slice::<SendMessageRequest>(value) {
             return Ok(Self::from(query));
         }
 
-        if let Ok(query) = serde_json::from_slice::<GetMessageQuery>(value) {
+        if let Ok(query) = serde_urlencoded::from_bytes::<GetMessageQuery>(value) {
             return Ok(Self::from(query));
         }
 
-        if let Ok(query) = serde_json::from_slice::<DeleteMessageQuery>(value) {
+        if let Ok(query) = serde_urlencoded::from_bytes::<DeleteMessageQuery>(value) {
+            return Ok(Self::from(query));
+        }
+
+        if let Ok(query) = serde_urlencoded::from_bytes::<GetChangesQuery>(value) {
+            return Ok(Self::from(query));
+        }
+
+        if let Ok(query) = serde_urlencoded::from_bytes::<GetARTQuery>(value) {
             return Ok(Self::from(query));
         }
 
@@ -77,12 +120,22 @@ impl TryFrom<&[u8]> for RootKnowledgeProofHelper {
     }
 }
 
-impl RootKnowledgeProofHelper {
+impl RootKnowledgeHelper {
     pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
-        let art_record = state
-            .art_service
-            .get_art(&self.chat_id, self.sequence_number)
-            .await?;
+        let art_record = match self.verification_type {
+            KnowledgeVerificationType::VerifyCurrent => {
+                state
+                    .art_service
+                    .get_art(&self.chat_id, self.sequence_number)
+                    .await?
+            }
+            KnowledgeVerificationType::VerifyPrevious => {
+                state
+                    .art_service
+                    .get_previous_art(&self.chat_id, self.sequence_number)
+                    .await?
+            }
+        };
 
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());

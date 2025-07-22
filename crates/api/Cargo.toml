@@ -36,15 +36,13 @@ ark-ec = { workspace = true }
 ark-serialize = { workspace = true }
 ark-std = { workspace = true }
 rand = { workspace = true, features = ["thread_rng"] }
-log = "0.4.27"
-tokio-stream = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
 postcard = { workspace = true }
-http-body = "1.0.1"
-hyper = "1.6.0"
-axum-core = "0.5.2"
+hyper = { workspace = true }
+axum-core = {  workspace = true }
+serde_urlencoded = {workspace = true}
 
 [dev-dependencies]
 reqwest = { version = "0.12.22", features = ["json", "stream"] }

@@ -399,7 +399,6 @@ pub struct DeleteChatQuery {
     pub chat_id: Uuid,
 
     /// Serialized proof.
-
     #[serde(with = "as_base64")]
     pub signature: Vec<u8>,
 
@@ -412,7 +411,7 @@ pub struct DeleteChatQuery {
 #[utoipa::path(
     delete,
     path = "/v1/messenger/chat",
-    params(DeleteChatQuery,),
+    params(DeleteChatQuery),
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]

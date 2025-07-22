@@ -7,7 +7,7 @@ use callbacks::callback;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::sync::Arc;
-use tracing::error;
+use tracing::{error, info};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -15,7 +15,7 @@ use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct VerifyOwnershipQueryHelper {
+pub struct VerifyOwnershipHelper {
     chat_id: Uuid,
     #[serde(with = "as_base64")]
     nonce: Vec<u8>,
@@ -23,7 +23,7 @@ pub struct VerifyOwnershipQueryHelper {
     signature: Vec<u8>,
 }
 
-impl From<DeleteChatQuery> for VerifyOwnershipQueryHelper {
+impl From<DeleteChatQuery> for VerifyOwnershipHelper {
     fn from(query: DeleteChatQuery) -> Self {
         Self {
             chat_id: query.chat_id,
@@ -33,18 +33,18 @@ impl From<DeleteChatQuery> for VerifyOwnershipQueryHelper {
     }
 }
 
-impl TryFrom<&[u8]> for VerifyOwnershipQueryHelper {
+impl TryFrom<&[u8]> for VerifyOwnershipHelper {
     type Error = ApiError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        match serde_json::from_slice::<DeleteChatQuery>(value) {
+        match serde_urlencoded::from_bytes::<DeleteChatQuery>(value) {
             Ok(query) => Ok(Self::from(query)),
             Err(err) => Err(ApiError::BadRequest(err.to_string())),
         }
     }
 }
 
-impl VerifyOwnershipQueryHelper {
+impl VerifyOwnershipHelper {
     pub async fn verify(self, state: Arc<Container>) -> Result<(), ApiError> {
         let art_record = state.art_service.get_art(&self.chat_id, None).await?;
 
@@ -52,9 +52,14 @@ impl VerifyOwnershipQueryHelper {
         msg.extend_from_slice(self.chat_id.as_bytes());
         msg.extend(self.nonce);
 
+        let mut left_most_leaf = &art_record.art.root;
+        while let Ok(node) = left_most_leaf.get_left() {
+            left_most_leaf = node;
+        }
+
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
             signature: self.signature,
-            public_keys: vec![art_record.art.root.public_key],
+            public_keys: vec![left_most_leaf.public_key],
             msg,
         };
 

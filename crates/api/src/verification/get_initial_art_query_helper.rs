@@ -1,4 +1,4 @@
-use crate::domains::art::transport::http::GetInitialARTQuery;
+use crate::domains::art::transport::http::{GetChangesQuery, GetInitialARTQuery};
 use crate::errors::ApiError;
 use crate::{Container, as_base64};
 use art::traits::ARTPublicAPI;
@@ -7,15 +7,18 @@ use callbacks::callback;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::sync::Arc;
-use tracing::error;
+use axum::extract::Query;
+use axum::http::request::Parts;
+use tracing::{error, info};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
+use serde_urlencoded;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct GetInitialARTQueryHelper {
+pub struct GetInitialARTHelper {
     chat_id: Uuid,
     #[serde(with = "as_base64")]
     nonce: Vec<u8>,
@@ -24,7 +27,7 @@ pub struct GetInitialARTQueryHelper {
     signature: Vec<u8>,
 }
 
-impl From<GetInitialARTQuery> for GetInitialARTQueryHelper {
+impl From<GetInitialARTQuery> for GetInitialARTHelper {
     fn from(query: GetInitialARTQuery) -> Self {
         Self {
             chat_id: query.chat_id,
@@ -35,19 +38,19 @@ impl From<GetInitialARTQuery> for GetInitialARTQueryHelper {
     }
 }
 
-impl TryFrom<&[u8]> for GetInitialARTQueryHelper {
+impl TryFrom<&[u8]> for GetInitialARTHelper {
     type Error = ApiError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        match serde_json::from_slice::<GetInitialARTQuery>(value) {
+        match serde_urlencoded::from_bytes::<GetInitialARTQuery>(value) {
             Ok(query) => Ok(Self::from(query)),
             Err(err) => Err(ApiError::BadRequest(err.to_string())),
         }
     }
 }
 
-impl GetInitialARTQueryHelper {
-    pub async fn verify(self, state: Arc<Container>) -> Result<(), ApiError> {
+impl GetInitialARTHelper {
+    pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
         let mut initial_art_record = state
             .art_service
             .get_initial_art(&self.chat_id)
@@ -63,11 +66,13 @@ impl GetInitialARTQueryHelper {
 
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());
-        msg.extend(self.nonce);
+        msg.extend(&self.nonce);
         msg.extend(self.index.to_le_bytes());
 
+        info!("msg: {:#?}", &msg);
+
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
-            signature: self.signature,
+            signature: self.signature.clone(),
             public_keys: vec![leaf_node.public_key],
             msg,
         };

@@ -52,6 +52,8 @@ postcard = { version = "1.1.2"  }
 bulletproofs = { version = "5.0.0", git="https://github.com/zk-messenger/bulletproofs"}
 zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 curve25519-dalek = { version = "4.1.3", features = ["digest", "group", "rand_core", "serde"] }
+serde_urlencoded = { version = "0.7.1" }
+axum-core = "0.5.2"
 
 [workspace.lints.clippy]
 all = "warn"

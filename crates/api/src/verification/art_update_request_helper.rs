@@ -14,7 +14,7 @@ use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ArtUpdateRequestHelper {
+pub struct ArtUpdateHelper {
     /// Serialized BranchChanges structure
     #[serde(with = "as_base64")]
     pub branch_changes: Vec<u8>,
@@ -27,11 +27,11 @@ pub struct ArtUpdateRequestHelper {
     pub chat_id: Uuid,
 }
 
-impl TryFrom<&[u8]> for ArtUpdateRequestHelper {
+impl TryFrom<&[u8]> for ArtUpdateHelper {
     type Error = ApiError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if let Ok(update_request) = serde_json::from_slice::<ArtUpdateRequestHelper>(value) {
+        if let Ok(update_request) = serde_json::from_slice::<ArtUpdateHelper>(value) {
             return Ok(update_request);
         }
 
@@ -41,7 +41,7 @@ impl TryFrom<&[u8]> for ArtUpdateRequestHelper {
     }
 }
 
-impl ArtUpdateRequestHelper {
+impl ArtUpdateHelper {
     pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
         let branch_changes = match decode_branch_changes(&self.branch_changes) {
             Ok(branch_changes) => branch_changes,

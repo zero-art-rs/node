@@ -23,6 +23,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Duration;
+use tracing::info;
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::cross_dleq::PedersenBasis;
@@ -30,6 +31,7 @@ use zkp::toolbox::dalek_ark::ristretto255_to_ark;
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
+const TEST_REPEATS: usize = 5;
 
 #[derive(Debug, Deserialize)]
 struct CentrifugoTokenResponse {
@@ -86,6 +88,7 @@ struct MessageData {
     content: Vec<u8>,
 }
 
+#[derive(Clone)]
 struct ARTTestContext {
     pub client: reqwest::Client,
     pub art: PrivateART<ARTGroup>,
@@ -234,7 +237,7 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_key_update() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
 
-    for _ in 0..5 {
+    for _ in 0..TEST_REPEATS {
         let key_update_response = update_key(&mut context).await?;
 
         assert_eq!(key_update_response.status(), StatusCode::OK);
@@ -247,7 +250,7 @@ async fn test_key_update() -> eyre::Result<()> {
 async fn test_add_member() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
 
-    for _ in 0..5 {
+    for _ in 0..TEST_REPEATS {
         let add_member_response = add_member(&mut context).await?;
 
         assert_eq!(add_member_response.status(), StatusCode::OK);
@@ -260,7 +263,7 @@ async fn test_add_member() -> eyre::Result<()> {
 async fn test_remove_member() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
 
-    for i in 1..6 {
+    for i in 1..TEST_REPEATS + 1 {
         // skip the root node
         let remove_user_response = remove_member(&mut context, i).await?;
 
@@ -280,7 +283,7 @@ async fn test_get_initial_art() -> eyre::Result<()> {
 
         let mut msg = Vec::new();
         msg.extend_from_slice(context.chat_uuid.as_bytes());
-        msg.extend(nonce.clone());
+        msg.extend(&nonce);
         msg.extend(index.to_le_bytes());
 
         let pk = vec![context.art.public_key_of(&context.art.secret_key)];
@@ -318,10 +321,11 @@ async fn test_get_initial_art() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(8).await;
+    let mut retrieval_context = context.clone();
     let mut art_roots = Vec::new();
 
     // update art several times, so we can retrieve them
-    for _ in 0..5 {
+    for _ in 0..TEST_REPEATS {
         let key_update_response = update_key(&mut context).await?;
         art_roots.push(context.art.root.public_key);
 
@@ -330,8 +334,8 @@ async fn test_get_art() -> eyre::Result<()> {
 
     println!("{:#?}", art_roots);
     // Test if retrieval is correct
-    for i in 1..6 {
-        let initial_art_response = get_art(&mut context, Some(i)).await?;
+    for i in 1..TEST_REPEATS + 1 {
+        let initial_art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
 
         assert_eq!(initial_art_response.status(), StatusCode::OK);
 
@@ -595,16 +599,15 @@ async fn get_art(
     sequence_number: Option<i64>,
 ) -> reqwest::Result<reqwest::Response> {
     let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-    let index =
-        NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
 
     let mut msg = Vec::new();
     msg.extend_from_slice(context.chat_uuid.as_bytes());
     msg.extend(nonce.clone());
 
-    let pk = vec![context.art.public_key_of(&context.art.secret_key)];
+    let tk =  context.art.recompute_root_key().unwrap().key;
+    let pk = vec![context.art.root.public_key];
 
-    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
+    let signature = sign(&vec![tk], &pk, &msg).unwrap();
     let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
 
@@ -613,10 +616,9 @@ async fn get_art(
         .get(format!("{}/{}", BACKEND_URL, "v1/messenger/art"))
         .query(&json!({
             "chatId": context.chat_uuid,
-            "signature": BASE64_STANDARD.encode(&signature),
-            "index": index,
-            "nonce": BASE64_STANDARD.encode(&nonce),
             "sequenceNumber": sequence_number,
+            "nonce": BASE64_STANDARD.encode(&nonce),
+            "signature": BASE64_STANDARD.encode(&signature),
         }))
         .send()
         .await
