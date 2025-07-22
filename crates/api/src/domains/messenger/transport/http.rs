@@ -20,6 +20,7 @@ pub struct SendMessageRequest {
     pub message: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
+    #[schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Serialized proof.
@@ -69,6 +70,7 @@ pub async fn send_message(
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
     /// Unique identifier of the chat to send the message to.
+    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Message creation time
@@ -78,9 +80,11 @@ pub struct GetMessageQuery {
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
+    #[param(example = 10)]
     pub limit: i64,
 
     /// The amount or results to skip
+    #[param(example = 0)]
     pub skip: i64,
 
     /// Serialized proof.
@@ -160,6 +164,7 @@ pub async fn list_messages(
 #[serde(rename_all = "camelCase")]
 pub struct DeleteMessageQuery {
     /// Unique identifier of the chat to send the message to.
+    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Message creation time

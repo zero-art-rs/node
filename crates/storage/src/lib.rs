@@ -1,4 +1,4 @@
-use mongodb::{Client, Database};
+use mongodb::Database;
 use std::sync::OnceLock;
 
 mod errors;
@@ -23,4 +23,3 @@ pub struct MongoConfig {
 }
 
 pub static DATABASE: OnceLock<Database> = OnceLock::new();
-pub static CLIENT: OnceLock<Client> = OnceLock::new();

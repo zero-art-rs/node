@@ -318,7 +318,7 @@ impl ARTService {
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone(), proof_record.clone())
+            .push_change(session, changes.clone(), proof_record.clone(), chat_id)
             .await?;
 
         Ok(())

@@ -15,11 +15,15 @@ pub use logger::LoggerConfig;
 mod centrifugo;
 pub use centrifugo::CentrifugoConfig;
 
+mod nats;
+pub use nats::NatsConfig;
+
 #[derive(Deserialize)]
 pub struct NodeConfig {
     pub api: ApiConfig,
     pub storage: StorageConfig,
     pub centrifugo: CentrifugoConfig,
+    pub nats: NatsConfig,
 
     #[serde(default)]
     pub logger: LoggerConfig,

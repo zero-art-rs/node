@@ -6,16 +6,22 @@ use mongodb::{
 use uuid::Uuid;
 
 use crate::{ARTChangesStorage, DataStorage, StorageError, DATABASE};
-use types::{ARTChangesRecord, ProofRecord};
+use types::{ARTChangesRecord, ProofRecord, ARTChangesOutboxRecord};
 
 pub struct MongoARTChangesStorage {
     art_changes_collection: Collection<ARTChangesRecord<ARTGroup>>,
+    art_changes_outbox_collection: Collection<ARTChangesOutboxRecord>,
 }
 
 impl MongoARTChangesStorage {
     #[inline]
     fn collection_name(chat_id: &Uuid) -> String {
         format!("art_changes/{}", chat_id)
+    }
+
+    #[inline]
+    fn outbox_collection_name() -> String {
+        "art_changes_outbox".to_string()
     }
 
     /// Creates new MongoARTChangesStorage, and maps error to StorageError
@@ -33,6 +39,7 @@ impl MongoARTChangesStorage {
         })?;
 
         let art_changes_collection = db.collection(&Self::collection_name(chat_id));
+        let art_changes_outbox_collection = db.collection(&Self::collection_name(chat_id));
 
         let art_changes_index_model = IndexModel::builder()
             .keys(doc! { "sequence_number": -1})
@@ -44,6 +51,7 @@ impl MongoARTChangesStorage {
 
         Ok(Self {
             art_changes_collection,
+            art_changes_outbox_collection,
         })
     }
 
@@ -53,9 +61,11 @@ impl MongoARTChangesStorage {
         })?;
 
         let art_changes_collection = db.collection(&Self::collection_name(chat_id));
+        let art_changes_outbox_collection = db.collection(&Self::outbox_collection_name());
 
         Ok(Self {
             art_changes_collection,
+            art_changes_outbox_collection,
         })
     }
 
@@ -89,7 +99,8 @@ impl ARTChangesStorage for MongoARTChangesStorage {
     async fn push_change(
         &self,
         session: &mut ClientSession,
-        change: BranchChanges<ARTGroup>,
+        changes: BranchChanges<ARTGroup>,
+        chat_id: Uuid,
         proof_record: ProofRecord,
     ) -> Result<(), mongodb::error::Error> {
         let sequence_number = match self.get_recent_record(session).await?.next(session).await {
@@ -97,13 +108,25 @@ impl ARTChangesStorage for MongoARTChangesStorage {
             None => 0,
         };
 
-        self.art_changes_collection
-            .insert_one(ARTChangesRecord {
+        self.art_changes_outbox_collection
+            .insert_one(ARTChangesOutboxRecord::new(
+                changes.serialze().map_err(|e| {
+                    mongodb::error::Error::from(std::io::Error::other(e.to_string()))
+                })?,
                 sequence_number,
-                change,
+                chat_id,
+            ))
+            .session(&mut *session)
+            .await?;
+
+        self.art_changes_collection
+            .insert_one(ARTChangesRecord::<ARTGroup>::new(
+                changes,
+                sequence_number,
                 proof_record,
-            })
-            .session(session)
+                chat_id,
+            ))
+            .session(&mut *session)
             .await?;
 
         Ok(())

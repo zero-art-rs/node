@@ -4,6 +4,7 @@ use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use crate::as_base64;
 
+use uuid::Uuid;
 use crate::{container::Container, errors::ApiError};
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -14,8 +15,8 @@ pub struct AuthRequest {
     #[schema(example = r#"[1]"#)]
     #[serde(with = "as_base64")]
     pub proof: Vec<u8>,
-    #[schema(example = r#"["personal:3fa85f64-5717-4562-b3fc-2c963f66afa6"]"#)]
-    pub channels: Vec<String>,
+    #[schema(example = r#"["3fa85f64-5717-4562-b3fc-2c963f66afa6"]"#)]
+    pub chat_ids: Vec<Uuid>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]

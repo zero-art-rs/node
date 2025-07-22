@@ -1,11 +1,12 @@
-use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 use crate::{as_base64, container::Container, errors::ApiError};
-use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
+use crate::domains::art::service::ARTServiceError;
+use crate::domains::art::transport::utils::{as_base64, decode_art, decode_branch_changes};
+use art::{traits::ARTPublicAPI, types::BranchChangesType};
 use axum::{
     Json,
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};

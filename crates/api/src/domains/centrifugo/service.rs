@@ -20,14 +20,16 @@ pub struct Claims {
 pub struct CentrifugoService {
     jwt_secret: String,
     token_ttl: Duration,
+    namespaces: Vec<String>
     // Add db in the future
 }
 
 impl CentrifugoService {
-    pub fn new(jwt_secret: String, token_ttl: Duration) -> Self {
+    pub fn new(jwt_secret: String, token_ttl: Duration, namespaces: Vec<String>) -> Self {
         Self {
             jwt_secret,
             token_ttl,
+            namespaces
         }
     }
 
@@ -38,10 +40,17 @@ impl CentrifugoService {
     pub async fn generate_token(&self, request: &AuthRequest) -> Result<String, ApiError> {
         let now = Utc::now();
         let expiration = now + self.token_ttl;
+        
+        let mut channels = Vec::new();
+        for namespace in &self.namespaces {
+            for chat_id in &request.chat_ids {
+                channels.push(format!("{}:{}", namespace, chat_id));
+            }
+        }
 
         let claims = Claims {
             sub: hex::encode(request.public_key.clone()),
-            channels: request.channels.clone(),
+            channels,
             exp: expiration.timestamp(),
             iat: now.timestamp(),
             jti: Uuid::new_v4().to_string(),

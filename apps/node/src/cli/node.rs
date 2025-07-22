@@ -4,7 +4,7 @@ use mongodb::{Client, bson::doc, options::ClientOptions};
 use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
 use std::sync::Arc;
 use std::time::Duration;
-use storage::{CLIENT, DATABASE};
+use storage::DATABASE;
 use tokio::time::sleep;
 use tokio::{select, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -42,8 +42,6 @@ impl Node {
         let client_options = ClientOptions::parse(uri).await?;
         let client = Client::with_options(client_options)?;
 
-        CLIENT.set(client.clone()).unwrap();
-
         DATABASE
             .set(
                 client
@@ -77,6 +75,10 @@ impl Node {
         let centrifugo_service = CentrifugoService::new(
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
+            vec![
+                self.config.nats.messages_namespace.clone(),
+                self.config.nats.art_changes_namespace.clone(),
+            ]
         );
         let art_service = ARTService::new();
 

@@ -3,26 +3,63 @@ use crate::callback_wrappers::ProofVerifierMessage;
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::types::BranchChanges;
+use bson::DateTime;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(bound = "")]
-pub struct ARTChangesRecord<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> {
+pub struct ARTChangesRecord<G>
+where
+    G: AffineRepr + CanonicalSerialize + CanonicalDeserialize,
+{
+    /// ART changes
+    pub changes: BranchChanges<G>, //BranchChanges<G>,
+    /// When the message was created
+    pub created_at: DateTime,
+    /// Sequential number of this message in the chat
     pub sequence_number: i64,
-    pub change: BranchChanges<G>,
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
+    /// Correctness proof
     pub proof_record: ProofRecord,
 }
 
-impl<G: AffineRepr + CanonicalSerialize + CanonicalDeserialize> fmt::Display
-    for ARTChangesRecord<G>
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ARTChangesOutboxRecord {
+    /// ART changes
+    pub data: Vec<u8>,
+    /// When the message was created
+    pub created_at: DateTime,
+    /// Sequential number of this message in the chat
+    pub sequence_number: i64,
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
+    /// Correctness proof
+    pub proof_record: ProofRecord,
+}
+
+impl<G> ARTChangesRecord<G>
+where
+    G: AffineRepr + CanonicalSerialize + CanonicalDeserialize,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[sequence_number: {}, type: {}]",
-            self.sequence_number,
-            serde_json::to_string(&self.change.change_type).unwrap_or("Undefined".to_string()),
-        )
+    pub fn new(data: BranchChanges<G>, sequence_number: i64, chat_id: Uuid) -> Self {
+        Self {
+            changes: data,
+            created_at: DateTime::now(),
+            sequence_number,
+            chat_id,
+        }
+    }
+}
+
+impl ARTChangesOutboxRecord {
+    pub fn new(data: Vec<u8>, sequence_number: i64, chat_id: Uuid) -> Self {
+        Self {
+            data,
+            created_at: DateTime::now(),
+            sequence_number,
+            chat_id,
+        }
     }
 }
