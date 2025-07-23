@@ -92,7 +92,7 @@ struct MessageData {
 struct ARTTestContext {
     pub client: reqwest::Client,
     pub art: PrivateART<ARTGroup>,
-    pub secrets: Vec<ARTScalarField>,
+    pub initial_secrets: Vec<ARTScalarField>,
     pub rng: StdRng,
     pub chat_uuid: Uuid,
     pub gens: BulletproofGens,
@@ -119,7 +119,7 @@ impl ARTTestContext {
         Self {
             client: reqwest::Client::new(),
             art,
-            secrets,
+            initial_secrets: secrets,
             rng,
             chat_uuid,
             gens: get_bulletproof_gens(),
@@ -322,7 +322,7 @@ async fn test_get_initial_art() -> eyre::Result<()> {
 async fn test_get_art() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(8).await;
     let mut retrieval_context = context.clone();
-    let mut art_roots = Vec::new();
+    let mut art_roots = vec![context.art.root.public_key];
 
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
@@ -345,7 +345,10 @@ async fn test_get_art() -> eyre::Result<()> {
                 .unwrap(),
         )?;
 
-        assert_eq!(received_art.root.public_key, art_roots[(i - 1) as usize]);
+        assert_eq!(received_art.root.public_key, art_roots[(i) as usize]);
+        retrieval_context.art =
+            PrivateART::from_public_art(received_art, retrieval_context.initial_secrets[1])
+                .unwrap();
     }
 
     Ok(())
@@ -534,7 +537,7 @@ async fn remove_member(
 ) -> reqwest::Result<reqwest::Response> {
     let associated_data = context.art.serialize().unwrap();
     let user_to_remove = ARTGroup::generator()
-        .mul(&context.secrets[member_id])
+        .mul(&context.initial_secrets[member_id])
         .into_affine();
     let temporary_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, remove_user_changes) = context
@@ -602,10 +605,13 @@ async fn get_art(
 
     let mut msg = Vec::new();
     msg.extend_from_slice(context.chat_uuid.as_bytes());
-    msg.extend(nonce.clone());
+    msg.extend(&nonce);
 
-    let tk =  context.art.recompute_root_key().unwrap().key;
+    let tk = context.art.recompute_root_key().unwrap().key;
+    assert_eq!(context.art.public_key_of(&tk), context.art.root.public_key);
     let pk = vec![context.art.root.public_key];
+
+    println!("root_pk: {}", pk[0]);
 
     let signature = sign(&vec![tk], &pk, &msg).unwrap();
     let verification_result = verify(&signature, &pk, &msg);
@@ -616,9 +622,9 @@ async fn get_art(
         .get(format!("{}/{}", BACKEND_URL, "v1/messenger/art"))
         .query(&json!({
             "chatId": context.chat_uuid,
-            "sequenceNumber": sequence_number,
-            "nonce": BASE64_STANDARD.encode(&nonce),
             "signature": BASE64_STANDARD.encode(&signature),
+            "nonce": BASE64_STANDARD.encode(&nonce),
+            "sequenceNumber": sequence_number,
         }))
         .send()
         .await

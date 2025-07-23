@@ -75,10 +75,6 @@ pub struct GetARTQuery {
     #[serde(with = "as_base64")]
     pub signature: Vec<u8>,
 
-    /// User's leaf node index
-    #[param(example = 8)]
-    pub index: u32,
-
     /// User provided nonce
     #[param(example = "RXhhbXBsZSBub25jZQ==")]
     #[serde(with = "as_base64")]

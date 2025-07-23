@@ -3,18 +3,18 @@ use crate::errors::ApiError;
 use crate::{Container, as_base64};
 use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
-use callbacks::callback;
-use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
-use std::sync::Arc;
 use axum::extract::Query;
 use axum::http::request::Parts;
+use callbacks::callback;
+use serde::{Deserialize, Serialize};
+use serde_urlencoded;
+use std::convert::TryFrom;
+use std::sync::Arc;
 use tracing::{error, info};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
-use serde_urlencoded;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -34,17 +34,6 @@ impl From<GetInitialARTQuery> for GetInitialARTHelper {
             nonce: query.nonce,
             index: query.index,
             signature: query.signature,
-        }
-    }
-}
-
-impl TryFrom<&[u8]> for GetInitialARTHelper {
-    type Error = ApiError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        match serde_urlencoded::from_bytes::<GetInitialARTQuery>(value) {
-            Ok(query) => Ok(Self::from(query)),
-            Err(err) => Err(ApiError::BadRequest(err.to_string())),
         }
     }
 }

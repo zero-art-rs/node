@@ -9,7 +9,7 @@ use storage::{
     ARTChangesStorage, ARTStorage, DATABASE, DataStorage, MongoARTChangesStorage, MongoARTStorage,
     StorageError,
 };
-use tracing::error;
+use tracing::{error, info};
 use types::{ARTChangesRecord, ARTRecord, ProofRecord};
 use uuid::Uuid;
 
@@ -107,6 +107,10 @@ impl ARTService {
         chat_id: &Uuid,
         sequence_number: i64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        info!(
+            "Retrieving the {} art in chat: {}",
+            sequence_number, chat_id
+        );
         let art_record = self.get_initial_art(chat_id).await?;
         let mut initial_art = art_record.art;
 
@@ -125,6 +129,7 @@ impl ARTService {
             initial_art.update_public_art(&change.changes)?;
         }
 
+        info!("Successful art retrieval");
         Ok(ARTRecord {
             chat_id: *chat_id,
             art: initial_art,

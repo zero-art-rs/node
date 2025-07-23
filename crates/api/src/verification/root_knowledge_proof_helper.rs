@@ -1,3 +1,4 @@
+use crate::domains::art::transport::http::{GetARTQuery, GetChangesQuery};
 use crate::domains::messenger::transport::http::{
     DeleteMessageQuery, GetMessageQuery, SendMessageRequest,
 };
@@ -6,12 +7,11 @@ use crate::{Container, as_base64};
 use callbacks::callback;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::error;
+use tracing::{debug, error, info};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
-use crate::domains::art::transport::http::{GetARTQuery, GetChangesQuery};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub enum KnowledgeVerificationType {
@@ -22,7 +22,7 @@ pub enum KnowledgeVerificationType {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RootKnowledgeHelper {
-    chat_id: Uuid,
+    chat_uuid: Uuid,
     sequence_number: Option<i64>,
     #[serde(with = "as_base64")]
     nonce: Vec<u8>,
@@ -34,7 +34,7 @@ pub struct RootKnowledgeHelper {
 impl From<SendMessageRequest> for RootKnowledgeHelper {
     fn from(query: SendMessageRequest) -> Self {
         Self {
-            chat_id: query.chat_id,
+            chat_uuid: query.chat_id,
             sequence_number: None,
             nonce: query.nonce,
             signature: query.signature,
@@ -46,7 +46,7 @@ impl From<SendMessageRequest> for RootKnowledgeHelper {
 impl From<GetMessageQuery> for RootKnowledgeHelper {
     fn from(query: GetMessageQuery) -> Self {
         Self {
-            chat_id: query.chat_id,
+            chat_uuid: query.chat_id,
             sequence_number: query.sequence_number,
             nonce: query.nonce,
             signature: query.signature,
@@ -58,7 +58,7 @@ impl From<GetMessageQuery> for RootKnowledgeHelper {
 impl From<DeleteMessageQuery> for RootKnowledgeHelper {
     fn from(query: DeleteMessageQuery) -> Self {
         Self {
-            chat_id: query.chat_id,
+            chat_uuid: query.chat_id,
             sequence_number: query.sequence_number,
             nonce: query.nonce,
             signature: query.signature,
@@ -70,7 +70,7 @@ impl From<DeleteMessageQuery> for RootKnowledgeHelper {
 impl From<GetChangesQuery> for RootKnowledgeHelper {
     fn from(query: GetChangesQuery) -> Self {
         Self {
-            chat_id: query.chat_id,
+            chat_uuid: query.chat_id,
             sequence_number: query.sequence_number,
             nonce: query.nonce,
             signature: query.signature,
@@ -82,41 +82,12 @@ impl From<GetChangesQuery> for RootKnowledgeHelper {
 impl From<GetARTQuery> for RootKnowledgeHelper {
     fn from(query: GetARTQuery) -> Self {
         Self {
-            chat_id: query.chat_id,
+            chat_uuid: query.chat_id,
             sequence_number: query.sequence_number,
             nonce: query.nonce,
             signature: query.signature,
-            verification_type: KnowledgeVerificationType::VerifyPrevious
+            verification_type: KnowledgeVerificationType::VerifyPrevious,
         }
-    }
-}
-
-impl TryFrom<&[u8]> for RootKnowledgeHelper {
-    type Error = ApiError;
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if let Ok(query) = serde_json::from_slice::<SendMessageRequest>(value) {
-            return Ok(Self::from(query));
-        }
-
-        if let Ok(query) = serde_urlencoded::from_bytes::<GetMessageQuery>(value) {
-            return Ok(Self::from(query));
-        }
-
-        if let Ok(query) = serde_urlencoded::from_bytes::<DeleteMessageQuery>(value) {
-            return Ok(Self::from(query));
-        }
-
-        if let Ok(query) = serde_urlencoded::from_bytes::<GetChangesQuery>(value) {
-            return Ok(Self::from(query));
-        }
-
-        if let Ok(query) = serde_urlencoded::from_bytes::<GetARTQuery>(value) {
-            return Ok(Self::from(query));
-        }
-
-        Err(ApiError::BadRequest(
-            "Failed to decode art-update request".to_string(),
-        ))
     }
 }
 
@@ -124,22 +95,26 @@ impl RootKnowledgeHelper {
     pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
         let art_record = match self.verification_type {
             KnowledgeVerificationType::VerifyCurrent => {
+                info!("VerifyCurrent");
                 state
                     .art_service
-                    .get_art(&self.chat_id, self.sequence_number)
+                    .get_art(&self.chat_uuid, self.sequence_number)
                     .await?
             }
             KnowledgeVerificationType::VerifyPrevious => {
+                info!("VerifyPrevious");
                 state
                     .art_service
-                    .get_previous_art(&self.chat_id, self.sequence_number)
+                    .get_previous_art(&self.chat_uuid, self.sequence_number)
                     .await?
             }
         };
 
         let mut msg = Vec::new();
-        msg.extend_from_slice(self.chat_id.as_bytes());
+        msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&self.nonce);
+
+        info!("root_pk: {}", art_record.art.root.public_key);
 
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
             signature: self.signature.clone(),

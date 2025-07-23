@@ -1,3 +1,6 @@
+use crate::domains::art::transport::http::{
+    AddMemberRequest, RemoveMemberRequest, UpdateKeyRequest,
+};
 use crate::domains::art::transport::utils::decode_branch_changes;
 use crate::errors::ApiError;
 use crate::{Container, as_base64};
@@ -27,17 +30,33 @@ pub struct ArtUpdateHelper {
     pub chat_id: Uuid,
 }
 
-impl TryFrom<&[u8]> for ArtUpdateHelper {
-    type Error = ApiError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if let Ok(update_request) = serde_json::from_slice::<ArtUpdateHelper>(value) {
-            return Ok(update_request);
+impl From<AddMemberRequest> for ArtUpdateHelper {
+    fn from(add_member_request: AddMemberRequest) -> Self {
+        Self {
+            branch_changes: add_member_request.branch_changes,
+            proof: add_member_request.proof,
+            chat_id: add_member_request.chat_id,
         }
+    }
+}
 
-        Err(ApiError::BadRequest(
-            "Failed to decode art-update request".to_string(),
-        ))
+impl From<UpdateKeyRequest> for ArtUpdateHelper {
+    fn from(add_member_request: UpdateKeyRequest) -> Self {
+        Self {
+            branch_changes: add_member_request.branch_changes,
+            proof: add_member_request.proof,
+            chat_id: add_member_request.chat_id,
+        }
+    }
+}
+
+impl From<RemoveMemberRequest> for ArtUpdateHelper {
+    fn from(add_member_request: RemoveMemberRequest) -> Self {
+        Self {
+            branch_changes: add_member_request.branch_changes,
+            proof: add_member_request.proof,
+            chat_id: add_member_request.chat_id,
+        }
     }
 }
 

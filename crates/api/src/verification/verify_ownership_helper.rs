@@ -1,6 +1,7 @@
 use crate::domains::art::transport::http::DeleteChatQuery;
 use crate::errors::ApiError;
 use crate::{Container, as_base64};
+use ark_std::iterable::Iterable;
 use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
 use callbacks::callback;
@@ -29,17 +30,6 @@ impl From<DeleteChatQuery> for VerifyOwnershipHelper {
             chat_id: query.chat_id,
             nonce: query.nonce,
             signature: query.signature,
-        }
-    }
-}
-
-impl TryFrom<&[u8]> for VerifyOwnershipHelper {
-    type Error = ApiError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        match serde_urlencoded::from_bytes::<DeleteChatQuery>(value) {
-            Ok(query) => Ok(Self::from(query)),
-            Err(err) => Err(ApiError::BadRequest(err.to_string())),
         }
     }
 }
