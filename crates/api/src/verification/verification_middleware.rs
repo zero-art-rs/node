@@ -145,6 +145,10 @@ async fn verify_get_query(
             Ok(())
         }
         // ChatOperations
+        "/v1/messenger/challenge" => {
+            info!("No verification required for challenge retrieval");
+            Ok(())
+        }
         "/v1/messenger/art" => match serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes) {
             Ok(query) => RootKnowledgeHelper::from(query).verify(state).await,
             Err(err) => Err(ApiError::BadRequest(err.to_string())),

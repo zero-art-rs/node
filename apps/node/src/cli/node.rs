@@ -2,9 +2,11 @@ use crate::config::NodeConfig;
 use api::{ARTService, CentrifugoService, Container, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use storage::DATABASE;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio::{select, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -87,6 +89,7 @@ impl Node {
             centrifugo_service: Arc::new(centrifugo_service),
             art_service: Arc::new(art_service),
             proof_verifier_sender,
+            challenges: Arc::new(Mutex::new(HashMap::new())),
         });
 
         self.task_tracker.spawn(api::run_server(

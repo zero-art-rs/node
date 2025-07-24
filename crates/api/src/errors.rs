@@ -19,6 +19,12 @@ pub enum ApiError {
     NotFound(String),
 }
 
+impl From<ark_serialize::SerializationError> for ApiError {
+    fn from(err: ark_serialize::SerializationError) -> Self {
+        ApiError::BadRequest(err.to_string())
+    }
+}
+
 impl From<ARTError> for ApiError {
     fn from(value: ARTError) -> Self {
         Self::InternalServerError(value.to_string())

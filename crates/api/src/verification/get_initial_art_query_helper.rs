@@ -53,12 +53,21 @@ impl GetInitialARTHelper {
             return Err(ApiError::BadRequest("The node isn't a leaf".to_string()));
         }
 
+        let challenge = match state
+            .challenges
+            .lock()
+            .await
+            .get(&(self.chat_id, leaf_node.public_key))
+        {
+            Some(challenge) => challenge.clone(),
+            None => return Err(ApiError::BadRequest("No challenge node found".to_string())),
+        };
+
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());
         msg.extend(&self.nonce);
         msg.extend(self.index.to_le_bytes());
-
-        info!("msg: {:#?}", &msg);
+        msg.extend(challenge);
 
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
             signature: self.signature.clone(),

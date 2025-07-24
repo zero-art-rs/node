@@ -1,10 +1,13 @@
-use proof_verifier::ProofVerifierSender;
-use std::sync::Arc;
-
 use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
+use cortado::CortadoAffine;
+use proof_verifier::ProofVerifierSender;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
@@ -12,4 +15,6 @@ pub struct Container {
     pub art_service: Arc<ARTService>,
 
     pub proof_verifier_sender: ProofVerifierSender,
+
+    pub challenges: Arc<Mutex<HashMap<(Uuid, CortadoAffine), Vec<u8>>>>,
 }

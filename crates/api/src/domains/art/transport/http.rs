@@ -1,5 +1,6 @@
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 use crate::{as_base64, container::Container, errors::ApiError};
+use ark_serialize::CanonicalDeserialize;
 use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
 use axum::{
@@ -9,6 +10,7 @@ use axum::{
     response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
+use cortado::CortadoAffine;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -424,4 +426,48 @@ pub async fn delete_chat(
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct GetChallengeQuery {
+    /// Unique identifier of the chat to send the message to.
+    #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
+    pub chat_id: Uuid,
+
+    /// User's leaf public key, serialized with ark_serialize
+    #[serde(with = "as_base64")]
+    pub public_key: Vec<u8>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/messenger/challenge",
+    params(GetChallengeQuery),
+    tag = "Chat operations"
+)]
+#[instrument(skip(state), err)]
+pub async fn get_challenge(
+    State(state): State<Arc<Container>>,
+    Query(payload): Query<GetChallengeQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    payload.validate()?;
+
+    let key = (
+        payload.chat_id,
+        CortadoAffine::deserialize_uncompressed(&*payload.public_key)?,
+    );
+
+    let mut challenges = state.challenges.lock().await;
+
+    let challenge = match challenges.get(&key) {
+        Some(challenge) => BASE64_STANDARD.encode(challenge),
+        None => {
+            let challenge = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+            challenges.insert(key, challenge.clone());
+            BASE64_STANDARD.encode(challenge)
+        }
+    };
+
+    Ok((StatusCode::OK, challenge))
 }

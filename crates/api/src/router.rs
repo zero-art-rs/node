@@ -46,7 +46,8 @@ pub fn build_router() -> Router<Arc<Container>> {
         .routes(routes!(art_transport::remove_member))
         .routes(routes!(art_transport::update_key))
         .routes(routes!(art_transport::get_changes))
-        .routes(routes!(art_transport::delete_chat));
+        .routes(routes!(art_transport::delete_chat))
+        .routes(routes!(art_transport::get_challenge));
 
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(routes)

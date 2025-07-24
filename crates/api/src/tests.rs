@@ -275,8 +275,17 @@ async fn test_remove_member() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_get_initial_art() -> eyre::Result<()> {
-    let context = ARTTestContext::new(100).await;
+    let mut context = ARTTestContext::new(100).await;
     for _ in 0..1 {
+        let challenge = get_challenge(&mut context).await?;
+        assert_eq!(challenge.status(), StatusCode::OK);
+
+        let challenge = BASE64_STANDARD
+            .decode(challenge.text().await.unwrap())
+            .unwrap();
+
+        println!("{:?}", challenge);
+
         let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
         let index =
             NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
@@ -285,6 +294,7 @@ async fn test_get_initial_art() -> eyre::Result<()> {
         msg.extend_from_slice(context.chat_uuid.as_bytes());
         msg.extend(&nonce);
         msg.extend(index.to_le_bytes());
+        msg.extend(challenge);
 
         let pk = vec![context.art.public_key_of(&context.art.secret_key)];
 
@@ -625,6 +635,24 @@ async fn get_art(
             "signature": BASE64_STANDARD.encode(&signature),
             "nonce": BASE64_STANDARD.encode(&nonce),
             "sequenceNumber": sequence_number,
+        }))
+        .send()
+        .await
+}
+
+async fn get_challenge(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
+    let mut serialized_public_key = Vec::new();
+    context
+        .art
+        .public_key_of(&context.art.secret_key)
+        .serialize_uncompressed(&mut serialized_public_key);
+
+    context
+        .client
+        .get(format!("{}/{}", BACKEND_URL, "v1/messenger/challenge"))
+        .query(&json!({
+            "chatId": context.chat_uuid,
+            "publicKey": BASE64_STANDARD.encode(&serialized_public_key),
         }))
         .send()
         .await
