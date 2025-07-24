@@ -1,19 +1,21 @@
 use crate::domains::art::transport::http::{
     AddMemberRequest, RemoveMemberRequest, UpdateKeyRequest,
 };
-use crate::domains::art::transport::utils::decode_branch_changes;
-use crate::errors::ApiError;
+use crate::verification::VerificationError;
 use crate::{Container, as_base64};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::traits::ARTPublicAPI;
-use art::types::BranchChangesType;
+use art::types::{BranchChanges, BranchChangesType};
 use callbacks::callback;
+use cortado::CortadoAffine;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::error;
+use tokio_util::bytes::Buf;
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
+use zk::art::ARTProof;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -61,131 +63,104 @@ impl From<RemoveMemberRequest> for ArtUpdateHelper {
 }
 
 impl ArtUpdateHelper {
-    pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
-        let branch_changes = match decode_branch_changes(&self.branch_changes) {
-            Ok(branch_changes) => branch_changes,
-            Err(err) => return Err(ApiError::BadRequest(err.to_string())),
-        };
+    pub async fn verify(&self, state: Arc<Container>) -> Result<(), VerificationError> {
+        let branch_changes = BranchChanges::<CortadoAffine>::deserialize(&self.branch_changes)?;
 
-        let verification_result = match branch_changes.change_type {
+        match branch_changes.change_type {
             BranchChangesType::UpdateKey => self.verify_update_key(state.clone()).await,
             BranchChangesType::AppendNode(_) => self.verify_add_member(state.clone()).await,
             BranchChangesType::MakeBlank(_, _) => self.verify_make_blank(state.clone()).await,
-            _ => {
-                return Err(ApiError::BadRequest(
-                    "ART operation isn't supported".to_string(),
-                ));
-            }
-        };
-
-        verification_result.map_err(|err| ApiError::BadRequest(err.to_string()))
+            _ => Err(VerificationError::UnsupportedOperation),
+        }
     }
 
-    async fn verify_update_key(&self, state: Arc<Container>) -> Result<(), ApiError> {
-        let branch_changes = decode_branch_changes(&self.branch_changes)?;
-
-        let art = state.art_service.get_art(&self.chat_id, None).await?.art;
-
-        let associated_data = art.serialize()?;
+    async fn verify_update_key(&self, state: Arc<Container>) -> Result<(), VerificationError> {
+        let branch_changes = BranchChanges::<CortadoAffine>::deserialize(&self.branch_changes)?;
+        let mut art = state.art_service.get_art(&self.chat_id, None).await?.art;
         let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
 
-        let key_update_message = ProofVerifierMessage::KeyUpdate {
-            proof: self.proof.clone(),
+        let proof = Self::update_proof(
+            &self.proof,
+            vec![art.get_node(branch_changes.node_index)?.public_key],
+        )?;
+
+        let key_update_message = ProofVerifierMessage::ArtUpdate {
+            proof,
             co_path,
-            associated_data,
+            associated_data: art.serialize()?,
         };
 
-        match callback(&state.proof_verifier_sender, key_update_message).await {
-            Ok(message) => {
-                let ProofVerifierResult::KeyUpdate { verdict } = message else {
-                    return Err(ApiError::InternalServerError(
-                        "Invalid message from proof verifier".to_string(),
-                    ));
-                };
-
-                if !verdict {
-                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
-                }
-            }
-            Err(e) => {
-                error!("Failed to send message to proof verifier: {}", e);
-                return Err(ApiError::InternalServerError(e.to_string()));
-            }
+        let ProofVerifierResult::ArtUpdate { verdict } =
+            callback(&state.proof_verifier_sender, key_update_message).await?
+        else {
+            return Err(VerificationError::InvalidResultMessage);
         };
+
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
 
         Ok(())
     }
 
-    async fn verify_add_member(&self, state: Arc<Container>) -> Result<(), ApiError> {
-        let branch_changes = decode_branch_changes(&self.branch_changes)?;
-
-        let art = state
-            .art_service
-            .get_art(&self.chat_id, None)
-            .await
-            .map_err(|e| ApiError::InternalServerError(e.to_string()))?
-            .art;
-
+    async fn verify_add_member(&self, state: Arc<Container>) -> Result<(), VerificationError> {
+        let branch_changes = BranchChanges::<CortadoAffine>::deserialize(&self.branch_changes)?;
+        let art = state.art_service.get_art(&self.chat_id, None).await?.art;
         let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
 
-        let add_member_message = ProofVerifierMessage::AddMember {
+        let add_member_message = ProofVerifierMessage::ArtUpdate {
             proof: self.proof.clone(),
             co_path,
             associated_data: art.serialize()?,
         };
 
-        match callback(&state.proof_verifier_sender, add_member_message).await {
-            Ok(message) => {
-                let ProofVerifierResult::AddMember { verdict } = message else {
-                    return Err(ApiError::InternalServerError(
-                        "Invalid message from proof verifier".to_string(),
-                    ));
-                };
-
-                if !verdict {
-                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
-                }
-            }
-            Err(e) => {
-                error!("Failed to send message to proof verifier: {}", e);
-                return Err(ApiError::InternalServerError(e.to_string()));
-            }
+        let ProofVerifierResult::ArtUpdate { verdict } =
+            callback(&state.proof_verifier_sender, add_member_message).await?
+        else {
+            return Err(VerificationError::InvalidResultMessage);
         };
+
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
 
         Ok(())
     }
 
-    async fn verify_make_blank(&self, state: Arc<Container>) -> Result<(), ApiError> {
-        let branch_changes = decode_branch_changes(&self.branch_changes)?;
-
+    async fn verify_make_blank(&self, state: Arc<Container>) -> Result<(), VerificationError> {
+        let branch_changes = BranchChanges::<CortadoAffine>::deserialize(&self.branch_changes)?;
         let art = state.art_service.get_art(&self.chat_id, None).await?.art;
-
         let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
 
-        let remove_member_message = ProofVerifierMessage::RemoveMember {
+        let remove_member_message = ProofVerifierMessage::ArtUpdate {
             proof: self.proof.clone(),
             co_path,
             associated_data: art.serialize()?,
         };
 
-        match callback(&state.proof_verifier_sender, remove_member_message).await {
-            Ok(message) => {
-                let ProofVerifierResult::RemoveMember { verdict } = message else {
-                    return Err(ApiError::InternalServerError(
-                        "Invalid message from proof verifier".to_string(),
-                    ));
-                };
-
-                if !verdict {
-                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
-                }
-            }
-            Err(e) => {
-                error!("Failed to send message to proof verifier: {}", e);
-                return Err(ApiError::InternalServerError(e.to_string()));
-            }
+        let ProofVerifierResult::ArtUpdate { verdict } =
+            callback(&state.proof_verifier_sender, remove_member_message).await?
+        else {
+            return Err(VerificationError::InvalidResultMessage);
         };
 
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
+
         Ok(())
+    }
+
+    fn update_proof(
+        proof: &Vec<u8>,
+        new_r: Vec<CortadoAffine>,
+    ) -> Result<Vec<u8>, VerificationError> {
+        let mut proof = ARTProof::deserialize_uncompressed(proof.reader())?;
+
+        proof.R = new_r;
+        let mut serialized_proof = Vec::new();
+        proof.serialize_uncompressed(&mut serialized_proof)?;
+
+        Ok(serialized_proof)
     }
 }

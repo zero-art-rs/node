@@ -8,7 +8,7 @@ use std::time::Duration;
 use storage::DATABASE;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tokio::{select, sync::mpsc};
+use tokio::{select, sync::RwLock, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::info;
 
@@ -89,6 +89,7 @@ impl Node {
             centrifugo_service: Arc::new(centrifugo_service),
             art_service: Arc::new(art_service),
             proof_verifier_sender,
+            art_is_updating: Arc::new(RwLock::new(HashMap::new())),
             challenges: Arc::new(Mutex::new(HashMap::new())),
         });
 

@@ -7,6 +7,7 @@ use proof_verifier::ProofVerifierSender;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub struct Container {
@@ -16,5 +17,6 @@ pub struct Container {
 
     pub proof_verifier_sender: ProofVerifierSender,
 
+    pub art_is_updating: Arc<RwLock<HashMap<Uuid, bool>>>,
     pub challenges: Arc<Mutex<HashMap<(Uuid, CortadoAffine), Vec<u8>>>>,
 }

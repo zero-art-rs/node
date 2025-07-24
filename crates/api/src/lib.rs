@@ -38,7 +38,7 @@ pub async fn run_server(
 
     axum::serve(
         listener,
-        build_router()
+        build_router(container.clone())
             .layer(CorsLayer::permissive())
             .layer(
             TraceLayer::new_for_http()
@@ -66,7 +66,6 @@ pub async fn run_server(
                     },
                 ),
             )
-            .layer(middleware::from_fn_with_state(container.clone(), verification::verification_middleware))
             .with_state(container),
     ).with_graceful_shutdown(cancellation.cancelled_owned()).await?;
 

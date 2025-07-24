@@ -2,12 +2,12 @@ use crate::domains::art::transport::http::{GetARTQuery, GetChangesQuery};
 use crate::domains::messenger::transport::http::{
     DeleteMessageQuery, GetMessageQuery, SendMessageRequest,
 };
-use crate::errors::ApiError;
+use crate::verification::VerificationError;
 use crate::{Container, as_base64};
 use callbacks::callback;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -92,7 +92,7 @@ impl From<GetARTQuery> for RootKnowledgeHelper {
 }
 
 impl RootKnowledgeHelper {
-    pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
+    pub async fn verify(&self, state: Arc<Container>) -> Result<(), VerificationError> {
         let art_record = match self.verification_type {
             KnowledgeVerificationType::VerifyCurrent => {
                 info!("VerifyCurrent");
@@ -114,31 +114,21 @@ impl RootKnowledgeHelper {
         msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&self.nonce);
 
-        info!("root_pk: {}", art_record.art.root.public_key);
-
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
             signature: self.signature.clone(),
             public_keys: vec![art_record.art.root.public_key],
             msg,
         };
 
-        match callback(&state.proof_verifier_sender, schnorr_signature_message).await {
-            Ok(message) => {
-                let ProofVerifierResult::SchnorrSignature { verdict } = message else {
-                    return Err(ApiError::InternalServerError(
-                        "Invalid message from proof verifier".to_string(),
-                    ));
-                };
-
-                if !verdict {
-                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
-                }
-            }
-            Err(e) => {
-                error!("Failed to send message to proof verifier: {}", e);
-                return Err(ApiError::InternalServerError(e.to_string()));
-            }
+        let ProofVerifierResult::SchnorrSignature { verdict } =
+            callback(&state.proof_verifier_sender, schnorr_signature_message).await?
+        else {
+            return Err(VerificationError::InvalidResultMessage);
         };
+
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
 
         Ok(())
     }

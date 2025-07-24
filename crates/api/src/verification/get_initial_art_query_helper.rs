@@ -1,16 +1,12 @@
-use crate::domains::art::transport::http::{GetChangesQuery, GetInitialARTQuery};
-use crate::errors::ApiError;
+use crate::domains::art::transport::http::GetInitialARTQuery;
+use crate::verification::VerificationError;
 use crate::{Container, as_base64};
 use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
-use axum::extract::Query;
-use axum::http::request::Parts;
 use callbacks::callback;
 use serde::{Deserialize, Serialize};
-use serde_urlencoded;
-use std::convert::TryFrom;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::info;
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -39,29 +35,23 @@ impl From<GetInitialARTQuery> for GetInitialARTHelper {
 }
 
 impl GetInitialARTHelper {
-    pub async fn verify(&self, state: Arc<Container>) -> Result<(), ApiError> {
-        let mut initial_art_record = state
-            .art_service
-            .get_initial_art(&self.chat_id)
-            .await
-            .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+    pub async fn verify(&self, state: Arc<Container>) -> Result<(), VerificationError> {
+        let mut initial_art_record = state.art_service.get_initial_art(&self.chat_id).await?;
 
         let leaf_node = initial_art_record
             .art
             .get_node(NodeIndex::Index(self.index))?;
         if !leaf_node.is_leaf() {
-            return Err(ApiError::BadRequest("The node isn't a leaf".to_string()));
+            return Err(VerificationError::InvalidProof);
         }
 
-        let challenge = match state
-            .challenges
-            .lock()
-            .await
-            .get(&(self.chat_id, leaf_node.public_key))
-        {
+        let mut challenges_lock = state.challenges.lock().await;
+
+        let challenge = match challenges_lock.get(&(self.chat_id, leaf_node.public_key)) {
             Some(challenge) => challenge.clone(),
-            None => return Err(ApiError::BadRequest("No challenge node found".to_string())),
+            None => return Err(VerificationError::NoChallenge),
         };
+        challenges_lock.remove_entry(&(self.chat_id, leaf_node.public_key));
 
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());
@@ -75,23 +65,22 @@ impl GetInitialARTHelper {
             msg,
         };
 
-        match callback(&state.proof_verifier_sender, schnorr_signature_message).await {
-            Ok(message) => {
-                let ProofVerifierResult::SchnorrSignature { verdict } = message else {
-                    return Err(ApiError::InternalServerError(
-                        "Invalid message from proof verifier".to_string(),
-                    ));
-                };
+        let verdict =
+            match callback(&state.proof_verifier_sender, schnorr_signature_message).await? {
+                ProofVerifierResult::SchnorrSignature { verdict } => {
+                    info!(
+                        "Remove used challenge for user {}, if chat {}",
+                        leaf_node.public_key, self.chat_id
+                    );
 
-                if !verdict {
-                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
+                    verdict
                 }
-            }
-            Err(e) => {
-                error!("Failed to send message to proof verifier: {}", e);
-                return Err(ApiError::InternalServerError(e.to_string()));
-            }
-        };
+                _ => return Err(VerificationError::InvalidResultMessage),
+            };
+
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
 
         Ok(())
     }

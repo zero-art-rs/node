@@ -260,14 +260,43 @@ async fn test_add_member() -> eyre::Result<()> {
 }
 
 #[tokio::test]
+async fn test_add_member_after_removal() -> eyre::Result<()> {
+    let mut context = ARTTestContext::new(100).await;
+
+    for i in 0..TEST_REPEATS {
+        let remove_member_response = remove_member(&mut context, i + 1).await?;
+        let add_member_response = add_member(&mut context).await?;
+
+        assert_eq!(add_member_response.status(), StatusCode::OK);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_remove_member() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
+    let mut retrieval_context = context.clone();
 
     for i in 1..TEST_REPEATS + 1 {
         // skip the root node
         let remove_user_response = remove_member(&mut context, i).await?;
-
         assert_eq!(remove_user_response.status(), StatusCode::NO_CONTENT);
+
+        let new_art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
+        assert_eq!(new_art_response.status(), StatusCode::OK);
+
+        let received_art = PublicART::<ARTGroup>::deserialize(
+            &BASE64_STANDARD
+                .decode(new_art_response.text().await.unwrap())
+                .unwrap(),
+        )?;
+        assert_eq!(
+            received_art.root.weight,
+            retrieval_context.art.root.weight - 1
+        );
+        retrieval_context.art =
+            PrivateART::from_public_art(received_art, context.art.secret_key).unwrap();
     }
 
     Ok(())
@@ -283,8 +312,6 @@ async fn test_get_initial_art() -> eyre::Result<()> {
         let challenge = BASE64_STANDARD
             .decode(challenge.text().await.unwrap())
             .unwrap();
-
-        println!("{:?}", challenge);
 
         let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
         let index =
@@ -330,7 +357,7 @@ async fn test_get_initial_art() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
-    let mut context = ARTTestContext::new(8).await;
+    let mut context = ARTTestContext::new(100).await;
     let mut retrieval_context = context.clone();
     let mut art_roots = vec![context.art.root.public_key];
 
@@ -342,16 +369,15 @@ async fn test_get_art() -> eyre::Result<()> {
         assert_eq!(key_update_response.status(), StatusCode::OK);
     }
 
-    println!("{:#?}", art_roots);
     // Test if retrieval is correct
     for i in 1..TEST_REPEATS + 1 {
-        let initial_art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
+        let art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
 
-        assert_eq!(initial_art_response.status(), StatusCode::OK);
+        assert_eq!(art_response.status(), StatusCode::OK);
 
         let received_art = PublicART::<ARTGroup>::deserialize(
             &BASE64_STANDARD
-                .decode(initial_art_response.text().await.unwrap())
+                .decode(art_response.text().await.unwrap())
                 .unwrap(),
         )?;
 
@@ -366,7 +392,7 @@ async fn test_get_art() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_delete_art() -> eyre::Result<()> {
-    let context = ARTTestContext::new(8).await;
+    let context = ARTTestContext::new(100).await;
     let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
 
     let mut msg = Vec::new();
@@ -485,13 +511,12 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
 // add node to the art, and send updates to the chat
 async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
     let associated_data = context.art.serialize().unwrap();
-    let secret_key = context.art.secret_key.clone();
     let new_user_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
     let (_, co_path, lambdas) = context
         .art
         .recompute_root_key_with_artefacts_using_secret_key(
-            secret_key,
+            new_user_secret_key,
             Some(&append_user_changes.node_index),
         )
         .unwrap();
@@ -506,7 +531,7 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         associated_data.as_slice(),
         co_path.clone(),
         lambdas.clone(),
-        vec![secret_key],
+        vec![],
         blindings,
     )
     .unwrap();
@@ -618,10 +643,7 @@ async fn get_art(
     msg.extend(&nonce);
 
     let tk = context.art.recompute_root_key().unwrap().key;
-    assert_eq!(context.art.public_key_of(&tk), context.art.root.public_key);
     let pk = vec![context.art.root.public_key];
-
-    println!("root_pk: {}", pk[0]);
 
     let signature = sign(&vec![tk], &pk, &msg).unwrap();
     let verification_result = verify(&signature, &pk, &msg);

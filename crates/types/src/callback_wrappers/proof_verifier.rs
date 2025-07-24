@@ -3,17 +3,7 @@ use cortado::CortadoAffine;
 
 #[derive(Debug, Clone)]
 pub enum ProofVerifierMessage {
-    AddMember {
-        proof: Vec<u8>,
-        co_path: Vec<CortadoAffine>,
-        associated_data: Vec<u8>,
-    },
-    KeyUpdate {
-        proof: Vec<u8>,
-        co_path: Vec<CortadoAffine>,
-        associated_data: Vec<u8>,
-    },
-    RemoveMember {
+    ArtUpdate {
         proof: Vec<u8>,
         co_path: Vec<CortadoAffine>,
         associated_data: Vec<u8>,
@@ -27,11 +17,7 @@ pub enum ProofVerifierMessage {
 
 #[derive(Debug, Clone)]
 pub enum ProofVerifierResult {
-    AddMember { verdict: bool },
-    ModifyArt { verdict: bool },
-    KeyUpdate { verdict: bool },
-    RemoveMember { verdict: bool },
-    InitGroup { verdict: bool },
+    ArtUpdate { verdict: bool },
     SchnorrSignature { verdict: bool },
 }
 

@@ -53,28 +53,12 @@ impl ProofVerifier {
         let (event, callback) = event.inner_owned();
 
         let result = match event {
-            ProofVerifierMessage::AddMember {
+            ProofVerifierMessage::ArtUpdate {
                 proof,
                 co_path,
                 associated_data,
             } => {
-                self.verify_add_member_proof(proof, co_path, associated_data)
-                    .await
-            }
-            ProofVerifierMessage::KeyUpdate {
-                proof,
-                co_path,
-                associated_data,
-            } => {
-                self.verify_key_update_proof(proof, co_path, associated_data)
-                    .await
-            }
-            ProofVerifierMessage::RemoveMember {
-                proof,
-                co_path,
-                associated_data,
-            } => {
-                self.verify_remove_member_proof(proof, co_path, associated_data)
+                self.verify_art_update_proof(proof, co_path, associated_data)
                     .await
             }
             ProofVerifierMessage::SchnorrSignature {
@@ -99,7 +83,7 @@ impl ProofVerifier {
         Ok(())
     }
 
-    async fn verify_add_member_proof(
+    async fn verify_art_update_proof(
         &self,
         proof: Vec<u8>,
         co_path: Vec<CortadoAffine>,
@@ -115,58 +99,10 @@ impl ProofVerifier {
         );
 
         match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::AddMember { verdict: true }),
+            Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
             Err(e) => {
                 info!("Failed to verify add_member_proof: {}", e);
-                Ok(ProofVerifierResult::AddMember { verdict: false })
-            }
-        }
-    }
-
-    async fn verify_key_update_proof(
-        &self,
-        proof: Vec<u8>,
-        co_path: Vec<CortadoAffine>,
-        associated_data: Vec<u8>,
-    ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying key update proof");
-        let verification_result = art_verify(
-            &get_bulletproof_gens(),
-            get_pedersen_basis(),
-            associated_data.as_slice(),
-            co_path,
-            ARTProof::deserialize_uncompressed(proof.reader())?,
-        );
-
-        match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::KeyUpdate { verdict: true }),
-            Err(e) => {
-                info!("Failed to verify key_update: {}", e);
-                Ok(ProofVerifierResult::KeyUpdate { verdict: false })
-            }
-        }
-    }
-
-    async fn verify_remove_member_proof(
-        &self,
-        proof: Vec<u8>,
-        co_path: Vec<CortadoAffine>,
-        associated_data: Vec<u8>,
-    ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying remove member proof");
-        let verification_result = art_verify(
-            &get_bulletproof_gens(),
-            get_pedersen_basis(),
-            associated_data.as_slice(),
-            co_path,
-            ARTProof::deserialize_uncompressed(proof.reader())?,
-        );
-
-        match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::RemoveMember { verdict: true }),
-            Err(e) => {
-                info!("Failed to verify remove_member: {}", e);
-                Ok(ProofVerifierResult::RemoveMember { verdict: false })
+                Ok(ProofVerifierResult::ArtUpdate { verdict: false })
             }
         }
     }

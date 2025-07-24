@@ -1,3 +1,4 @@
+use crate::domains::art::service::ARTServiceError;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 use crate::{as_base64, container::Container, errors::ApiError};
 use ark_serialize::CanonicalDeserialize;
@@ -14,8 +15,10 @@ use cortado::CortadoAffine;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{info, instrument};
 use types::ProofRecord;
+use utoipa::openapi::security::SecurityScheme::ApiKey;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -52,6 +55,9 @@ pub async fn init_chat(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
+    info!("Set write lock on chat modifications");
+    let mut lock = state.art_is_updating.write().await;
+
     let art = decode_art(&payload.art)?;
 
     state
@@ -59,6 +65,13 @@ pub async fn init_chat(
         .init_chat(&payload.chat_id, art, payload.is_private)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+
+    lock.insert(payload.chat_id, false);
+
+    info!(
+        "Successfully initiated new chat with id: {}",
+        &payload.chat_id
+    );
 
     Ok(StatusCode::CREATED)
 }
@@ -99,6 +112,16 @@ pub async fn get_art(
     Query(payload): Query<GetARTQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
+
+    match state.art_is_updating.read().await.get(&payload.chat_id) {
+        Some(true) => {
+            if payload.sequence_number.is_none() {
+                return Err(ARTServiceError::ArtIsChanging).map_err(ApiError::from);
+            }
+        }
+        None => return Err(ARTServiceError::NotFound).map_err(ApiError::from),
+        Some(false) => {}
+    }
 
     let art_record = state
         .art_service
@@ -211,6 +234,18 @@ pub async fn add_member(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
+    match state.art_is_updating.read().await.get(&payload.chat_id) {
+        Some(true) => {
+            info!("Failed to update art. It is currently changing");
+            return Err(ARTServiceError::ArtIsChanging).map_err(ApiError::from);
+        }
+        None => {
+            info!("Failed to lock art changing process");
+            return Err(ARTServiceError::NotFound).map_err(ApiError::from);
+        }
+        _ => {}
+    }
+
     let branch_changes = decode_branch_changes(&payload.branch_changes)?;
 
     state
@@ -262,6 +297,18 @@ pub async fn remove_member(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
+    match state.art_is_updating.read().await.get(&payload.chat_id) {
+        Some(true) => {
+            info!("Failed to update art. It is currently changing");
+            return Err(ARTServiceError::ArtIsChanging).map_err(ApiError::from);
+        }
+        None => {
+            info!("Failed to lock art changing process");
+            return Err(ARTServiceError::NotFound).map_err(ApiError::from);
+        }
+        _ => {}
+    }
+
     let branch_changes = decode_branch_changes(&payload.branch_changes)?;
 
     state
@@ -312,6 +359,18 @@ pub async fn update_key(
     Json(payload): Json<UpdateKeyRequest>,
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
+
+    match state.art_is_updating.read().await.get(&payload.chat_id) {
+        Some(true) => {
+            info!("Failed to update art. It is currently changing");
+            return Err(ARTServiceError::ArtIsChanging).map_err(ApiError::from);
+        }
+        None => {
+            info!("Failed to lock art changing process");
+            return Err(ARTServiceError::NotFound).map_err(ApiError::from);
+        }
+        _ => {}
+    }
 
     let branch_changes = decode_branch_changes(&payload.branch_changes)?;
 
@@ -419,11 +478,15 @@ pub async fn delete_chat(
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
+    info!("Delete chat");
     state
         .art_service
         .delete_chat(&payload.chat_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+
+    state.art_is_updating.write().await.remove(&payload.chat_id);
+    info!("Deletion is succssesfull");
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -458,13 +521,12 @@ pub async fn get_challenge(
         CortadoAffine::deserialize_uncompressed(&*payload.public_key)?,
     );
 
-    let mut challenges = state.challenges.lock().await;
-
-    let challenge = match challenges.get(&key) {
+    let mut lock = state.challenges.lock().await;
+    let challenge = match lock.get(&key) {
         Some(challenge) => BASE64_STANDARD.encode(challenge),
         None => {
             let challenge = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-            challenges.insert(key, challenge.clone());
+            lock.insert(key, challenge.clone());
             BASE64_STANDARD.encode(challenge)
         }
     };

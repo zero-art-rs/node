@@ -1,14 +1,9 @@
 use crate::domains::art::transport::http::DeleteChatQuery;
-use crate::errors::ApiError;
+use crate::verification::VerificationError;
 use crate::{Container, as_base64};
-use ark_std::iterable::Iterable;
-use art::traits::ARTPublicAPI;
-use art::types::NodeIndex;
 use callbacks::callback;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 use std::sync::Arc;
-use tracing::{error, info};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -35,7 +30,7 @@ impl From<DeleteChatQuery> for VerifyOwnershipHelper {
 }
 
 impl VerifyOwnershipHelper {
-    pub async fn verify(self, state: Arc<Container>) -> Result<(), ApiError> {
+    pub async fn verify(self, state: Arc<Container>) -> Result<(), VerificationError> {
         let art_record = state.art_service.get_art(&self.chat_id, None).await?;
 
         let mut msg = Vec::new();
@@ -53,23 +48,15 @@ impl VerifyOwnershipHelper {
             msg,
         };
 
-        match callback(&state.proof_verifier_sender, schnorr_signature_message).await {
-            Ok(message) => {
-                let ProofVerifierResult::SchnorrSignature { verdict } = message else {
-                    return Err(ApiError::InternalServerError(
-                        "Invalid message from proof verifier".to_string(),
-                    ));
-                };
-
-                if !verdict {
-                    return Err(ApiError::BadRequest("Invalid proof".to_string()));
-                }
-            }
-            Err(e) => {
-                error!("Failed to send message to proof verifier: {}", e);
-                return Err(ApiError::InternalServerError(e.to_string()));
-            }
+        let ProofVerifierResult::SchnorrSignature { verdict } =
+            callback(&state.proof_verifier_sender, schnorr_signature_message).await?
+        else {
+            return Err(VerificationError::InvalidResultMessage);
         };
+
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
 
         Ok(())
     }

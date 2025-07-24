@@ -50,6 +50,12 @@ impl From<validator::ValidationErrors> for ApiError {
     }
 }
 
+impl From<crate::verification::VerificationError> for ApiError {
+    fn from(value: crate::verification::VerificationError) -> Self {
+        Self::Unauthorized(value.to_string())
+    }
+}
+
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
