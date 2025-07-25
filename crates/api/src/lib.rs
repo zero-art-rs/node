@@ -1,10 +1,6 @@
 use crate::router::build_router;
 use axum::{
-    body::{Body, Bytes},
-    extract::{MatchedPath, Request, State},
-    http::{HeaderMap, StatusCode},
-    middleware,
-    middleware::Next,
+    extract::{MatchedPath, Request},
     response::Response,
 };
 use std::{sync::Arc, time::Duration};
@@ -14,19 +10,17 @@ use tracing::{Span, info, info_span};
 
 mod container;
 pub(crate) mod domains;
-mod errors;
 mod router;
+mod verification_middleware;
+pub use verification_middleware::verification_middleware;
 
 #[cfg(all(test, feature = "integration-tests"))]
 mod tests;
-mod utils;
-pub mod verification;
 
 pub use container::Container;
 pub use domains::art::service::ARTService;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
-pub(crate) use utils::as_base64;
 
 pub async fn run_server(
     address: String,

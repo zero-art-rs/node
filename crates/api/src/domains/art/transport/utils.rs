@@ -1,6 +1,6 @@
-use crate::errors::ApiError;
 use art::types::{BranchChanges, PublicART};
 use cortado::CortadoAffine as ARTGroup;
+use types::errors::ApiError;
 
 /// Decode branch changes from base64 string
 pub(crate) fn decode_branch_changes(

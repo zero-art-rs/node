@@ -9,7 +9,6 @@ integration-tests = []
 [dependencies]
 storage = { path = "../storage" }
 proof-verifier = { path = "../proof-verifier" }
-callbacks = { path = "../callback" }
 types = { path = "../types" }
 axum = { workspace = true, features = ["macros"] }
 validator = { workspace = true, features = ["derive"] }
@@ -20,8 +19,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["full"] }
 eyre = { workspace = true }

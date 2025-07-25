@@ -5,7 +5,8 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, deco
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{domains::centrifugo::transport::http::AuthRequest, errors::ApiError};
+use crate::domains::centrifugo::transport::http::AuthRequest;
+use types::errors::ApiError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {

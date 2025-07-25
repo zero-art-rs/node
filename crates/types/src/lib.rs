@@ -1,12 +1,10 @@
-mod art_changes_record;
-mod art_record;
 pub mod callback_wrappers;
+pub mod errors;
 mod message;
-mod proof_record;
-mod record;
+mod records;
+mod schemas;
+pub mod utils;
 
-pub use art_changes_record::{ARTChangesOutboxRecord, ARTChangesRecord};
-pub use art_record::ARTRecord;
-pub use message::Message;
-pub use message::Subscription;
-pub use proof_record::ProofRecord;
+pub use message::{Message, Subscription};
+pub use records::{ARTChangesOutboxRecord, ARTChangesRecord, ARTRecord, ProofRecord, Record};
+pub use schemas::{art_schemas, messenger_schemas};

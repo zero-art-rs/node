@@ -10,6 +10,8 @@ use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+type ChallengeHashMap = HashMap<(Uuid, CortadoAffine), Vec<u8>>;
+
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
     pub centrifugo_service: Arc<CentrifugoService>,
@@ -18,5 +20,5 @@ pub struct Container {
     pub proof_verifier_sender: ProofVerifierSender,
 
     pub art_is_updating: Arc<RwLock<HashMap<Uuid, bool>>>,
-    pub challenges: Arc<Mutex<HashMap<(Uuid, CortadoAffine), Vec<u8>>>>,
+    pub challenges: Arc<Mutex<ChallengeHashMap>>,
 }

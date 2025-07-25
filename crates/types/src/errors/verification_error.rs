@@ -1,4 +1,4 @@
-use crate::domains::art::service::ARTServiceError;
+use crate::errors::ARTServiceError;
 use art::errors::ARTError;
 use eyre::Report;
 use tracing::error;

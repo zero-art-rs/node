@@ -1,38 +1,15 @@
-use crate::{as_base64, container::Container, errors::ApiError};
+use crate::container::Container;
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use mongodb::bson::{DateTime, doc};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, instrument};
-use utoipa::{IntoParams, ToSchema};
-use uuid::Uuid;
+use types::errors::ApiError;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SendMessageRequest {
-    /// Message content
-    #[serde(with = "as_base64")]
-    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
-    pub message: Vec<u8>,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
-    pub chat_id: Uuid,
-
-    /// Serialized proof.
-    #[serde(with = "as_base64")]
-    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[serde(with = "as_base64")]
-    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
-    pub nonce: Vec<u8>,
-}
+use types::messenger_schemas::{DeleteMessageQuery, GetMessageQuery, SendMessageRequest};
 
 #[utoipa::path(
     post,
@@ -51,11 +28,7 @@ pub async fn send_message(
     State(state): State<Arc<Container>>,
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<StatusCode, ApiError> {
-    // Validate the request payload.
-    info!("Validate payload");
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    payload.validate()?;
 
     state
         .messenger_service
@@ -64,39 +37,6 @@ pub async fn send_message(
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
     Ok(StatusCode::ACCEPTED)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetMessageQuery {
-    /// Unique identifier of the chat to send the message to.
-    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
-    pub chat_id: Uuid,
-
-    /// Message creation time
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-
-    // Unique sequence number of the message
-    pub message_sequence_number: Option<i64>,
-
-    /// Number of results to be returned
-    #[param(example = 10)]
-    pub limit: i64,
-
-    /// The amount or results to skip
-    #[param(example = 0)]
-    pub skip: i64,
-
-    /// Serialized proof.
-    #[serde(with = "as_base64")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[serde(with = "as_base64")]
-    pub nonce: Vec<u8>,
-
-    /// Sequence number of the requested art. If not set, return the latest.
-    pub sequence_number: Option<i64>,
 }
 
 #[utoipa::path(
@@ -118,9 +58,7 @@ pub async fn list_messages(
     State(state): State<Arc<Container>>,
     Query(payload): Query<GetMessageQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    payload.validate()?;
 
     let mut filter = doc! {};
 
@@ -160,28 +98,6 @@ pub async fn list_messages(
     Ok(response)
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteMessageQuery {
-    /// Unique identifier of the chat to send the message to.
-    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
-    pub chat_id: Uuid,
-
-    /// Message creation time
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-
-    // Unique sequence number of the message
-    pub sequence_number: Option<i64>,
-
-    /// Serialized proof.
-    #[serde(with = "as_base64")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[serde(with = "as_base64")]
-    pub nonce: Vec<u8>,
-}
-
 #[utoipa::path(
     delete,
     path = "/v1/messenger/messages",
@@ -202,9 +118,7 @@ pub async fn delete_messages(
     State(state): State<Arc<Container>>,
     Query(payload): Query<DeleteMessageQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    payload.validate()?;
 
     let mut filter = doc! {};
 

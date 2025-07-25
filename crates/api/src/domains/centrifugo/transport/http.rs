@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use crate::as_base64;
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
+use types::utils::as_base64;
 
-use crate::{container::Container, errors::ApiError};
+use crate::container::Container;
+use types::errors::ApiError;
 use uuid::Uuid;
 
 #[derive(Deserialize, utoipa::ToSchema)]

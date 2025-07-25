@@ -1,10 +1,11 @@
+use crate::verification_middleware;
 use axum::{Router, middleware};
 use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{container::Container, domains, verification};
+use crate::{container::Container, domains};
 
 use crate::domains::art::transport::http as art_transport;
 use crate::domains::centrifugo::transport::http as centrifugo_transport;
@@ -52,7 +53,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes!(art_transport::delete_chat))
         .layer(middleware::from_fn_with_state(
             container,
-            verification::verification_middleware,
+            verification_middleware,
         ));
 
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())

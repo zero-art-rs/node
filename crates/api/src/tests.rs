@@ -306,13 +306,25 @@ async fn test_remove_member() -> eyre::Result<()> {
 async fn test_get_initial_art() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
     for _ in 0..1 {
-        let challenge = get_challenge(&mut context).await?;
-        assert_eq!(challenge.status(), StatusCode::OK);
+        // Get challenge for proof
+        let challenge_response = get_challenge(&mut context).await?;
+        assert_eq!(challenge_response.status(), StatusCode::OK);
 
         let challenge = BASE64_STANDARD
-            .decode(challenge.text().await.unwrap())
+            .decode(challenge_response.text().await.unwrap())
             .unwrap();
 
+        // Second try to get challenge, to test that it is the same now
+        let challenge2_response = get_challenge(&mut context).await?;
+        assert_eq!(challenge2_response.status(), StatusCode::OK);
+
+        let challenge2 = BASE64_STANDARD
+            .decode(challenge2_response.text().await.unwrap())
+            .unwrap();
+
+        assert_eq!(challenge2, challenge);
+
+        // Create signature
         let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
         let index =
             NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
@@ -329,6 +341,7 @@ async fn test_get_initial_art() -> eyre::Result<()> {
         let verification_result = verify(&signature, &pk, &msg);
         assert!(verification_result.is_ok());
 
+        // Send get request
         let initial_art_response = context
             .client
             .get(format!("{}/{}", BACKEND_URL, "v1/messenger/initial-art"))
@@ -391,7 +404,7 @@ async fn test_get_art() -> eyre::Result<()> {
 }
 
 #[tokio::test]
-async fn test_delete_art() -> eyre::Result<()> {
+async fn test_delete_chat() -> eyre::Result<()> {
     let context = ARTTestContext::new(100).await;
     let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
 
@@ -511,6 +524,7 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
 // add node to the art, and send updates to the chat
 async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
     let associated_data = context.art.serialize().unwrap();
+    let old_tk = context.art.recompute_root_key().unwrap().key;
     let new_user_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
     let (_, co_path, lambdas) = context
@@ -531,7 +545,7 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         associated_data.as_slice(),
         co_path.clone(),
         lambdas.clone(),
-        vec![],
+        vec![old_tk],
         blindings,
     )
     .unwrap();
@@ -571,6 +585,7 @@ async fn remove_member(
     member_id: usize,
 ) -> reqwest::Result<reqwest::Response> {
     let associated_data = context.art.serialize().unwrap();
+    let old_tk = context.art.recompute_root_key().unwrap().key;
     let user_to_remove = ARTGroup::generator()
         .mul(&context.initial_secrets[member_id])
         .into_affine();
@@ -597,7 +612,7 @@ async fn remove_member(
         associated_data.as_slice(),
         co_path.clone(),
         lambdas.clone(),
-        vec![temporary_secret_key],
+        vec![old_tk],
         blindings,
     )
     .unwrap();

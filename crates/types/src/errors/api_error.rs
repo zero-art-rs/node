@@ -2,7 +2,7 @@ use art::errors::ARTError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 
-use crate::domains::art::service::ARTServiceError;
+use crate::errors::ARTServiceError;
 use serde_json::json;
 use utoipa::ToSchema;
 
@@ -50,8 +50,8 @@ impl From<validator::ValidationErrors> for ApiError {
     }
 }
 
-impl From<crate::verification::VerificationError> for ApiError {
-    fn from(value: crate::verification::VerificationError) -> Self {
+impl From<crate::errors::VerificationError> for ApiError {
+    fn from(value: crate::errors::VerificationError) -> Self {
         Self::Unauthorized(value.to_string())
     }
 }

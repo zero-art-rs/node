@@ -1,5 +1,5 @@
 /// Helper for base64 serialization and deserialization
-pub(crate) mod as_base64 {
+pub mod as_base64 {
     use base64::Engine;
     use base64::prelude::BASE64_STANDARD;
     use serde::{Deserialize, Serialize};

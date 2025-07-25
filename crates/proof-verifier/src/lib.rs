@@ -14,6 +14,11 @@ use zk::art::{ARTProof, art_verify};
 use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
+mod verification_helper;
+
+pub use types::errors::VerificationError;
+pub use verification_helper::VerificationHelper;
+
 pub type ProofVerifierSender = mpsc::Sender<ProofVerifierMessageWrapper>;
 
 pub type ProofVerifierReceiver = mpsc::Receiver<ProofVerifierMessageWrapper>;
@@ -76,7 +81,7 @@ impl ProofVerifier {
             Err(proof_verifier_err) => Err(eyre::eyre!("{}", proof_verifier_err)),
         };
 
-        if let Err(_) = callback.send(eyre_result) {
+        if callback.send(eyre_result).is_err() {
             error!("Failed to send response: receiver dropped");
         }
 
@@ -89,7 +94,7 @@ impl ProofVerifier {
         co_path: Vec<CortadoAffine>,
         associated_data: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying add member proof");
+        info!("Verify art update proof");
         let verification_result = art_verify(
             &get_bulletproof_gens(),
             get_pedersen_basis(),
@@ -101,7 +106,7 @@ impl ProofVerifier {
         match verification_result {
             Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
             Err(e) => {
-                info!("Failed to verify add_member_proof: {}", e);
+                info!("Failed to verify art update proof: {}", e);
                 Ok(ProofVerifierResult::ArtUpdate { verdict: false })
             }
         }
@@ -117,7 +122,7 @@ impl ProofVerifier {
         match schnorr::verify(signature, public_keys, msg) {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
             Err(e) => {
-                info!("Failed to verify schnorr_signature: {}", e);
+                info!("Failed to verify schnorr signature: {}", e);
                 Ok(ProofVerifierResult::SchnorrSignature { verdict: false })
             }
         }

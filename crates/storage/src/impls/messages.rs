@@ -1,5 +1,6 @@
 use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
+use log::info;
 use mongodb::{
     bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
@@ -62,10 +63,14 @@ impl MessageStorage for MongoMessageStorage {
             .limit(1)
             .await?;
 
-        let mut next_sequence_number = 0;
-        if let Some(result) = cursor.try_next().await? {
-            next_sequence_number = result.sequence_number + 1;
-        }
+        let next_sequence_number = match cursor.try_next().await? {
+            Some(result) => result.sequence_number + 1,
+            None => 0,
+        };
+        info!(
+            "Store message with sequence number {}",
+            next_sequence_number
+        );
 
         let mut message = Message::new(content, next_sequence_number, None);
         let mut session = self.messages_collection.client().start_session().await?;
@@ -76,6 +81,7 @@ impl MessageStorage for MongoMessageStorage {
             .session(&mut session)
             .await?;
 
+        // change message for outbox_collection
         message.chat_id = Some(self.chat_id);
 
         self.messages_outbox_collection

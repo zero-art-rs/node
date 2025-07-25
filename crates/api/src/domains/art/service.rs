@@ -1,4 +1,3 @@
-use art::errors::ARTError;
 use art::traits::ARTPublicAPI;
 use art::types::{BranchChanges, BranchChangesType, PublicART};
 use cortado::CortadoAffine as ARTGroup;
@@ -13,33 +12,7 @@ use tracing::{error, info};
 use types::{ARTChangesRecord, ARTRecord, ProofRecord};
 use uuid::Uuid;
 
-#[derive(Debug, thiserror::Error)]
-pub enum ARTServiceError {
-    #[error("Storage error: {0}")]
-    Storage(#[from] StorageError),
-    #[error("MongoDB error: {0}")]
-    MongoDB(#[from] mongodb::error::Error),
-    #[error("Unexpected internal error")]
-    Internal,
-    #[error("Invalid input provided")]
-    InvalidInput,
-    #[error("Invalid change type provided")]
-    InvalidChangeType,
-    #[error("Record already exists")]
-    AlreadyExists,
-    #[error("Record not found")]
-    NotFound,
-    #[error("The operation can be done only for group chat")]
-    GroupChatOnly,
-    #[error("Failed to retrieve database")]
-    DatabaseRetrieval,
-    #[error("Art is changing, so the result is unpredictable")]
-    ArtIsChanging,
-    #[error("Failed to initiate new session")]
-    SessionInitiation,
-    #[error("Failed to use ART {0}")]
-    ArtError(#[from] ARTError),
-}
+use types::errors::ARTServiceError;
 
 pub struct ARTService {}
 
@@ -107,19 +80,23 @@ impl ARTService {
         chat_id: &Uuid,
         sequence_number: i64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        info!(
-            "Retrieving the {} art in chat: {}",
-            sequence_number, chat_id
-        );
         let art_record = self.get_initial_art(chat_id).await?;
         let mut initial_art = art_record.art;
 
+        info!(
+            "Recomputing {} state of the art in the chat: {}",
+            sequence_number, chat_id
+        );
         let filter = doc! { "sequence_number": { "$lt": sequence_number } };
         let mut changes = self
             .list_changes(chat_id, filter, sequence_number, 0)
             .await?;
 
         if changes.len() < sequence_number as usize {
+            error!(
+                "Haven't reached state {} in chat {} yet",
+                sequence_number, chat_id
+            );
             return Err(ARTServiceError::NotFound);
         }
 
@@ -129,7 +106,7 @@ impl ARTService {
             initial_art.update_public_art(&change.changes)?;
         }
 
-        info!("Successful art retrieval");
+        info!("Successfully recomputed {} state of art", sequence_number);
         Ok(ARTRecord {
             chat_id: *chat_id,
             art: initial_art,
@@ -204,10 +181,12 @@ impl ARTService {
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
 
+        info!("Check if ART for chat {} already exists", chat_id);
         if arts_storage.get_art(*chat_id).await.is_ok() {
             return Err(ARTServiceError::AlreadyExists);
         }
 
+        info!("Chat isn't created yet.");
         arts_storage.new_chat(art, *chat_id, is_private).await?;
 
         Ok(())

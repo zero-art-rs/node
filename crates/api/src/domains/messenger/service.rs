@@ -1,13 +1,9 @@
 use mongodb::bson::Document;
-use storage::{DataStorage, MessageStorage, MongoMessageStorage, StorageError};
+use storage::{DataStorage, MessageStorage, MongoMessageStorage};
+use tracing::info;
 use types::Message;
+use types::errors::MessengerError;
 use uuid::Uuid;
-
-#[derive(Debug, thiserror::Error)]
-pub enum MessengerError {
-    #[error("Storage error: {0}")]
-    Storage(#[from] StorageError),
-}
 
 pub struct MessengerService {}
 
@@ -29,10 +25,12 @@ impl MessengerService {
         message: Vec<u8>,
         chat_id: &Uuid,
     ) -> Result<(), MessengerError> {
+        info!("Store and send new message");
         MongoMessageStorage::new(chat_id)
             .await?
             .store_message(message)
             .await?;
+        info!("Message sent");
         Ok(())
     }
 
