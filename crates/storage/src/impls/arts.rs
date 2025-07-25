@@ -62,10 +62,11 @@ impl MongoARTStorage {
 impl ARTStorage for MongoARTStorage {
     async fn new_chat(
         &self,
+        session: &mut ClientSession,
         art: PublicART<ARTGroup>,
         chat_id: Uuid,
         is_private: bool,
-    ) -> Result<(), StorageError> {
+    ) -> Result<(), mongodb::error::Error> {
         let initial_art_record = ARTRecord {
             chat_id,
             art: art.clone(),
@@ -75,10 +76,12 @@ impl ARTStorage for MongoARTStorage {
 
         self.arts_collection
             .insert_one(initial_art_record.clone())
+            .session(&mut *session)
             .await?;
 
         self.initial_arts_collection
             .insert_one(initial_art_record)
+            .session(&mut *session)
             .await?;
 
         Ok(())
@@ -126,7 +129,10 @@ impl ARTStorage for MongoARTStorage {
             .find_one(doc! {"chat_id": chat_id})
             .await?;
 
-        art.ok_or_else(|| StorageError::NotFound)
+        art.ok_or_else(|| {
+            info!("No art found for chat: {}", chat_id);
+            StorageError::NotFound
+        })
     }
 
     /// Return the first art state in the chat

@@ -11,10 +11,11 @@ use types::ARTRecord;
 pub trait ARTStorage: Send + Sync {
     async fn new_chat(
         &self,
+        session: &mut ClientSession,
         art: PublicART<ARTGroup>,
         chat_id: Uuid,
         is_private: bool,
-    ) -> Result<(), StorageError>;
+    ) -> Result<(), mongodb::error::Error>;
 
     async fn delete_art(
         &self,

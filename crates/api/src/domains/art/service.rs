@@ -187,7 +187,17 @@ impl ARTService {
         }
 
         info!("Chat isn't created yet.");
-        arts_storage.new_chat(art, *chat_id, is_private).await?;
+
+        let mut session = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+            .client()
+            .start_session()
+            .await?;
+        
+        session.start_transaction().await?;
+        arts_storage.new_chat(&mut session, art, *chat_id, is_private).await?;
+        session.commit_transaction().await?;
 
         Ok(())
     }
