@@ -7,7 +7,7 @@ use cortado::CortadoAffine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio_util::bytes::Buf;
 use tracing::info;
 use types::art_schemas::*;
@@ -192,7 +192,7 @@ impl VerificationHelper {
         &self,
         art: &PublicART<CortadoAffine>,
         proof_verifier_sender: &ProofVerifierSender,
-        challenges: &Arc<Mutex<ChallengeHashMap>>,
+        challenges: Arc<RwLock<ChallengeHashMap>>,
     ) -> Result<(), VerificationError> {
         match &self.helper_type {
             HelperType::ArtUpdate {
@@ -299,7 +299,7 @@ impl VerificationHelper {
         &self,
         art: &PublicART<CortadoAffine>,
         proof_verifier_sender: &ProofVerifierSender,
-        challenges: &Arc<Mutex<ChallengeHashMap>>,
+        challenges: Arc<RwLock<ChallengeHashMap>>,
         nonce: &Vec<u8>,
         index: u32,
         signature: &[u8],
@@ -310,13 +310,14 @@ impl VerificationHelper {
             return Err(VerificationError::InvalidProof);
         }
 
-        let mut challenges_lock = challenges.lock().await;
-
-        let challenge = match challenges_lock.get(&(self.chat_id, leaf_node.public_key)) {
+        let challenge = match challenges
+            .write()
+            .await
+            .remove(&(self.chat_id, leaf_node.public_key))
+        {
             Some(challenge) => challenge.clone(),
             None => return Err(VerificationError::NoChallenge),
         };
-        challenges_lock.remove_entry(&(self.chat_id, leaf_node.public_key));
 
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());

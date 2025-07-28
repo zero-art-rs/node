@@ -3,10 +3,10 @@ use api::{ARTService, CentrifugoService, Container, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use storage::DATABASE;
-use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio::{select, sync::RwLock, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -89,8 +89,8 @@ impl Node {
             centrifugo_service: Arc::new(centrifugo_service),
             art_service: Arc::new(art_service),
             proof_verifier_sender,
-            art_is_updating: Arc::new(RwLock::new(HashMap::new())),
-            challenges: Arc::new(Mutex::new(HashMap::new())),
+            art_is_updating: Arc::new(RwLock::new(HashSet::new())),
+            challenges: Arc::new(RwLock::new(HashMap::new())),
         });
 
         self.task_tracker.spawn(api::run_server(

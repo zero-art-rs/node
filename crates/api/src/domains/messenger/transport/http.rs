@@ -63,14 +63,14 @@ pub async fn list_messages(
     let mut filter = doc! {};
 
     if let Some(creation_time) = payload.created_at {
-        _ = filter.insert(
+        filter.insert(
             "created_at",
             DateTime::from_millis(creation_time.timestamp_millis()),
         );
     }
 
     if let Some(sequence_number) = payload.message_sequence_number {
-        _ = filter.insert("sequence_number", sequence_number);
+        filter.insert("sequence_number", sequence_number);
     }
 
     let messages = state
@@ -123,14 +123,14 @@ pub async fn delete_messages(
     let mut filter = doc! {};
 
     if let Some(creation_time) = payload.created_at {
-        _ = filter.insert(
+        filter.insert(
             "created_at",
             DateTime::from_millis(creation_time.timestamp_millis()),
         );
     }
 
     if let Some(sequence_number) = payload.sequence_number {
-        _ = filter.insert("sequence_number", sequence_number);
+        filter.insert("sequence_number", sequence_number);
     }
 
     let removed_messages = state

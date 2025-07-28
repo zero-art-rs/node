@@ -33,18 +33,15 @@ pub async fn init_chat(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
-    info!("Set write lock on chat modifications");
-    let mut lock = state.art_is_updating.write().await;
-
-    let art = decode_art(&payload.art)?;
-
     state
         .art_service
-        .init_chat(&payload.chat_id, art, payload.is_private)
+        .init_chat(
+            &payload.chat_id,
+            decode_art(&payload.art)?,
+            payload.is_private,
+        )
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    lock.insert(payload.chat_id, false);
 
     info!(
         "Successfully created new chat with id: {}",
@@ -67,16 +64,17 @@ pub async fn get_art(
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
-    info!("Check is ART is updating");
-    match state.art_is_updating.read().await.get(&payload.chat_id) {
-        Some(true) => {
+    if payload.sequence_number.is_none() {
+        info!("Check if ART is updating");
+        if state
+            .art_is_updating
+            .read()
+            .await
+            .contains(&payload.chat_id)
+        {
             error!("Failed to retrieve ART, as it is updating");
-            if payload.sequence_number.is_none() {
-                return Err(ApiError::from(ARTServiceError::ArtIsChanging));
-            }
+            return Err(ApiError::from(ARTServiceError::ArtIsChanging));
         }
-        None => return Err(ApiError::from(ARTServiceError::NotFound)),
-        Some(false) => {}
     }
 
     let art_record = state
@@ -144,17 +142,7 @@ pub async fn add_member(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
-    match state.art_is_updating.read().await.get(&payload.chat_id) {
-        Some(true) => {
-            info!("Failed to update art. It is currently changing");
-            return Err(ApiError::from(ARTServiceError::ArtIsChanging));
-        }
-        None => {
-            info!("Failed to lock art changing process");
-            return Err(ApiError::from(ARTServiceError::NotFound));
-        }
-        _ => {}
-    }
+    state.start_updating(payload.chat_id).await?;
 
     let branch_changes = decode_branch_changes(&payload.branch_changes)?;
 
@@ -168,6 +156,8 @@ pub async fn add_member(
             },
         )
         .await?;
+
+    state.stop_updating(payload.chat_id).await;
 
     Ok(StatusCode::OK)
 }
@@ -185,17 +175,7 @@ pub async fn remove_member(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
-    match state.art_is_updating.read().await.get(&payload.chat_id) {
-        Some(true) => {
-            info!("Failed to update art. It is currently changing");
-            return Err(ApiError::from(ARTServiceError::ArtIsChanging));
-        }
-        None => {
-            info!("Failed to lock art changing process");
-            return Err(ApiError::from(ARTServiceError::NotFound));
-        }
-        _ => {}
-    }
+    state.start_updating(payload.chat_id).await?;
 
     let branch_changes = decode_branch_changes(&payload.branch_changes)?;
 
@@ -209,6 +189,8 @@ pub async fn remove_member(
             },
         )
         .await?;
+
+    state.stop_updating(payload.chat_id).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -226,17 +208,7 @@ pub async fn update_key(
 ) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
-    match state.art_is_updating.read().await.get(&payload.chat_id) {
-        Some(true) => {
-            info!("Failed to update art. It is currently changing");
-            return Err(ApiError::from(ARTServiceError::ArtIsChanging));
-        }
-        None => {
-            info!("Failed to lock art changing process");
-            return Err(ApiError::from(ARTServiceError::NotFound));
-        }
-        _ => {}
-    }
+    state.start_updating(payload.chat_id).await?;
 
     let branch_changes = decode_branch_changes(&payload.branch_changes)?;
 
@@ -249,8 +221,9 @@ pub async fn update_key(
                 proof: payload.proof,
             },
         )
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+        .await?;
+
+    state.stop_updating(payload.chat_id).await;
 
     Ok(StatusCode::OK)
 }
@@ -328,7 +301,8 @@ pub async fn get_challenge(
         CortadoAffine::deserialize_uncompressed(&*payload.public_key)?,
     );
 
-    let mut lock = state.challenges.lock().await;
+    let mut lock = state.challenges.write().await;
+
     let challenge = match lock.get(&key) {
         Some(challenge) => {
             info!("Unused challenge already exists");

@@ -194,9 +194,11 @@ impl ARTService {
             .client()
             .start_session()
             .await?;
-        
+
         session.start_transaction().await?;
-        arts_storage.new_chat(&mut session, art, *chat_id, is_private).await?;
+        arts_storage
+            .new_chat(&mut session, art, *chat_id, is_private)
+            .await?;
         session.commit_transaction().await?;
 
         Ok(())

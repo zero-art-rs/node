@@ -129,7 +129,7 @@ async fn verify_post_request(
     };
 
     helper
-        .verify(&art, &state.proof_verifier_sender, &state.challenges)
+        .verify(&art, &state.proof_verifier_sender, state.challenges.clone())
         .await
 }
 
@@ -187,7 +187,7 @@ async fn verify_get_query(
     };
 
     helper
-        .verify(&art, &state.proof_verifier_sender, &state.challenges)
+        .verify(&art, &state.proof_verifier_sender, state.challenges.clone())
         .await
 }
 
@@ -219,6 +219,6 @@ async fn verify_delete_query(
     };
 
     helper
-        .verify(&art, &state.proof_verifier_sender, &state.challenges)
+        .verify(&art, &state.proof_verifier_sender, state.challenges.clone())
         .await
 }
