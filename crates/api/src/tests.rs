@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Duration;
 use tracing::info;
+use types::art_schemas::GetARTQuery;
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::cross_dleq::PedersenBasis;
@@ -31,7 +32,7 @@ use zkp::toolbox::dalek_ark::ristretto255_to_ark;
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
-const TEST_REPEATS: usize = 5;
+const TEST_REPEATS: usize = 5; // used for tests, which can repeat
 
 #[derive(Debug, Deserialize)]
 struct CentrifugoTokenResponse {
@@ -125,6 +126,12 @@ impl ARTTestContext {
             gens: get_bulletproof_gens(),
             basis: get_pedersen_basis(),
         }
+    }
+
+    pub fn get_index(&self) -> Result<u32, art::errors::ARTError> {
+        Ok(NodeIndex::get_index_from_path(
+            &self.art.node_index.get_path()?,
+        )?)
     }
 }
 
@@ -433,6 +440,71 @@ async fn test_delete_chat() -> eyre::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_update_metadata() -> eyre::Result<()> {
+    let mut context = ARTTestContext::new(100).await;
+    let mut retrieval_context = context.clone();
+    // Update key, to be able to retrieve the latest art (requires previous root knowledge)
+    update_key(&mut context).await?;
+
+    for _ in 0..1 {
+        let metadata = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+
+        // Create signature
+        let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+        let index =
+            NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
+
+        let mut msg = Vec::new();
+        msg.extend_from_slice(context.chat_uuid.as_bytes());
+        msg.extend(&nonce);
+        msg.extend(index.to_le_bytes());
+
+        let pk = vec![context.art.public_key_of(&context.art.secret_key)];
+
+        let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
+        let verification_result = verify(&signature, &pk, &msg);
+        assert!(verification_result.is_ok());
+
+        // Send get request
+        let update_metadata = context
+            .client
+            .put(format!("{}/{}", BACKEND_URL, "v1/messenger/metadata"))
+            .json(&json!({
+                "chatId": context.chat_uuid,
+                "index": index,
+                "signature": BASE64_STANDARD.encode(&signature),
+                "nonce": BASE64_STANDARD.encode(&nonce),
+                "metadata": BASE64_STANDARD.encode(&metadata),
+            }))
+            .send()
+            .await?;
+
+        assert_eq!(update_metadata.status(), StatusCode::OK);
+
+        let art_response = get_art(&mut retrieval_context, None).await?;
+
+        let mut received_art = PublicART::<ARTGroup>::deserialize(
+            &BASE64_STANDARD
+                .decode(art_response.text().await.unwrap())
+                .unwrap(),
+        )?;
+
+        assert_eq!(received_art.root, context.art.root);
+        assert_eq!(received_art.generator, context.art.generator);
+        assert_eq!(
+            received_art
+                .get_node(NodeIndex::Index(index))?
+                .metadata
+                .clone()
+                .unwrap(),
+            metadata
+        );
+    }
+
+    Ok(())
+}
+
 async fn crate_new_chat(art: PublicART<ARTGroup>, is_private: bool) -> eyre::Result<Uuid> {
     let chat_id = Uuid::now_v7();
     let client = reqwest::Client::new();
@@ -667,12 +739,12 @@ async fn get_art(
     context
         .client
         .get(format!("{}/{}", BACKEND_URL, "v1/messenger/art"))
-        .query(&json!({
-            "chatId": context.chat_uuid,
-            "signature": BASE64_STANDARD.encode(&signature),
-            "nonce": BASE64_STANDARD.encode(&nonce),
-            "sequenceNumber": sequence_number,
-        }))
+        .query(&GetARTQuery {
+            chat_id: context.chat_uuid,
+            signature,
+            nonce,
+            sequence_number,
+        })
         .send()
         .await
 }
@@ -689,7 +761,57 @@ async fn get_challenge(context: &mut ARTTestContext) -> reqwest::Result<reqwest:
         .get(format!("{}/{}", BACKEND_URL, "v1/messenger/challenge"))
         .query(&json!({
             "chatId": context.chat_uuid,
-            "publicKey": BASE64_STANDARD.encode(&serialized_public_key),
+            "index": context.get_index().unwrap(),
+        }))
+        .send()
+        .await
+}
+
+async fn get_initial_art(mut context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
+    // Get challenge for proof
+    let challenge_response = get_challenge(&mut context).await?;
+    assert_eq!(challenge_response.status(), StatusCode::OK);
+
+    let challenge = BASE64_STANDARD
+        .decode(challenge_response.text().await.unwrap())
+        .unwrap();
+
+    // Second try to get challenge, to test that it is the same now
+    let challenge2_response = get_challenge(&mut context).await?;
+    assert_eq!(challenge2_response.status(), StatusCode::OK);
+
+    let challenge2 = BASE64_STANDARD
+        .decode(challenge2_response.text().await.unwrap())
+        .unwrap();
+
+    assert_eq!(challenge2, challenge);
+
+    // Create signature
+    let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+    let index =
+        NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
+
+    let mut msg = Vec::new();
+    msg.extend_from_slice(context.chat_uuid.as_bytes());
+    msg.extend(&nonce);
+    msg.extend(index.to_le_bytes());
+    msg.extend(challenge);
+
+    let pk = vec![context.art.public_key_of(&context.art.secret_key)];
+
+    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
+    let verification_result = verify(&signature, &pk, &msg);
+    assert!(verification_result.is_ok());
+
+    // Send get request
+    context
+        .client
+        .get(format!("{}/{}", BACKEND_URL, "v1/messenger/initial-art"))
+        .query(&json!({
+            "chatId": context.chat_uuid,
+            "signature": BASE64_STANDARD.encode(&signature),
+            "index": index,
+            "nonce": BASE64_STANDARD.encode(&nonce),
         }))
         .send()
         .await

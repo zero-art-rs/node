@@ -2,7 +2,6 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
-use cortado::CortadoAffine;
 use proof_verifier::ProofVerifierSender;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -12,7 +11,7 @@ use tracing::info;
 use types::errors::{ARTServiceError, ApiError};
 use uuid::Uuid;
 
-type ChallengeHashMap = HashMap<(Uuid, CortadoAffine), Vec<u8>>;
+type ChallengeHashMap = HashMap<(Uuid, u32), Vec<u8>>;
 
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,

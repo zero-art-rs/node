@@ -192,7 +192,28 @@ pub struct GetChallengeQuery {
     #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
     pub chat_id: Uuid,
 
-    /// User's leaf public key, serialized with ark_serialize
+    /// User's leaf node index
+    pub index: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMetadataRequest {
+    /// Unique identifier of the chat to send the message to.
+    pub chat_id: Uuid,
+
+    /// Users node index
+    pub index: u32,
+
+    /// Serialized proof.
     #[serde(with = "as_base64")]
-    pub public_key: Vec<u8>,
+    pub signature: Vec<u8>,
+
+    /// User provided nonce
+    #[serde(with = "as_base64")]
+    pub nonce: Vec<u8>,
+
+    /// New metadata
+    #[serde(with = "as_base64")]
+    pub metadata: Vec<u8>,
 }
