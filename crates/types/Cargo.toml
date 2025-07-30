@@ -15,3 +15,4 @@ utoipa = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 bson = { workspace = true, features = ["uuid-1"] }
+chrono = { workspace = true, features = ["serde"] }
