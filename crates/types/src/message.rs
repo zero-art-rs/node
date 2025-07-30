@@ -1,7 +1,8 @@
 use mongodb::{
-    bson::{DateTime, doc},
+    bson::{doc},
     change_stream::{ChangeStream, event::ChangeStreamEvent},
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::sync::mpsc;
@@ -19,7 +20,7 @@ pub struct Message {
     /// The message content as binary data
     pub content: Vec<u8>, // binary string, Vec<u8>
     /// When the message was created
-    pub created_at: DateTime,
+    pub created_at: DateTime<Utc>,
     /// Sequential number of this message in the chat
     pub sequence_number: i64,
     /// Public key of the message sender
@@ -37,7 +38,7 @@ impl Message {
     ) -> Self {
         Self {
             content,
-            created_at: DateTime::now(),
+            created_at: Utc::now(),
             sequence_number,
             sender_public_key,
             chat_id,
@@ -57,9 +58,7 @@ impl fmt::Display for Message {
             "[content: \"{}\", id: {}, time: {}, sender: {}]",
             content_str,
             self.sequence_number,
-            self.created_at
-                .try_to_rfc3339_string()
-                .map_err(|_| fmt::Error)?,
+            self.created_at,
             self.sender_public_key
         )
     }

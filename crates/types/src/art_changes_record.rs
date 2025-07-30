@@ -1,7 +1,7 @@
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::types::BranchChanges;
-use bson::DateTime;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ where
     /// ART changes
     pub changes: BranchChanges<G>, //BranchChanges<G>,
     /// When the message was created
-    pub created_at: DateTime,
+    pub created_at: DateTime<Utc>,
     /// Sequential number of this message in the chat
     pub sequence_number: i64,
     /// Unique identifier of the chat to send the message to.
@@ -26,7 +26,7 @@ pub struct ARTChangesOutboxRecord {
     /// ART changes
     pub data: Vec<u8>,
     /// When the message was created
-    pub created_at: DateTime,
+    pub created_at: DateTime<Utc>,
     /// Sequential number of this message in the chat
     pub sequence_number: i64,
     /// Unique identifier of the chat to send the message to.
@@ -40,7 +40,7 @@ where
     pub fn new(data: BranchChanges<G>, sequence_number: i64, chat_id: Uuid) -> Self {
         Self {
             changes: data,
-            created_at: DateTime::now(),
+            created_at: Utc::now(),
             sequence_number,
             chat_id,
         }
@@ -51,7 +51,7 @@ impl ARTChangesOutboxRecord {
     pub fn new(data: Vec<u8>, sequence_number: i64, chat_id: Uuid) -> Self {
         Self {
             data,
-            created_at: DateTime::now(),
+            created_at: Utc::now(),
             sequence_number,
             chat_id,
         }
