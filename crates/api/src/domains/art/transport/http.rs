@@ -112,7 +112,7 @@ pub async fn get_initial_art(
 
     let leaf_node = initial_art_record
         .art
-        .get_node( &NodeIndex::Index(payload.index))?;
+        .get_node(&NodeIndex::Index(payload.index))?;
     if !leaf_node.is_leaf() {
         return Err(ApiError::BadRequest("The node isn't a leaf".to_string()));
     }

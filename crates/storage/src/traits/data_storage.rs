@@ -1,6 +1,7 @@
 use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
+use log::info;
 use mongodb::bson::Document;
 use mongodb::{ClientSession, Collection};
 use serde::de::DeserializeOwned;
@@ -67,11 +68,14 @@ pub trait DataStorage: Send + Sync {
     }
 
     async fn clear(&self, session: &mut ClientSession) -> Result<(), mongodb::error::Error> {
+        info!("Clear message collection");
         self.get_collection()
             .await
             .delete_many(doc! {})
             .session(session)
             .await?;
+        
+        info!("Message collection cleared successfully");
         Ok(())
     }
 
