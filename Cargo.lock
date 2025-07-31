@@ -377,7 +377,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "art"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#118832be9ec12c396c395cde400d17c94e1edb14"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#759c252c32d5608295d54a28404332894ddf906b"
 dependencies = [
  "ark-ec",
  "ark-ed25519",
@@ -862,7 +862,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cortado"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#118832be9ec12c396c395cde400d17c94e1edb14"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#759c252c32d5608295d54a28404332894ddf906b"
 dependencies = [
  "ark-algebra-test-templates",
  "ark-ec",
@@ -963,7 +963,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#118832be9ec12c396c395cde400d17c94e1edb14"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#759c252c32d5608295d54a28404332894ddf906b"
 dependencies = [
  "ark-serialize",
  "cortado",
@@ -4465,7 +4465,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4881,7 +4881,7 @@ dependencies = [
 [[package]]
 name = "zk"
 version = "0.1.0"
-source = "git+ssh://git@github.com/zk-messenger/project-m.git#118832be9ec12c396c395cde400d17c94e1edb14"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git#759c252c32d5608295d54a28404332894ddf906b"
 dependencies = [
  "ark-ec",
  "ark-ed25519",
