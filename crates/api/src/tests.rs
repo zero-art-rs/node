@@ -494,7 +494,7 @@ async fn test_update_metadata() -> eyre::Result<()> {
         assert_eq!(received_art.generator, context.art.generator);
         assert_eq!(
             received_art
-                .get_node(NodeIndex::Index(index))?
+                .get_node(&NodeIndex::Index(index))?
                 .metadata
                 .clone()
                 .unwrap(),

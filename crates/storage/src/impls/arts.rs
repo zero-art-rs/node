@@ -245,7 +245,7 @@ impl ARTStorage for MongoARTStorage {
         node_index: u32,
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
-        art.art.get_node(NodeIndex::Index(node_index))?.metadata = Some(new_metadata);
+        art.art.get_mut_node(&NodeIndex::Index(node_index))?.metadata = Some(new_metadata);
         self.replace_art(chat_id, art).await?;
 
         Ok(())

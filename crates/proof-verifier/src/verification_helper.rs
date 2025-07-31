@@ -273,7 +273,7 @@ impl VerificationHelper {
         match branch_changes.change_type {
             BranchChangesType::UpdateKey => Self::check_auxiliary_public_keys(
                 proof,
-                vec![art.get_node(branch_changes.node_index.clone())?.public_key],
+                vec![art.get_node(&branch_changes.node_index)?.public_key],
             )?,
             BranchChangesType::AppendNode(_) => {
                 Self::check_auxiliary_public_keys(proof, vec![art.root.public_key])?
@@ -336,7 +336,7 @@ impl VerificationHelper {
     ) -> Result<(), VerificationError> {
         let mut art = art.clone();
         // Check if provided index maps to leaf node
-        let leaf = art.get_node(NodeIndex::Index(index))?;
+        let leaf = art.get_node(&NodeIndex::Index(index))?;
         if !leaf.is_leaf() {
             return Err(VerificationError::InvalidProof);
         }

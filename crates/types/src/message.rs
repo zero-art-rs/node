@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
 use mongodb::{
-    bson::{doc},
+    bson::doc,
     change_stream::{ChangeStream, event::ChangeStreamEvent},
 };
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::sync::mpsc;
@@ -48,9 +48,7 @@ impl fmt::Display for Message {
         write!(
             f,
             "[content: \"{}\", id: {}, time: {}]",
-            content_str,
-            self.sequence_number,
-            self.created_at
+            content_str, self.sequence_number, self.created_at,
         )
     }
 }
