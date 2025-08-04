@@ -25,15 +25,18 @@ pub struct Message {
     pub sequence_number: i64,
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Option<Uuid>,
+    /// Sequential number of epoch during which the message was sent
+    pub epoch: u32,
 }
 
 impl Message {
-    pub fn new(content: Vec<u8>, sequence_number: i64, chat_id: Option<Uuid>) -> Self {
+    pub fn new(content: Vec<u8>, sequence_number: i64, chat_id: Option<Uuid>, epoch: u32) -> Self {
         Self {
             content,
             created_at: Utc::now(),
             sequence_number,
             chat_id,
+            epoch,
         }
     }
 }
@@ -47,8 +50,8 @@ impl fmt::Display for Message {
 
         write!(
             f,
-            "[content: \"{}\", id: {}, time: {}]",
-            content_str, self.sequence_number, self.created_at,
+            "[content: \"{}\", id: {}, time: {}, epoch: {}]",
+            content_str, self.sequence_number, self.created_at, self.epoch
         )
     }
 }

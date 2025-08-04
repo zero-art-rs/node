@@ -227,6 +227,7 @@ async fn test_send_message() -> eyre::Result<()> {
             "message": BASE64_STANDARD.encode(test_message.as_bytes().to_vec()),
             "signature": BASE64_STANDARD.encode(&signature),
             "nonce": BASE64_STANDARD.encode(&nonce),
+            "epoch": 1u32,
         }))
         .send()
         .await?;
@@ -480,7 +481,7 @@ async fn test_update_metadata() -> eyre::Result<()> {
             .send()
             .await?;
 
-        assert_eq!(update_metadata.status(), StatusCode::OK);
+        assert_eq!(update_metadata.status(), StatusCode::NO_CONTENT);
 
         let art_response = get_art(&mut retrieval_context, None).await?;
 

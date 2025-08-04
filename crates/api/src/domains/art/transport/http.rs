@@ -333,5 +333,5 @@ pub async fn update_metadata(
         .update_metadata(payload.chat_id, payload.metadata, payload.index)
         .await?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }

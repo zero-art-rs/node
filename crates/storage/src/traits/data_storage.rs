@@ -74,7 +74,7 @@ pub trait DataStorage: Send + Sync {
             .delete_many(doc! {})
             .session(session)
             .await?;
-        
+
         info!("Message collection cleared successfully");
         Ok(())
     }
