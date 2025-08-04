@@ -161,21 +161,19 @@ async fn verify_get_query(
             (helper, art)
         }
         "/v1/messenger/initial-art" => {
-            let mut helper = VerificationHelper::from(serde_urlencoded::from_bytes::<
+            let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<
                 GetInitialARTQuery,
             >(query_bytes)?);
 
-            match state.challenges.write().await.remove(&(
-                helper.chat_id,
-                helper
-                    .helper_type
-                    .get_index()
-                    .ok_or(VerificationError::InvalidProof)?,
-            )) {
-                Some(challenge) => helper.helper_type.set_challenge(challenge),
-                None => return Err(VerificationError::NoChallenge),
-            };
-
+            match helper.helper_type.get_challenge() {
+                Some(challenge) => {
+                    if !state.challenges.write().await.remove(challenge) {
+                        return Err(VerificationError::NoChallenge)
+                    }
+                }
+                None => return Err(VerificationError::NoChallenge)
+            }
+            
             let art = state
                 .art_service
                 .get_initial_art(&helper.chat_id)

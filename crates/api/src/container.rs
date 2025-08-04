@@ -11,7 +11,6 @@ use tracing::info;
 use types::errors::{ARTServiceError, ApiError};
 use uuid::Uuid;
 
-type ChallengeHashMap = HashMap<(Uuid, u32), Vec<u8>>;
 
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
@@ -21,7 +20,7 @@ pub struct Container {
     pub proof_verifier_sender: ProofVerifierSender,
 
     pub art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
-    pub challenges: Arc<RwLock<ChallengeHashMap>>,
+    pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
 impl Container {

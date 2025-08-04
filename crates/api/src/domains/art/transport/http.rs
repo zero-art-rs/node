@@ -11,12 +11,14 @@ use axum::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use mongodb::bson::doc;
 use std::sync::Arc;
+use cortado::CortadoAffine;
 use tracing::{error, info, instrument};
 use types::ProofRecord;
 use types::art_schemas::*;
 use types::errors::ARTServiceError;
 use types::errors::ApiError;
 use validator::Validate;
+use ark_serialize::{CanonicalDeserialize};
 
 #[utoipa::path(
     post,
@@ -104,19 +106,14 @@ pub async fn get_initial_art(
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
-    let mut initial_art_record = state
+    info!("Try to retreive initial art for chat {} from the database..", &payload.chat_id);
+    let initial_art_record = state
         .art_service
         .get_initial_art(&payload.chat_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    let leaf_node = initial_art_record
-        .art
-        .get_node(&NodeIndex::Index(payload.index))?;
-    if !leaf_node.is_leaf() {
-        return Err(ApiError::BadRequest("The node isn't a leaf".to_string()));
-    }
-
+    info!("Serialize retrieved art..");
     let art_bytes = initial_art_record
         .art
         .serialize()
@@ -284,34 +281,19 @@ pub async fn delete_chat(
 #[utoipa::path(
     get,
     path = "/v1/messenger/challenge",
-    params(GetChallengeQuery),
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn get_challenge(
     State(state): State<Arc<Container>>,
-    Query(payload): Query<GetChallengeQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    payload.validate()?;
-
-    let key = (payload.chat_id, payload.index);
-
+    info!("Create a write lock on challenges");
     let mut lock = state.challenges.write().await;
+    info!("Create new challenge");
+    let challenge = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+    lock.insert(challenge.clone());
 
-    let challenge = match lock.get(&key) {
-        Some(challenge) => {
-            info!("Unused challenge already exists");
-            BASE64_STANDARD.encode(challenge)
-        }
-        None => {
-            info!("Challenge isn't created yet, so create new one");
-            let challenge = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-            lock.insert(key, challenge.clone());
-            BASE64_STANDARD.encode(challenge)
-        }
-    };
-
-    Ok((StatusCode::OK, challenge))
+    Ok((StatusCode::OK, BASE64_STANDARD.encode(challenge)))
 }
 
 #[utoipa::path(

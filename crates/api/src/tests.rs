@@ -6,8 +6,8 @@ use ark_std::rand::{
     prelude::StdRng,
     {SeedableRng, thread_rng},
 };
-use art::traits::{ARTPrivateAPI, ARTPublicAPI};
-use art::types::{NodeIndex, PrivateART, PublicART};
+use art::traits::{ARTPrivateAPI, ARTPublicAPI, ARTPublicView};
+use art::types::{NodeIndex, NodeIterWithPath, PrivateART, PublicART};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use bulletproofs::{BulletproofGens, PedersenGens};
@@ -23,8 +23,9 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Duration;
+use jsonwebtoken::errors::ErrorKind::Base64;
 use tracing::info;
-use types::art_schemas::GetARTQuery;
+use types::art_schemas::{GetARTQuery, GetInitialARTQuery};
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::cross_dleq::PedersenBasis;
@@ -322,7 +323,7 @@ async fn test_get_initial_art() -> eyre::Result<()> {
             .decode(challenge_response.text().await.unwrap())
             .unwrap();
 
-        // Second try to get challenge, to test that it is the same now
+        // Second try to get challenge, to test that it is different
         let challenge2_response = get_challenge(&mut context).await?;
         assert_eq!(challenge2_response.status(), StatusCode::OK);
 
@@ -330,18 +331,15 @@ async fn test_get_initial_art() -> eyre::Result<()> {
             .decode(challenge2_response.text().await.unwrap())
             .unwrap();
 
-        assert_eq!(challenge2, challenge);
+        assert_ne!(challenge2, challenge);
 
         // Create signature
         let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-        let index =
-            NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
 
         let mut msg = Vec::new();
         msg.extend_from_slice(context.chat_uuid.as_bytes());
         msg.extend(&nonce);
-        msg.extend(index.to_le_bytes());
-        msg.extend(challenge);
+        msg.extend(&challenge);
 
         let pk = vec![context.art.public_key_of(&context.art.secret_key)];
 
@@ -349,16 +347,20 @@ async fn test_get_initial_art() -> eyre::Result<()> {
         let verification_result = verify(&signature, &pk, &msg);
         assert!(verification_result.is_ok());
 
+        let mut public_key_bytes = Vec::new();
+        pk[0].serialize_uncompressed(&mut public_key_bytes).unwrap();
+
         // Send get request
         let initial_art_response = context
             .client
             .get(format!("{}/{}", BACKEND_URL, "v1/messenger/initial-art"))
-            .query(&json!({
-                "chatId": context.chat_uuid,
-                "signature": BASE64_STANDARD.encode(&signature),
-                "index": index,
-                "nonce": BASE64_STANDARD.encode(&nonce),
-            }))
+            .query(&GetInitialARTQuery {
+                chat_id: context.chat_uuid,
+                signature: signature.clone(),
+                nonce: nonce.clone(),
+                challenge,
+                public_key: public_key_bytes,
+            })
             .send()
             .await?;
 
@@ -760,10 +762,6 @@ async fn get_challenge(context: &mut ARTTestContext) -> reqwest::Result<reqwest:
     context
         .client
         .get(format!("{}/{}", BACKEND_URL, "v1/messenger/challenge"))
-        .query(&json!({
-            "chatId": context.chat_uuid,
-            "index": context.get_index().unwrap(),
-        }))
         .send()
         .await
 }

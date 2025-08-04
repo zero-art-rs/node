@@ -2,7 +2,6 @@ use crate::config::NodeConfig;
 use api::{ARTService, CentrifugoService, Container, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -90,7 +89,7 @@ impl Node {
             art_service: Arc::new(art_service),
             proof_verifier_sender,
             art_is_updating: Arc::new(RwLock::new(HashSet::new())),
-            challenges: Arc::new(RwLock::new(HashMap::new())),
+            challenges: Arc::new(RwLock::new(HashSet::new())),
         });
 
         self.task_tracker.spawn(api::run_server(

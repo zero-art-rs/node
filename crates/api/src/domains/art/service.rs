@@ -123,7 +123,10 @@ impl ARTService {
         let record = arts_storage
             .get_initial_art(*chat_id)
             .await
-            .map_err(|_| ARTServiceError::NotFound)?;
+            .map_err(|_| {
+                error!("Failed to retreive initial art");
+                ARTServiceError::NotFound
+            })?;
 
         Ok(record)
     }

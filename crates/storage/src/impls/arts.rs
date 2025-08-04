@@ -6,7 +6,7 @@ use art::{
     types::{BranchChanges, PublicART},
 };
 use cortado::CortadoAffine as ARTGroup;
-use log::info;
+use log::{info, error};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
@@ -131,7 +131,7 @@ impl ARTStorage for MongoARTStorage {
             .await?;
 
         art.ok_or_else(|| {
-            info!("No art found for chat: {}", chat_id);
+            error!("No art found for chat: {}", chat_id);
             StorageError::NotFound
         })
     }
@@ -193,7 +193,7 @@ impl ARTStorage for MongoARTStorage {
                 .await?;
             info!("Art updated successfully");
         } else {
-            info!("Art not found");
+            error!("Art not found");
             return Err(mongodb::error::Error::from(std::io::Error::other(
                 StorageError::NotFound,
             )));
@@ -265,7 +265,7 @@ impl ARTStorage for MongoARTStorage {
             .await?;
 
         if art.is_none() {
-            info!("No art found for chat: {}", chat_id);
+            error!("No art found for chat: {}", chat_id);
             return Err(StorageError::NotFound);
         }
 

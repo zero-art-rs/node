@@ -1,11 +1,11 @@
 use crate::ProofVerifierSender;
 use ark_serialize::CanonicalDeserialize;
-use art::traits::ARTPublicAPI;
-use art::types::{BranchChanges, BranchChangesType, NodeIndex, PublicART};
+use art::traits::{ARTPublicAPI, ARTPublicView};
+use art::types::{BranchChanges, BranchChangesType, Direction, NodeIndex, NodeIterWithPath, PublicART};
 use callbacks::callback;
 use cortado::CortadoAffine;
 use tokio_util::bytes::Buf;
-use tracing::info;
+use tracing::{error, info};
 use types::art_schemas::*;
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::errors::VerificationError;
@@ -29,7 +29,12 @@ pub enum HelperType {
         nonce: Vec<u8>,
         index: u32,
         signature: Vec<u8>,
-        challenge: Option<Vec<u8>>,
+    },
+    InvitePossession {
+        nonce: Vec<u8>,
+        signature: Vec<u8>,
+        challenge: Vec<u8>,
+        public_key: CortadoAffine,
     },
     Ownership {
         nonce: Vec<u8>,
@@ -42,30 +47,24 @@ pub enum HelperType {
 }
 
 impl HelperType {
-    pub fn get_challenge(&self) -> &Option<Vec<u8>> {
+    pub fn get_challenge(&self) -> Option<&Vec<u8>> {
         match self {
-            Self::ArtUpdate { .. } => &None,
-            Self::LeafKnowledge { challenge, .. } => challenge,
-            Self::Ownership { .. } => &None,
-            Self::RootKnowledge { .. } => &None,
+            Self::InvitePossession { challenge, .. } => Some(challenge),
+            _ => None,
         }
     }
 
     pub fn set_challenge(&mut self, new_challenge: Vec<u8>) {
         match self {
-            Self::ArtUpdate { .. } => {}
-            Self::LeafKnowledge { challenge, .. } => *challenge = Some(new_challenge),
-            Self::Ownership { .. } => {}
-            Self::RootKnowledge { .. } => {}
+            Self::InvitePossession { challenge, .. } => *challenge = new_challenge,
+            _ => {}
         }
     }
 
     pub fn get_index(&self) -> Option<u32> {
         match self {
-            Self::ArtUpdate { .. } => None,
             Self::LeafKnowledge { index, .. } => Some(*index),
-            Self::Ownership { .. } => None,
-            Self::RootKnowledge { .. } => None,
+            _ => None,
         }
     }
 }
@@ -111,13 +110,18 @@ impl From<RemoveMemberRequest> for VerificationHelper {
 
 impl From<GetInitialARTQuery> for VerificationHelper {
     fn from(query: GetInitialARTQuery) -> Self {
+        let public_key = CortadoAffine::deserialize_uncompressed(&*query.public_key).unwrap_or_else(|_| {
+            info!("Failed to deserialize public key");
+            CortadoAffine::default()
+        });
+        
         Self {
             chat_id: query.chat_id,
-            helper_type: HelperType::LeafKnowledge {
+            helper_type: HelperType::InvitePossession {
                 nonce: query.nonce,
-                index: query.index,
                 signature: query.signature,
-                challenge: None,
+                challenge: query.challenge,
+                public_key,
             },
             sequence_number: None,
         }
@@ -132,7 +136,6 @@ impl From<UpdateMetadataRequest> for VerificationHelper {
                 nonce: query.nonce,
                 index: query.index,
                 signature: query.signature,
-                challenge: None,
             },
             sequence_number: None,
         }
@@ -235,17 +238,31 @@ impl VerificationHelper {
                 nonce,
                 index,
                 signature,
-                challenge,
             } => {
                 self.verify_leaf_knowledge(
                     art,
                     proof_verifier_sender,
-                    challenge.as_ref(),
                     nonce,
                     *index,
                     signature,
                 )
                 .await
+            }
+            HelperType::InvitePossession {
+                nonce,
+                signature,
+                challenge,
+                public_key,
+            } => {
+                self.verify_invite_possession(
+                    art,
+                    proof_verifier_sender,
+                    challenge.as_ref(),
+                    nonce,
+                    signature,
+                    public_key.clone(),
+                )
+                    .await
             }
             HelperType::Ownership { nonce, signature } => {
                 self.verify_ownership(art, proof_verifier_sender, nonce, signature)
@@ -329,12 +346,11 @@ impl VerificationHelper {
         &self,
         art: &PublicART<CortadoAffine>,
         proof_verifier_sender: &ProofVerifierSender,
-        challenge: Option<&Vec<u8>>,
         nonce: &Vec<u8>,
         index: u32,
         signature: &[u8],
     ) -> Result<(), VerificationError> {
-        let mut art = art.clone();
+        let art = art.clone();
         // Check if provided index maps to leaf node
         let leaf = art.get_node(&NodeIndex::Index(index))?;
         if !leaf.is_leaf() {
@@ -346,9 +362,6 @@ impl VerificationHelper {
         msg.extend_from_slice(self.chat_id.as_bytes());
         msg.extend(nonce);
         msg.extend(index.to_le_bytes());
-        if let Some(challenge) = challenge {
-            msg.extend(challenge);
-        }
 
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
             signature: signature.to_vec(),
@@ -358,11 +371,54 @@ impl VerificationHelper {
 
         // Verify signature
         let verdict = match callback(proof_verifier_sender, schnorr_signature_message).await? {
-            ProofVerifierResult::SchnorrSignature { verdict } => {
-                info!("Remove used challenge");
+            ProofVerifierResult::SchnorrSignature { verdict } => verdict,
+            _ => return Err(VerificationError::InvalidResultMessage),
+        };
 
-                verdict
+        if !verdict {
+            return Err(VerificationError::InvalidProof);
+        }
+
+        Ok(())
+    }
+
+    pub async fn verify_invite_possession(
+        &self,
+        art: &PublicART<CortadoAffine>,
+        proof_verifier_sender: &ProofVerifierSender,
+        challenge: &Vec<u8>,
+        nonce: &Vec<u8>,
+        signature: &[u8],
+        public_key: CortadoAffine
+    ) -> Result<(), VerificationError> {
+        info!("Check if provided public key is correct");
+        let mut public_key_is_wrong = true;
+        for (node, path) in NodeIterWithPath::new(art.get_root()) {
+            if node.public_key.eq(&public_key) && node.is_leaf(){
+                public_key_is_wrong = false;
             }
+        }
+
+        if public_key_is_wrong {
+            error!("The node corresponding to the provided public isn't leaf, or public key is incorrect");
+            return Err(VerificationError::InvalidProof);
+        }
+        
+        info!("Compute transcript");
+        let mut msg = Vec::new();
+        msg.extend_from_slice(self.chat_id.as_bytes());
+        msg.extend(nonce);
+        msg.extend(challenge);
+
+        let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
+            signature: signature.to_vec(),
+            public_keys: vec![public_key],
+            msg,
+        };
+
+        info!("Verifying proof");
+        let verdict = match callback(proof_verifier_sender, schnorr_signature_message).await? {
+            ProofVerifierResult::SchnorrSignature { verdict } => verdict,
             _ => return Err(VerificationError::InvalidResultMessage),
         };
 

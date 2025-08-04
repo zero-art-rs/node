@@ -46,13 +46,18 @@ pub struct GetInitialARTQuery {
     /// Serialized proof.
     #[serde(with = "as_base64")]
     pub signature: Vec<u8>,
-
-    /// User's leaf node index
-    pub index: u32,
-
+    
     /// User provided nonce
     #[serde(with = "as_base64")]
     pub nonce: Vec<u8>,
+
+    /// Server given challenge
+    #[serde(with = "as_base64")]
+    pub challenge: Vec<u8>,
+
+    /// Users invite_public_key
+    #[serde(with = "as_base64")]
+    pub public_key: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
@@ -140,16 +145,6 @@ pub struct DeleteChatQuery {
     /// User provided nonce
     #[serde(with = "as_base64")]
     pub nonce: Vec<u8>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetChallengeQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// User's leaf node index
-    pub index: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
