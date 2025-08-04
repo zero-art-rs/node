@@ -24,11 +24,12 @@ impl MessengerService {
         &self,
         message: Vec<u8>,
         chat_id: &Uuid,
+        epoch: u32,
     ) -> Result<(), MessengerError> {
         info!("Store and send new message");
         MongoMessageStorage::new(chat_id)
             .await?
-            .store_message(message)
+            .store_message(message, epoch)
             .await?;
         info!("Message sent");
         Ok(())

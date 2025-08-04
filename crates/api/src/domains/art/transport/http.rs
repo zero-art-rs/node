@@ -1,6 +1,5 @@
 use crate::container::Container;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
-use ark_serialize::CanonicalDeserialize;
 use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
 use axum::{
@@ -10,7 +9,6 @@ use axum::{
     response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
-use cortado::CortadoAffine;
 use mongodb::bson::doc;
 use std::sync::Arc;
 use tracing::{error, info, instrument};
@@ -296,10 +294,7 @@ pub async fn get_challenge(
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
-    let key = (
-        payload.chat_id,
-        CortadoAffine::deserialize_uncompressed(&*payload.public_key)?,
-    );
+    let key = (payload.chat_id, payload.index);
 
     let mut lock = state.challenges.write().await;
 
@@ -317,4 +312,26 @@ pub async fn get_challenge(
     };
 
     Ok((StatusCode::OK, challenge))
+}
+
+#[utoipa::path(
+    put,
+    path = "/v1/messenger/metadata",
+    request_body = UpdateMetadataRequest,
+    tag = "Chat operations"
+)]
+#[instrument(skip(state), err)]
+pub async fn update_metadata(
+    State(state): State<Arc<Container>>,
+    Json(payload): Json<UpdateMetadataRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    info!("Update metadata: {:?}", payload);
+    payload.validate()?;
+
+    state
+        .art_service
+        .update_metadata(payload.chat_id, payload.metadata, payload.index)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -51,4 +51,17 @@ pub trait ARTStorage: Send + Sync {
         &self,
         chat_id: &Uuid,
     ) -> Result<i64, mongodb::error::Error>;
+
+    async fn update_metadata(
+        &self,
+        chat_id: Uuid,
+        new_metadata: Vec<u8>,
+        node_index: u32,
+    ) -> Result<(), StorageError>;
+
+    async fn replace_art(
+        &self,
+        chat_id: Uuid,
+        new_art: ARTRecord<ARTGroup>,
+    ) -> Result<(), StorageError>;
 }

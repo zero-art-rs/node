@@ -10,21 +10,21 @@ use validator::Validate;
 pub struct SendMessageRequest {
     /// Message content
     #[serde(with = "as_base64")]
-    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
     pub message: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     #[schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
+    /// Sequential number of epoch during which the message was sent
+    pub epoch: u32,
+
     /// Serialized proof.
     #[serde(with = "as_base64")]
-    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
     #[serde(with = "as_base64")]
-    #[schema(example = "RXhhbXBsZSBub25jZQ==")]
     pub nonce: Vec<u8>,
 }
 
@@ -32,7 +32,6 @@ pub struct SendMessageRequest {
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
     /// Unique identifier of the chat to send the message to.
-    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Message creation time
@@ -42,11 +41,9 @@ pub struct GetMessageQuery {
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
-    #[param(example = 10)]
     pub limit: i64,
 
     /// The amount or results to skip
-    #[param(example = 0)]
     pub skip: i64,
 
     /// Serialized proof.
@@ -65,7 +62,6 @@ pub struct GetMessageQuery {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteMessageQuery {
     /// Unique identifier of the chat to send the message to.
-    #[param(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Message creation time

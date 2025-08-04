@@ -27,4 +27,6 @@ pub enum ARTServiceError {
     SessionInitiation,
     #[error("Failed to use ART {0}")]
     ArtError(#[from] ARTError),
+    #[error("No previous record found")]
+    NoPreviousRecord,
 }

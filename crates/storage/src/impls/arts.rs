@@ -1,5 +1,6 @@
 use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
+use art::types::NodeIndex;
 use art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
@@ -235,5 +236,39 @@ impl ARTStorage for MongoARTStorage {
             .sequence_number;
 
         Ok(sequence_number)
+    }
+
+    async fn update_metadata(
+        &self,
+        chat_id: Uuid,
+        new_metadata: Vec<u8>,
+        node_index: u32,
+    ) -> Result<(), StorageError> {
+        let mut art = self.get_art(chat_id).await?;
+        art.art
+            .get_mut_node(&NodeIndex::Index(node_index))?
+            .metadata = Some(new_metadata);
+        self.replace_art(chat_id, art).await?;
+
+        Ok(())
+    }
+
+    async fn replace_art(
+        &self,
+        chat_id: Uuid,
+        new_art: ARTRecord<ARTGroup>,
+    ) -> Result<(), StorageError> {
+        info!("Retrieving latest art for chat: {}", chat_id);
+        let art = self
+            .arts_collection
+            .find_one_and_replace(doc! {"chat_id": chat_id}, new_art)
+            .await?;
+
+        if art.is_none() {
+            info!("No art found for chat: {}", chat_id);
+            return Err(StorageError::NotFound);
+        }
+
+        Ok(())
     }
 }

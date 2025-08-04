@@ -60,7 +60,7 @@ impl ARTService {
         let previous_art = match sequence_number {
             Some(sequence_number) => {
                 if sequence_number < 1 || latest_sequence_number < sequence_number {
-                    return Err(ARTServiceError::InvalidInput);
+                    return Err(ARTServiceError::NoPreviousRecord);
                 }
 
                 self.get_art_by_sequence_number(chat_id, sequence_number - 1)
@@ -242,6 +242,20 @@ impl ARTService {
             }
             _ => Err(ARTServiceError::InvalidChangeType),
         }
+    }
+
+    pub async fn update_metadata(
+        &self,
+        chat_id: Uuid,
+        new_metadata: Vec<u8>,
+        node_index: u32,
+    ) -> Result<(), ARTServiceError> {
+        MongoARTStorage::new()
+            .await?
+            .update_metadata(chat_id, new_metadata, node_index)
+            .await?;
+
+        Ok(())
     }
 
     async fn update_art(

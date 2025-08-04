@@ -32,7 +32,7 @@ pub async fn send_message(
 
     state
         .messenger_service
-        .send_message(payload.message, &payload.chat_id)
+        .send_message(payload.message, &payload.chat_id, payload.epoch)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
