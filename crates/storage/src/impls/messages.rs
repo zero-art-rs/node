@@ -55,6 +55,7 @@ impl MessageStorage for MongoMessageStorage {
     }
 
     async fn store_message(&self, content: Vec<u8>, epoch: u32) -> Result<(), StorageError> {
+    async fn store_message(&self, content: Vec<u8>, epoch: u32) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
