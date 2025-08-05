@@ -10,6 +10,7 @@ hex = { workspace = true }
 callbacks = { path = "../callback" }
 art = { workspace = true }
 ark-ec = { workspace = true }
+ark-ff = { workspace = true }
 eyre = { workspace = true }
 ark-serialize = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

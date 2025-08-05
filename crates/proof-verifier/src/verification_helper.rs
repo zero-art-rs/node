@@ -1,7 +1,7 @@
 use crate::ProofVerifierSender;
-use ark_serialize::CanonicalDeserialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::{BranchChanges, BranchChangesType, Direction, NodeIndex, NodeIterWithPath, PublicART};
+use art::types::{BranchChanges, BranchChangesType, NodeIndex, LeafIterWithPath, PublicART};
 use callbacks::callback;
 use cortado::CortadoAffine;
 use tokio_util::bytes::Buf;
@@ -202,7 +202,7 @@ impl From<GetChangesQuery> for VerificationHelper {
                 nonce: query.nonce,
                 signature: query.signature,
             },
-            sequence_number: query.sequence_number,
+            sequence_number: Some(query.skip + 1),
         }
     }
 }
@@ -284,7 +284,6 @@ impl VerificationHelper {
         branch_changes: &Vec<u8>,
         proof: &[u8],
     ) -> Result<(), VerificationError> {
-        let mut art = art.clone();
         let branch_changes = BranchChanges::<CortadoAffine>::deserialize(branch_changes)?;
 
         match branch_changes.change_type {
@@ -302,11 +301,13 @@ impl VerificationHelper {
         };
 
         let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
+        let mut associated_data = Vec::new();
+        art.root.public_key.serialize_uncompressed(&mut associated_data)?;
 
         let key_update_message = ProofVerifierMessage::ArtUpdate {
             proof: proof.to_vec(),
             co_path,
-            associated_data: PublicART::serialize(&art)?,
+            associated_data,
         };
 
         let ProofVerifierResult::ArtUpdate { verdict } =
@@ -393,8 +394,8 @@ impl VerificationHelper {
     ) -> Result<(), VerificationError> {
         info!("Check if provided public key is correct");
         let mut public_key_is_wrong = true;
-        for (node, path) in NodeIterWithPath::new(art.get_root()) {
-            if node.public_key.eq(&public_key) && node.is_leaf(){
+        for (node, _) in LeafIterWithPath::new(art.get_root()) {
+            if node.public_key.eq(&public_key) {
                 public_key_is_wrong = false;
             }
         }

@@ -121,15 +121,9 @@ pub struct GetChangesQuery {
     #[serde(with = "as_base64")]
     pub signature: Vec<u8>,
 
-    /// User's leaf node index
-    pub index: u32,
-
     /// User provided nonce
     #[serde(with = "as_base64")]
     pub nonce: Vec<u8>,
-
-    /// Sequence number of the requested art. If not set, return the latest.
-    pub sequence_number: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]

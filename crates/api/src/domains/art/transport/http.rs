@@ -113,7 +113,7 @@ pub async fn get_initial_art(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    info!("Serialize retrieved art..");
+    info!("Serialize retrieved art with root_pk_x: {}..", initial_art_record.art.root.public_key.x);
     let art_bytes = initial_art_record
         .art
         .serialize()
@@ -240,8 +240,7 @@ pub async fn get_changes(
     let changes = state
         .art_service
         .list_changes(&payload.chat_id, filter, payload.limit, payload.skip)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+        .await?;
 
     info!("Found changes: {}", changes.len());
 

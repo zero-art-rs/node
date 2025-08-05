@@ -54,13 +54,20 @@ impl ARTService {
         chat_id: &Uuid,
         sequence_number: Option<i64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        info!("Retreiving previous art for sequence_number: {}", sequence_number.unwrap_or(0));
         let arts_storage = MongoARTStorage::new().await?;
         let latest_sequence_number = arts_storage.get_latest_sequence_number(chat_id).await?;
 
         let previous_art = match sequence_number {
             Some(sequence_number) => {
-                if sequence_number < 1 || latest_sequence_number < sequence_number {
+                if sequence_number < 1 {
+                    error!("Art sequence_number can't be less than 1, because there is no way to verify the given proof.");
                     return Err(ARTServiceError::NoPreviousRecord);
+                }
+
+                if latest_sequence_number < sequence_number {
+                    error!("Given sequence_number ({}) is to big (max: {}). There is no way to verify the given proof.", sequence_number, latest_sequence_number);
+                    return Err(ARTServiceError::NotFound)
                 }
 
                 self.get_art_by_sequence_number(chat_id, sequence_number - 1)

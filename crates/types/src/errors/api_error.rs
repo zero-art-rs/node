@@ -37,8 +37,8 @@ impl From<ARTServiceError> for ApiError {
             ARTServiceError::AlreadyExists
             | ARTServiceError::InvalidInput
             | ARTServiceError::InvalidChangeType
-            | ARTServiceError::NotFound
             | ARTServiceError::GroupChatOnly => Self::BadRequest(value.to_string()),
+            ARTServiceError::NotFound => Self::NotFound(value.to_string()),
             _ => Self::InternalServerError(value.to_string()),
         }
     }

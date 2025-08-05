@@ -547,7 +547,8 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
     let secret_key = context.art.secret_key.clone();
     let new_secret_key = ARTScalarField::rand(&mut context.rng);
 
-    let associated_data = context.art.serialize().unwrap();
+    let mut associated_data = Vec::new();
+    context.art.root.public_key.serialize_uncompressed(&mut associated_data).unwrap();
 
     let (_, key_update_changes) = context.art.update_key(&new_secret_key).unwrap();
     let (_, co_path, lambdas) = context.art.recompute_root_key_with_artefacts().unwrap();
@@ -598,7 +599,8 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
 
 // add node to the art, and send updates to the chat
 async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
-    let associated_data = context.art.serialize().unwrap();
+    let mut associated_data = Vec::new();
+    context.art.root.public_key.serialize_uncompressed(&mut associated_data).unwrap();
     let old_tk = context.art.recompute_root_key().unwrap().key;
     let new_user_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
@@ -659,7 +661,8 @@ async fn remove_member(
     context: &mut ARTTestContext,
     member_id: usize,
 ) -> reqwest::Result<reqwest::Response> {
-    let associated_data = context.art.serialize().unwrap();
+    let mut associated_data = Vec::new();
+    context.art.root.public_key.serialize_uncompressed(&mut associated_data).unwrap();
     let old_tk = context.art.recompute_root_key().unwrap().key;
     let user_to_remove = ARTGroup::generator()
         .mul(&context.initial_secrets[member_id])
