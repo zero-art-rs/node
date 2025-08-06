@@ -6,7 +6,7 @@ use art::{
     types::{BranchChanges, PublicART},
 };
 use cortado::CortadoAffine as ARTGroup;
-use log::{info, error};
+use log::{error, info};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;

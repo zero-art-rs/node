@@ -1,7 +1,7 @@
 use crate::ProofVerifierSender;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::{BranchChanges, BranchChangesType, NodeIndex, LeafIterWithPath, PublicART};
+use art::types::{BranchChanges, BranchChangesType, LeafIterWithPath, NodeIndex, PublicART};
 use callbacks::callback;
 use cortado::CortadoAffine;
 use tokio_util::bytes::Buf;
@@ -110,11 +110,12 @@ impl From<RemoveMemberRequest> for VerificationHelper {
 
 impl From<GetInitialARTQuery> for VerificationHelper {
     fn from(query: GetInitialARTQuery) -> Self {
-        let public_key = CortadoAffine::deserialize_uncompressed(&*query.public_key).unwrap_or_else(|_| {
-            info!("Failed to deserialize public key");
-            CortadoAffine::default()
-        });
-        
+        let public_key = CortadoAffine::deserialize_uncompressed(&*query.public_key)
+            .unwrap_or_else(|_| {
+                info!("Failed to deserialize public key");
+                CortadoAffine::default()
+            });
+
         Self {
             chat_id: query.chat_id,
             helper_type: HelperType::InvitePossession {
@@ -202,7 +203,7 @@ impl From<GetChangesQuery> for VerificationHelper {
                 nonce: query.nonce,
                 signature: query.signature,
             },
-            sequence_number: Some(query.skip + 1),
+            sequence_number: Some(query.skip),
         }
     }
 }
@@ -239,14 +240,8 @@ impl VerificationHelper {
                 index,
                 signature,
             } => {
-                self.verify_leaf_knowledge(
-                    art,
-                    proof_verifier_sender,
-                    nonce,
-                    *index,
-                    signature,
-                )
-                .await
+                self.verify_leaf_knowledge(art, proof_verifier_sender, nonce, *index, signature)
+                    .await
             }
             HelperType::InvitePossession {
                 nonce,
@@ -262,7 +257,7 @@ impl VerificationHelper {
                     signature,
                     public_key.clone(),
                 )
-                    .await
+                .await
             }
             HelperType::Ownership { nonce, signature } => {
                 self.verify_ownership(art, proof_verifier_sender, nonce, signature)
@@ -286,6 +281,7 @@ impl VerificationHelper {
     ) -> Result<(), VerificationError> {
         let branch_changes = BranchChanges::<CortadoAffine>::deserialize(branch_changes)?;
 
+        info!("Check aux keys correctness..");
         match branch_changes.change_type {
             BranchChangesType::UpdateKey => Self::check_auxiliary_public_keys(
                 proof,
@@ -300,9 +296,12 @@ impl VerificationHelper {
             _ => return Err(VerificationError::UnsupportedOperation),
         };
 
+        info!("Verify the proof..");
         let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
         let mut associated_data = Vec::new();
-        art.root.public_key.serialize_uncompressed(&mut associated_data)?;
+        art.root
+            .public_key
+            .serialize_uncompressed(&mut associated_data)?;
 
         let key_update_message = ProofVerifierMessage::ArtUpdate {
             proof: proof.to_vec(),
@@ -390,7 +389,7 @@ impl VerificationHelper {
         challenge: &Vec<u8>,
         nonce: &Vec<u8>,
         signature: &[u8],
-        public_key: CortadoAffine
+        public_key: CortadoAffine,
     ) -> Result<(), VerificationError> {
         info!("Check if provided public key is correct");
         let mut public_key_is_wrong = true;
@@ -401,10 +400,12 @@ impl VerificationHelper {
         }
 
         if public_key_is_wrong {
-            error!("The node corresponding to the provided public isn't leaf, or public key is incorrect");
+            error!(
+                "The node corresponding to the provided public isn't leaf, or public key is incorrect"
+            );
             return Err(VerificationError::InvalidProof);
         }
-        
+
         info!("Compute transcript");
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());
@@ -481,6 +482,8 @@ impl VerificationHelper {
             public_keys: vec![art.root.public_key],
             msg,
         };
+
+        println!("Verifying proof: {:?}", schnorr_signature_message);
 
         let ProofVerifierResult::SchnorrSignature { verdict } =
             callback(proof_verifier_sender, schnorr_signature_message).await?

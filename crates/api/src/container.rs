@@ -11,7 +11,6 @@ use tracing::info;
 use types::errors::{ARTServiceError, ApiError};
 use uuid::Uuid;
 
-
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
     pub centrifugo_service: Arc<CentrifugoService>,

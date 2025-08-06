@@ -155,7 +155,7 @@ async fn verify_get_query(
             )?);
             let art = state
                 .art_service
-                .get_previous_art(&helper.chat_id, helper.sequence_number)
+                .get_art(&helper.chat_id, helper.sequence_number)
                 .await?
                 .art;
             (helper, art)
@@ -168,12 +168,12 @@ async fn verify_get_query(
             match helper.helper_type.get_challenge() {
                 Some(challenge) => {
                     if !state.challenges.write().await.remove(challenge) {
-                        return Err(VerificationError::NoChallenge)
+                        return Err(VerificationError::NoChallenge);
                     }
                 }
-                None => return Err(VerificationError::NoChallenge)
+                None => return Err(VerificationError::NoChallenge),
             }
-            
+
             let art = state
                 .art_service
                 .get_initial_art(&helper.chat_id)

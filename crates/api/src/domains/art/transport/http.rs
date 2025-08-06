@@ -1,5 +1,6 @@
 use crate::container::Container;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
+use ark_serialize::CanonicalDeserialize;
 use art::traits::ARTPublicAPI;
 use art::types::NodeIndex;
 use axum::{
@@ -9,16 +10,14 @@ use axum::{
     response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
+use cortado::CortadoAffine;
 use mongodb::bson::doc;
 use std::sync::Arc;
-use cortado::CortadoAffine;
 use tracing::{error, info, instrument};
-use types::ProofRecord;
 use types::art_schemas::*;
 use types::errors::ARTServiceError;
 use types::errors::ApiError;
 use validator::Validate;
-use ark_serialize::{CanonicalDeserialize};
 
 #[utoipa::path(
     post,
@@ -106,14 +105,20 @@ pub async fn get_initial_art(
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
-    info!("Try to retreive initial art for chat {} from the database..", &payload.chat_id);
+    info!(
+        "Try to retreive initial art for chat {} from the database..",
+        &payload.chat_id
+    );
     let initial_art_record = state
         .art_service
         .get_initial_art(&payload.chat_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    info!("Serialize retrieved art with root_pk_x: {}..", initial_art_record.art.root.public_key.x);
+    info!(
+        "Serialize retrieved art with root_pk_x: {}..",
+        initial_art_record.art.root.public_key.x
+    );
     let art_bytes = initial_art_record
         .art
         .serialize()
@@ -143,13 +148,7 @@ pub async fn add_member(
 
     state
         .art_service
-        .append_member(
-            &payload.chat_id,
-            &branch_changes,
-            &ProofRecord::AddMember {
-                proof: payload.proof,
-            },
-        )
+        .append_member(&payload.chat_id, &branch_changes, &payload.proof)
         .await?;
 
     state.stop_updating(payload.chat_id).await;
@@ -176,13 +175,7 @@ pub async fn remove_member(
 
     state
         .art_service
-        .remove_member(
-            &payload.chat_id,
-            &branch_changes,
-            &ProofRecord::RemoveMember {
-                proof: payload.proof,
-            },
-        )
+        .remove_member(&payload.chat_id, &branch_changes, &payload.proof)
         .await?;
 
     state.stop_updating(payload.chat_id).await;
@@ -209,13 +202,7 @@ pub async fn update_key(
 
     state
         .art_service
-        .update_key(
-            &payload.chat_id,
-            &branch_changes,
-            &ProofRecord::AddMember {
-                proof: payload.proof,
-            },
-        )
+        .update_key(&payload.chat_id, &branch_changes, &payload.proof)
         .await?;
 
     state.stop_updating(payload.chat_id).await;
@@ -277,11 +264,7 @@ pub async fn delete_chat(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
-    get,
-    path = "/v1/messenger/challenge",
-    tag = "Chat operations"
-)]
+#[utoipa::path(get, path = "/v1/messenger/challenge", tag = "Chat operations")]
 #[instrument(skip(state), err)]
 pub async fn get_challenge(
     State(state): State<Arc<Container>>,

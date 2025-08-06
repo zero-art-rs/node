@@ -6,5 +6,5 @@ mod schemas;
 pub mod utils;
 
 pub use message::{Message, Subscription};
-pub use records::{ARTChangesOutboxRecord, ARTChangesRecord, ARTRecord, ProofRecord, Record};
+pub use records::{ARTChangesOutboxRecord, ARTChangesRecord, ARTRecord, Record};
 pub use schemas::{art_schemas, messenger_schemas};

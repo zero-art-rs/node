@@ -46,7 +46,7 @@ pub struct GetInitialARTQuery {
     /// Serialized proof.
     #[serde(with = "as_base64")]
     pub signature: Vec<u8>,
-    
+
     /// User provided nonce
     #[serde(with = "as_base64")]
     pub nonce: Vec<u8>,

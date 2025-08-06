@@ -1,4 +1,4 @@
-use ark_ec::{AffineRepr};
+use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::types::PublicART;

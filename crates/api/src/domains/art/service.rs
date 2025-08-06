@@ -9,7 +9,7 @@ use storage::{
     StorageError,
 };
 use tracing::{error, info};
-use types::{ARTChangesRecord, ARTRecord, ProofRecord};
+use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
 
 use types::errors::ARTServiceError;
@@ -54,20 +54,28 @@ impl ARTService {
         chat_id: &Uuid,
         sequence_number: Option<i64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        info!("Retreiving previous art for sequence_number: {}", sequence_number.unwrap_or(0));
+        info!(
+            "Retreiving previous art for sequence_number: {}",
+            sequence_number.unwrap_or(0)
+        );
         let arts_storage = MongoARTStorage::new().await?;
         let latest_sequence_number = arts_storage.get_latest_sequence_number(chat_id).await?;
 
         let previous_art = match sequence_number {
             Some(sequence_number) => {
                 if sequence_number < 1 {
-                    error!("Art sequence_number can't be less than 1, because there is no way to verify the given proof.");
+                    error!(
+                        "Art sequence_number can't be less than 1, because there is no way to verify the given proof."
+                    );
                     return Err(ARTServiceError::NoPreviousRecord);
                 }
 
                 if latest_sequence_number < sequence_number {
-                    error!("Given sequence_number ({}) is to big (max: {}). There is no way to verify the given proof.", sequence_number, latest_sequence_number);
-                    return Err(ARTServiceError::NotFound)
+                    error!(
+                        "Given sequence_number ({}) is to big (max: {}). There is no way to verify the given proof.",
+                        sequence_number, latest_sequence_number
+                    );
+                    return Err(ARTServiceError::NotFound);
                 }
 
                 self.get_art_by_sequence_number(chat_id, sequence_number - 1)
@@ -127,13 +135,10 @@ impl ARTService {
         chat_id: &Uuid,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
-        let record = arts_storage
-            .get_initial_art(*chat_id)
-            .await
-            .map_err(|_| {
-                error!("Failed to retreive initial art");
-                ARTServiceError::NotFound
-            })?;
+        let record = arts_storage.get_initial_art(*chat_id).await.map_err(|_| {
+            error!("Failed to retreive initial art");
+            ARTServiceError::NotFound
+        })?;
 
         Ok(record)
     }
@@ -218,10 +223,10 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
-        proof_record: &ProofRecord,
+        proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::UpdateKey => self.update_art(chat_id, changes, proof_record).await,
+            BranchChangesType::UpdateKey => self.update_art(chat_id, changes, proof).await,
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -230,12 +235,10 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
-        proof_record: &ProofRecord,
+        proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::AppendNode(_) => {
-                self.update_art(chat_id, changes, proof_record).await
-            }
+            BranchChangesType::AppendNode(_) => self.update_art(chat_id, changes, proof).await,
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -244,12 +247,10 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
-        proof_record: &ProofRecord,
+        proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::MakeBlank(_, _) => {
-                self.update_art(chat_id, changes, proof_record).await
-            }
+            BranchChangesType::MakeBlank(_, _) => self.update_art(chat_id, changes, proof).await,
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -272,7 +273,7 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
-        proof_record: &ProofRecord,
+        proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         if arts_storage.get_art(*chat_id).await?.is_private {
@@ -292,10 +293,10 @@ impl ARTService {
         session
             .start_transaction()
             .and_run(
-                (chat_id, changes, proof_record),
-                |session, (chat_id, changes, proof_record)| {
+                (chat_id, changes, proof),
+                |session, (chat_id, changes, proof)| {
                     async move {
-                        self.update_art_callback(session, chat_id, changes, proof_record)
+                        self.update_art_callback(session, chat_id, changes, proof)
                             .await
                     }
                     .boxed()
@@ -327,7 +328,7 @@ impl ARTService {
         session: &mut ClientSession,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
-        proof_record: &ProofRecord,
+        proof: &Vec<u8>,
     ) -> Result<(), mongodb::error::Error> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
@@ -337,7 +338,7 @@ impl ARTService {
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone(), *chat_id, proof_record.clone())
+            .push_change(session, changes.clone(), *chat_id, proof.clone())
             .await?;
 
         Ok(())

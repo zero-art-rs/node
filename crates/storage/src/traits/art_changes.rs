@@ -2,7 +2,6 @@ use crate::DataStorage;
 use art::types::BranchChanges;
 use cortado::CortadoAffine as ARTGroup;
 use mongodb::ClientSession;
-use types::ProofRecord;
 use uuid::Uuid;
 
 /// Storage for art states
@@ -13,6 +12,6 @@ pub trait ARTChangesStorage: Send + Sync + DataStorage {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
-        proof_record: ProofRecord,
+        proof_record: Vec<u8>,
     ) -> Result<(), mongodb::error::Error>;
 }
