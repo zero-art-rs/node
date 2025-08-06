@@ -1,8 +1,5 @@
 use crate::container::Container;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
-use ark_serialize::CanonicalDeserialize;
-use art::traits::ARTPublicAPI;
-use art::types::NodeIndex;
 use axum::{
     Json,
     extract::{Query, State},
@@ -10,13 +7,11 @@ use axum::{
     response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
-use cortado::CortadoAffine;
 use mongodb::bson::doc;
 use std::sync::Arc;
 use tracing::{error, info, instrument};
 use types::art_schemas::*;
-use types::errors::ARTServiceError;
-use types::errors::ApiError;
+use types::errors::{ARTServiceError, ApiError};
 use validator::Validate;
 
 #[utoipa::path(

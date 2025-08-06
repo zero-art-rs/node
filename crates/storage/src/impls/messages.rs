@@ -1,6 +1,6 @@
 use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
-use log::info;
+use tracing::info;
 use mongodb::{
     bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
@@ -22,7 +22,7 @@ impl MongoMessageStorage {
             .get()
             .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
-        let messages_collection_name = format!("chat/{}", chat_id);
+        let messages_collection_name = format!("chat/{chat_id}");
         let messages_collection = db.collection(&messages_collection_name);
 
         let messages_outbox_collection_name = "messages_outbox";

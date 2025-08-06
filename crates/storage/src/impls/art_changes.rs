@@ -16,7 +16,7 @@ pub struct MongoARTChangesStorage {
 impl MongoARTChangesStorage {
     #[inline]
     fn collection_name(chat_id: &Uuid) -> String {
-        format!("art_changes/{}", chat_id)
+        format!("art_changes/{chat_id}")
     }
 
     #[inline]

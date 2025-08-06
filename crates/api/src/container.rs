@@ -3,7 +3,6 @@ use crate::domains::{
     messenger::service::MessengerService,
 };
 use proof_verifier::ProofVerifierSender;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;

@@ -48,23 +48,24 @@ pub enum HelperType {
 
 impl HelperType {
     pub fn get_challenge(&self) -> Option<&Vec<u8>> {
-        match self {
-            Self::InvitePossession { challenge, .. } => Some(challenge),
-            _ => None,
+        if let Self::InvitePossession { challenge, .. } = self {
+            Some(challenge)
+        } else {
+            None
         }
     }
 
     pub fn set_challenge(&mut self, new_challenge: Vec<u8>) {
-        match self {
-            Self::InvitePossession { challenge, .. } => *challenge = new_challenge,
-            _ => {}
+        if let Self::InvitePossession { challenge, .. } = self{
+            *challenge = new_challenge;
         }
     }
 
     pub fn get_index(&self) -> Option<u32> {
-        match self {
-            Self::LeafKnowledge { index, .. } => Some(*index),
-            _ => None,
+        if let Self::LeafKnowledge { index, .. } = self {
+            Some(*index)
+        } else {
+            None
         }
     }
 }
@@ -242,7 +243,7 @@ impl VerificationHelper {
                     challenge.as_ref(),
                     nonce,
                     signature,
-                    public_key.clone(),
+                    *public_key,
                 )
                 .await
             }

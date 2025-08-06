@@ -2,15 +2,10 @@ use crate::domains::centrifugo::transport::http::AuthRequest;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
-use ark_std::UniformRand;
-use ark_std::rand::{
-    prelude::StdRng,
-    {SeedableRng, thread_rng},
-};
+use ark_std::{UniformRand, rand::prelude::StdRng, rand::{SeedableRng, thread_rng}};
 use art::traits::{ARTPrivateAPI, ARTPublicAPI, ARTPublicView};
 use art::types::{NodeIndex, NodeIterWithPath, PrivateART, PublicART};
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bulletproofs::{BulletproofGens, PedersenGens};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine, Fr as ARTScalarField};
 use crypto::schnorr::{sign, verify};
@@ -22,15 +17,12 @@ use jsonwebtoken::errors::ErrorKind::Base64;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
-use std::ops::Mul;
-use std::time::Duration;
+use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::info;
 use types::art_schemas::GetARTQuery;
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
-use zkp::toolbox::cross_dleq::PedersenBasis;
-use zkp::toolbox::dalek_ark::ristretto255_to_ark;
+use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";

@@ -20,6 +20,7 @@ impl<T, V> CallbackWrapper<T, V> {
     ///
     /// This method returns a tuple containing the callback and its sender,
     /// allowing for the callback to be accessed and used in the calling code.
+    #[inline]
     pub fn inner(&self) -> (&T, &CallbackSender<V>) {
         (&self.0, &self.1)
     }
@@ -28,12 +29,14 @@ impl<T, V> CallbackWrapper<T, V> {
     ///
     /// This method returns a tuple containing the callback and its sender,
     /// allowing for the callback to be accessed and used in the calling code.
+    #[inline]
     pub fn inner_owned(self) -> (T, CallbackSender<V>) {
         (self.0, self.1)
     }
 }
 
 impl<T, V> From<(T, CallbackSender<V>)> for CallbackWrapper<T, V> {
+    #[inline]
     fn from(value: (T, CallbackSender<V>)) -> Self {
         CallbackWrapper(value.0, value.1)
     }

@@ -6,7 +6,7 @@ use art::{
     types::{BranchChanges, PublicART},
 };
 use cortado::CortadoAffine as ARTGroup;
-use log::{error, info};
+use tracing::{error, info};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use types::ARTRecord;
 use uuid::Uuid;
@@ -95,7 +95,7 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        info!("Deleting art for chat: {}", chat_id);
+        info!("Deleting art for chat: {chat_id}");
         self.arts_collection
             .delete_one(filter.clone())
             .session(session)
@@ -112,7 +112,7 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        info!("Deleting initial art for chat: {}", chat_id);
+        info!("Deleting initial art for chat: {chat_id}");
         self.initial_arts_collection
             .delete_one(filter)
             .session(session)
@@ -124,21 +124,21 @@ impl ARTStorage for MongoARTStorage {
 
     /// return the latest art
     async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
-        info!("Retrieving latest art for chat: {}", chat_id);
+        info!("Retrieving latest art for chat: {chat_id}");
         let art = self
             .arts_collection
             .find_one(doc! {"chat_id": chat_id})
             .await?;
 
         art.ok_or_else(|| {
-            error!("No art found for chat: {}", chat_id);
+            error!("No art found for chat: {chat_id}");
             StorageError::NotFound
         })
     }
 
     /// Return the first art state in the chat
     async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
-        info!("Retrieving initial art for chat: {}", chat_id);
+        info!("Retrieving initial art for chat: {chat_id}");
         let art = self
             .initial_arts_collection
             .find_one(doc! {"chat_id": chat_id})
@@ -265,7 +265,7 @@ impl ARTStorage for MongoARTStorage {
             .await?;
 
         if art.is_none() {
-            error!("No art found for chat: {}", chat_id);
+            error!("No art found for chat: {chat_id}");
             return Err(StorageError::NotFound);
         }
 
