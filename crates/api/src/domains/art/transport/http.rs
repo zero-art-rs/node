@@ -93,43 +93,6 @@ pub async fn get_art(
 }
 
 #[utoipa::path(
-    get,
-    path = "/v1/messenger/initial-art",
-    params(GetInitialARTQuery),
-    tag = "Chat operations"
-)]
-#[instrument(skip(state), err)]
-pub async fn get_initial_art(
-    State(state): State<Arc<Container>>,
-    Query(payload): Query<GetInitialARTQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload.validate()?;
-
-    info!(
-        "Try to retreive initial art for chat {} from the database..",
-        &payload.chat_id
-    );
-    let initial_art_record = state
-        .art_service
-        .get_initial_art(&payload.chat_id)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    info!(
-        "Serialize retrieved art with root_pk_x: {}..",
-        initial_art_record.art.root.public_key.x
-    );
-    let art_bytes = initial_art_record
-        .art
-        .serialize()
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    let encoded_art = BASE64_STANDARD.encode(art_bytes);
-
-    Ok((StatusCode::OK, encoded_art))
-}
-
-#[utoipa::path(
     post,
     path = "/v1/messenger/add-member",
     request_body = AddMemberRequest,

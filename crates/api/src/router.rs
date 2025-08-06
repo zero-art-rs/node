@@ -45,7 +45,6 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes!(messenger_transport::list_messages))
         .routes(routes!(messenger_transport::delete_messages))
         .routes(routes!(art_transport::get_art))
-        .routes(routes!(art_transport::get_initial_art))
         .routes(routes!(art_transport::add_member))
         .routes(routes!(art_transport::remove_member))
         .routes(routes!(art_transport::update_key))

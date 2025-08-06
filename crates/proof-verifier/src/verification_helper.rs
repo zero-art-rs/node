@@ -108,27 +108,6 @@ impl From<RemoveMemberRequest> for VerificationHelper {
     }
 }
 
-impl From<GetInitialARTQuery> for VerificationHelper {
-    fn from(query: GetInitialARTQuery) -> Self {
-        let public_key = CortadoAffine::deserialize_uncompressed(&*query.public_key)
-            .unwrap_or_else(|_| {
-                info!("Failed to deserialize public key");
-                CortadoAffine::default()
-            });
-
-        Self {
-            chat_id: query.chat_id,
-            helper_type: HelperType::InvitePossession {
-                nonce: query.nonce,
-                signature: query.signature,
-                challenge: query.challenge,
-                public_key,
-            },
-            sequence_number: None,
-        }
-    }
-}
-
 impl From<UpdateMetadataRequest> for VerificationHelper {
     fn from(query: UpdateMetadataRequest) -> Self {
         Self {
@@ -177,7 +156,7 @@ impl From<GetMessageQuery> for VerificationHelper {
                 nonce: query.nonce,
                 signature: query.signature,
             },
-            sequence_number: query.sequence_number,
+            sequence_number: query.epoch,
         }
     }
 }
@@ -210,11 +189,19 @@ impl From<GetChangesQuery> for VerificationHelper {
 
 impl From<GetARTQuery> for VerificationHelper {
     fn from(query: GetARTQuery) -> Self {
+        let public_key = CortadoAffine::deserialize_uncompressed(&*query.public_key)
+            .unwrap_or_else(|_| {
+                error!("Failed to deserialize public key");
+                CortadoAffine::default()
+            });
+
         Self {
             chat_id: query.chat_id,
-            helper_type: HelperType::RootKnowledge {
+            helper_type: HelperType::InvitePossession {
                 nonce: query.nonce,
                 signature: query.signature,
+                challenge: query.challenge,
+                public_key,
             },
             sequence_number: query.sequence_number,
         }
@@ -400,9 +387,7 @@ impl VerificationHelper {
         }
 
         if public_key_is_wrong {
-            error!(
-                "The node corresponding to the provided public isn't leaf, or public key is incorrect"
-            );
+            error!("Provided public key isn't correct, or thecorresponding node isn't leaf");
             return Err(VerificationError::InvalidProof);
         }
 
@@ -418,7 +403,7 @@ impl VerificationHelper {
             msg,
         };
 
-        info!("Verifying proof");
+        info!("Verifying proof...");
         let verdict = match callback(proof_verifier_sender, schnorr_signature_message).await? {
             ProofVerifierResult::SchnorrSignature { verdict } => verdict,
             _ => return Err(VerificationError::InvalidResultMessage),
@@ -438,10 +423,13 @@ impl VerificationHelper {
         nonce: &Vec<u8>,
         signature: &[u8],
     ) -> Result<(), VerificationError> {
+        info!("Verifying ownership...");
+        info!("Recompute message...");
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());
         msg.extend(nonce);
 
+        info!("Retrieving owner node (left most leaf)...");
         let mut left_most_leaf = &art.root;
         while let Ok(node) = left_most_leaf.get_left() {
             left_most_leaf = node;
@@ -482,8 +470,6 @@ impl VerificationHelper {
             public_keys: vec![art.root.public_key],
             msg,
         };
-
-        println!("Verifying proof: {:?}", schnorr_signature_message);
 
         let ProofVerifierResult::SchnorrSignature { verdict } =
             callback(proof_verifier_sender, schnorr_signature_message).await?

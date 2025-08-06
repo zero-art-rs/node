@@ -2,18 +2,17 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use types::utils::as_base64;
 
 use crate::container::Container;
 use types::errors::ApiError;
 use uuid::Uuid;
 
-#[derive(Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AuthRequest {
-    #[schema(example = r#"[1]"#)]
     #[serde(with = "as_base64")]
     pub public_key: Vec<u8>,
-    #[schema(example = r#"[1]"#)]
     #[serde(with = "as_base64")]
     pub proof: Vec<u8>,
     #[schema(example = r#"["3fa85f64-5717-4562-b3fc-2c963f66afa6"]"#)]
@@ -41,9 +40,12 @@ pub async fn authenticate(
     State(container): State<Arc<Container>>,
     Json(request): Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
+    info!("Centrifugo auth request received");
     let centrifugo_service = &container.centrifugo_service;
 
+    info!("Generate new token..");
     let token = centrifugo_service.generate_token(&request).await?;
+    info!("Token generated successfully");
 
     let response = AuthResponse { token };
 

@@ -35,21 +35,6 @@ pub struct GetARTQuery {
 
     /// Sequence number of the requested art. If not set, return the latest.
     pub sequence_number: Option<i64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetInitialARTQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
-    /// Serialized proof.
-    #[serde(with = "as_base64")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[serde(with = "as_base64")]
-    pub nonce: Vec<u8>,
 
     /// Server given challenge
     #[serde(with = "as_base64")]

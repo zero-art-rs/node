@@ -1,3 +1,4 @@
+use crate::domains::centrifugo::transport::http::AuthRequest;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
@@ -25,7 +26,7 @@ use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Duration;
 use tracing::info;
-use types::art_schemas::{GetARTQuery, GetInitialARTQuery};
+use types::art_schemas::GetARTQuery;
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::cross_dleq::PedersenBasis;
@@ -146,11 +147,11 @@ async fn test_send_message() -> eyre::Result<()> {
     let centrifugo_token_response = context
         .client
         .post(format!("{}/{}", BACKEND_URL, "centrifugo/auth"))
-        .json(&json!({
-          "chat_ids": [context.chat_uuid.to_string()],
-          "proof": BASE64_STANDARD.encode([1,2,3,4]),
-          "public_key": BASE64_STANDARD.encode([1,2,3,4]),
-        }))
+        .json(&AuthRequest {
+            chat_ids: vec![context.chat_uuid],
+            proof: vec![0],
+            public_key: vec![0],
+        })
         .send()
         .await?;
 
@@ -312,73 +313,6 @@ async fn test_remove_member() -> eyre::Result<()> {
 }
 
 #[tokio::test]
-async fn test_get_initial_art() -> eyre::Result<()> {
-    let mut context = ARTTestContext::new(100).await;
-    for _ in 0..1 {
-        // Get challenge for proof
-        let challenge_response = get_challenge(&mut context).await?;
-        assert_eq!(challenge_response.status(), StatusCode::OK);
-
-        let challenge = BASE64_STANDARD
-            .decode(challenge_response.text().await.unwrap())
-            .unwrap();
-
-        // Second try to get challenge, to test that it is different
-        let challenge2_response = get_challenge(&mut context).await?;
-        assert_eq!(challenge2_response.status(), StatusCode::OK);
-
-        let challenge2 = BASE64_STANDARD
-            .decode(challenge2_response.text().await.unwrap())
-            .unwrap();
-
-        assert_ne!(challenge2, challenge);
-
-        // Create signature
-        let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-
-        let mut msg = Vec::new();
-        msg.extend_from_slice(context.chat_uuid.as_bytes());
-        msg.extend(&nonce);
-        msg.extend(&challenge);
-
-        let pk = vec![context.art.public_key_of(&context.art.secret_key)];
-
-        let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
-        let verification_result = verify(&signature, &pk, &msg);
-        assert!(verification_result.is_ok());
-
-        let mut public_key_bytes = Vec::new();
-        pk[0].serialize_uncompressed(&mut public_key_bytes).unwrap();
-
-        // Send get request
-        let initial_art_response = context
-            .client
-            .get(format!("{}/{}", BACKEND_URL, "v1/messenger/initial-art"))
-            .query(&GetInitialARTQuery {
-                chat_id: context.chat_uuid,
-                signature: signature.clone(),
-                nonce: nonce.clone(),
-                challenge,
-                public_key: public_key_bytes,
-            })
-            .send()
-            .await?;
-
-        assert_eq!(initial_art_response.status(), StatusCode::OK);
-
-        let received_art = PublicART::<ARTGroup>::deserialize(
-            &BASE64_STANDARD
-                .decode(initial_art_response.text().await.unwrap())
-                .unwrap(),
-        )?;
-        assert_eq!(received_art.root, context.art.root);
-        assert_eq!(received_art.generator, context.art.generator);
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
     let mut retrieval_context = context.clone();
@@ -393,7 +327,7 @@ async fn test_get_art() -> eyre::Result<()> {
     }
 
     // Test if retrieval is correct
-    for i in 1..TEST_REPEATS + 1 {
+    for i in 0..TEST_REPEATS {
         let art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
 
         assert_eq!(art_response.status(), StatusCode::OK);
@@ -446,9 +380,6 @@ async fn test_delete_chat() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_update_metadata() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
-    let mut retrieval_context = context.clone();
-    // Update key, to be able to retrieve the latest art (requires previous root knowledge)
-    update_key(&mut context).await?;
 
     for _ in 0..1 {
         let metadata = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
@@ -469,7 +400,7 @@ async fn test_update_metadata() -> eyre::Result<()> {
         let verification_result = verify(&signature, &pk, &msg);
         assert!(verification_result.is_ok());
 
-        // Send get request
+        // Send update metadata request
         let update_metadata = context
             .client
             .put(format!("{}/{}", BACKEND_URL, "v1/messenger/metadata"))
@@ -485,7 +416,7 @@ async fn test_update_metadata() -> eyre::Result<()> {
 
         assert_eq!(update_metadata.status(), StatusCode::NO_CONTENT);
 
-        let art_response = get_art(&mut retrieval_context, None).await?;
+        let art_response = get_art(&mut context, None).await?;
 
         let mut received_art = PublicART::<ARTGroup>::deserialize(
             &BASE64_STANDARD
@@ -744,18 +675,40 @@ async fn get_art(
     context: &mut ARTTestContext,
     sequence_number: Option<i64>,
 ) -> reqwest::Result<reqwest::Response> {
+    // Get challenge for proof
+    let challenge_response = get_challenge(context).await?;
+    assert_eq!(challenge_response.status(), StatusCode::OK);
+
+    let challenge = BASE64_STANDARD
+        .decode(challenge_response.text().await.unwrap())
+        .unwrap();
+
+    // Second try to get challenge, to test that it is different
+    let challenge2_response = get_challenge(context).await?;
+    assert_eq!(challenge2_response.status(), StatusCode::OK);
+
+    let challenge2 = BASE64_STANDARD
+        .decode(challenge2_response.text().await.unwrap())
+        .unwrap();
+
+    assert_ne!(challenge2, challenge);
+
+    // Create signature
     let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
 
     let mut msg = Vec::new();
     msg.extend_from_slice(context.chat_uuid.as_bytes());
     msg.extend(&nonce);
+    msg.extend(&challenge);
 
-    let tk = context.art.recompute_root_key().unwrap().key;
-    let pk = vec![context.art.root.public_key];
+    let pk = vec![context.art.public_key_of(&context.art.secret_key)];
 
-    let signature = sign(&vec![tk], &pk, &msg).unwrap();
+    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
     let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
+
+    let mut public_key_bytes = Vec::new();
+    pk[0].serialize_uncompressed(&mut public_key_bytes).unwrap();
 
     context
         .client
@@ -765,6 +718,8 @@ async fn get_art(
             signature,
             nonce,
             sequence_number,
+            challenge,
+            public_key: public_key_bytes,
         })
         .send()
         .await

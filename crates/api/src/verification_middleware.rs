@@ -9,8 +9,8 @@ use proof_verifier::VerificationHelper;
 use std::sync::Arc;
 use tracing::{error, info};
 use types::art_schemas::{
-    AddMemberRequest, DeleteChatQuery, GetARTQuery, GetChangesQuery, GetInitialARTQuery,
-    RemoveMemberRequest, UpdateKeyRequest, UpdateMetadataRequest,
+    AddMemberRequest, DeleteChatQuery, GetARTQuery, GetChangesQuery, RemoveMemberRequest,
+    UpdateKeyRequest, UpdateMetadataRequest,
 };
 use types::errors::ApiError;
 use types::errors::VerificationError;
@@ -144,7 +144,7 @@ async fn verify_get_query(
                 VerificationHelper::from(serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?);
             let art = state
                 .art_service
-                .get_previous_art(&helper.chat_id, helper.sequence_number)
+                .get_art(&helper.chat_id, helper.sequence_number)
                 .await?
                 .art;
             (helper, art)
@@ -160,33 +160,16 @@ async fn verify_get_query(
                 .art;
             (helper, art)
         }
-        "/v1/messenger/initial-art" => {
-            let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<
-                GetInitialARTQuery,
-            >(query_bytes)?);
-
-            match helper.helper_type.get_challenge() {
-                Some(challenge) => {
-                    if !state.challenges.write().await.remove(challenge) {
-                        return Err(VerificationError::NoChallenge);
-                    }
-                }
-                None => return Err(VerificationError::NoChallenge),
-            }
-
-            let art = state
-                .art_service
-                .get_initial_art(&helper.chat_id)
-                .await?
-                .art;
-            (helper, art)
-        }
         // Message
         "/v1/messenger/messages" => {
             let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<GetMessageQuery>(
                 query_bytes,
             )?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
+            let art = state
+                .art_service
+                .get_art(&helper.chat_id, helper.sequence_number)
+                .await?
+                .art;
             (helper, art)
         }
         _ => {
