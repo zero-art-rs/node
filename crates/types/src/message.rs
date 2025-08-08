@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
 use mongodb::{
-    bson::{doc},
+    bson::doc,
     change_stream::{ChangeStream, event::ChangeStreamEvent},
 };
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::sync::mpsc;
@@ -30,12 +30,7 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn new(
-        content: Vec<u8>,
-        sequence_number: i64,
-        epoch: u32,
-        chat_id: Option<Uuid>,
-    ) -> Self {
+    pub fn new(content: Vec<u8>, sequence_number: i64, epoch: u32, chat_id: Option<Uuid>) -> Self {
         Self {
             content,
             created_at: Utc::now(),
@@ -56,10 +51,7 @@ impl fmt::Display for Message {
         write!(
             f,
             "[content: \"{}\", id: {}, time: {}, epoch: {}]",
-            content_str,
-            self.sequence_number,
-            self.created_at,
-            self.epoch
+            content_str, self.sequence_number, self.created_at, self.epoch
         )
     }
 }

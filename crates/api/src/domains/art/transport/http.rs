@@ -11,6 +11,7 @@ use axum::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, serde_as};
 use std::sync::Arc;
 use tracing::{info, instrument};
 use utoipa::{IntoParams, ToSchema};
@@ -179,7 +180,7 @@ pub async fn add_member(
         BranchChangesType::AppendNode(_) => {
             state
                 .art_service
-                .update_art(payload.chat_id, &branch_changes)
+                .update_art(payload.chat_id, &branch_changes, None, None)
                 .await
                 .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
         }
@@ -230,7 +231,7 @@ pub async fn remove_member(
         BranchChangesType::MakeBlank(_, _) => {
             state
                 .art_service
-                .update_art(payload.chat_id, &branch_changes)
+                .update_art(payload.chat_id, &branch_changes, None, None)
                 .await
                 .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
         }
@@ -246,17 +247,38 @@ pub async fn remove_member(
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateMetadataRequest {}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateKey {
     /// Serialised BranchChanges:UpdateKeys structure
     #[schema(
         example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
     )]
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     branch_changes: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
     #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
     pub chat_id: Uuid,
+
+    /// Optional new user metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
+    #[schema(
+        example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
+    )]
+    metadata: Option<Vec<u8>>,
+
+    /// Additional data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
+    #[schema(
+        example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
+    )]
+    payload: Option<Vec<u8>>,
 }
 
 #[utoipa::path(
@@ -281,7 +303,12 @@ pub async fn update_key(
         BranchChangesType::UpdateKey => {
             state
                 .art_service
-                .update_art(payload.chat_id, &branch_changes)
+                .update_art(
+                    payload.chat_id,
+                    &branch_changes,
+                    payload.metadata,
+                    payload.payload,
+                )
                 .await
                 .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
         }

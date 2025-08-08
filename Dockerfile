@@ -14,15 +14,15 @@ COPY crates crates/
 COPY apps apps/
 
 # Build main application with SSH mount for git authentication
-RUN --mount=type=ssh cargo build --release -p node \
+RUN --mount=type=ssh cargo build --release -p zk-messenger-node \
 	&& mkdir out \
-	&& cp target/release/node out/ \
-	&& strip out/node
+	&& cp target/release/zk-messenger-node out/ \
+	&& strip out/zk-messenger-node
 
 FROM alpine:3.20
 
 RUN apk add --no-cache libgcc openssl postgresql-client
 
-COPY --from=builder /opt/out/node /bin/node
+COPY --from=builder /opt/out/zk-messenger-node /bin/zk-messenger-node
 
-CMD ["/bin/node", "run", "--config", "/config.toml"]
+CMD ["/bin/zk-messenger-node", "run", "--config", "/config.toml"]
