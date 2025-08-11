@@ -82,9 +82,7 @@ pub async fn get_art(
         .serialize()
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    let encoded_art = BASE64_STANDARD.encode(art_bytes);
-
-    Ok((StatusCode::OK, encoded_art))
+    Ok((StatusCode::OK, BASE64_STANDARD.encode(art_bytes)))
 }
 
 #[utoipa::path(
@@ -160,7 +158,13 @@ pub async fn update_key(
 
     state
         .art_service
-        .update_key(&payload.chat_id, &branch_changes, &payload.proof)
+        .update_key(
+            &payload.chat_id,
+            &branch_changes,
+            payload.metadata,
+            payload.payload,
+            &payload.proof,
+        )
         .await?;
 
     state.stop_updating(payload.chat_id).await;
@@ -234,26 +238,4 @@ pub async fn get_challenge(
     lock.insert(challenge.clone());
 
     Ok((StatusCode::OK, BASE64_STANDARD.encode(challenge)))
-}
-
-#[utoipa::path(
-    put,
-    path = "/v1/messenger/metadata",
-    request_body = UpdateMetadataRequest,
-    tag = "Chat operations"
-)]
-#[instrument(skip(state), err)]
-pub async fn update_metadata(
-    State(state): State<Arc<Container>>,
-    Json(payload): Json<UpdateMetadataRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    info!("Update metadata: {:?}", payload);
-    payload.validate()?;
-
-    state
-        .art_service
-        .update_metadata(payload.chat_id, payload.metadata, payload.index)
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
 }

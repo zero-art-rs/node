@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 use types::art_schemas::{
     AddMemberRequest, DeleteChatQuery, GetARTQuery, GetChangesQuery, RemoveMemberRequest,
-    UpdateKeyRequest, UpdateMetadataRequest,
+    UpdateKeyRequest,
 };
 use types::errors::ApiError;
 use types::errors::VerificationError;
@@ -80,7 +80,6 @@ async fn route_by_method_and_verify(
                 .as_bytes();
             verify_delete_query(state.clone(), url_path, query_bytes).await
         }
-        Method::PUT => verify_put_request(state.clone(), url_path, body_bytes).await,
         _ => Err(VerificationError::UnsupportedMethod),
     }
     .map_err(ApiError::from)
@@ -199,28 +198,6 @@ async fn verify_delete_query(
             let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<
                 DeleteMessageQuery,
             >(query_bytes)?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
-            (helper, art)
-        }
-        _ => {
-            error!("ERROR: Unknown request occurred");
-            return Err(VerificationError::UnknownEndpoint);
-        }
-    };
-
-    helper.verify(&art, &state.proof_verifier_sender).await
-}
-
-async fn verify_put_request(
-    state: Arc<Container>,
-    url_path: &str,
-    body_bytes: &[u8],
-) -> Result<(), VerificationError> {
-    let (helper, art) = match url_path {
-        "/v1/messenger/metadata" => {
-            let helper = VerificationHelper::from(serde_json::from_slice::<UpdateMetadataRequest>(
-                body_bytes,
-            )?);
             let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
             (helper, art)
         }

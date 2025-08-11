@@ -223,10 +223,15 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
         proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::UpdateKey => self.update_art(chat_id, changes, proof).await,
+            BranchChangesType::UpdateKey => {
+                self.update_art(chat_id, changes, metadata, payload, proof)
+                    .await
+            }
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -238,7 +243,9 @@ impl ARTService {
         proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::AppendNode => self.update_art(chat_id, changes, proof).await,
+            BranchChangesType::AppendNode => {
+                self.update_art(chat_id, changes, None, None, proof).await
+            }
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -250,7 +257,9 @@ impl ARTService {
         proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::MakeBlank => self.update_art(chat_id, changes, proof).await,
+            BranchChangesType::MakeBlank => {
+                self.update_art(chat_id, changes, None, None, proof).await
+            }
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -295,11 +304,18 @@ impl ARTService {
         session
             .start_transaction()
             .and_run(
-                (chat_id, changes, proof),
-                |session, (chat_id, changes, proof)| {
+                (chat_id, changes, metadata, payload, proof),
+                |session, (chat_id, changes, metadata, payload, proof)| {
                     async move {
-                        self.update_art_callback(session, chat_id, changes, proof)
-                            .await
+                        self.update_art_callback(
+                            session,
+                            chat_id,
+                            changes,
+                            metadata.clone(),
+                            payload.clone(),
+                            proof,
+                        )
+                        .await
                     }
                     .boxed()
                 },
@@ -330,19 +346,26 @@ impl ARTService {
         session: &mut ClientSession,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
-        metadata: &Option<Vec<u8>>,
-        payload: &Option<Vec<u8>>,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
         proof: &Vec<u8>,
     ) -> Result<(), mongodb::error::Error> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let art_changes_storage = MongoARTChangesStorage::get_existing_collection(chat_id).await?;
 
         arts_storage
-            .update_art_in_session(session, changes.clone(), *chat_id)
+            .update_art_in_session(session, changes.clone(), *chat_id, metadata.clone())
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone(), *chat_id, proof.clone())
+            .push_change(
+                session,
+                changes.clone(),
+                *chat_id,
+                metadata,
+                payload,
+                proof.clone(),
+            )
             .await?;
 
         Ok(())

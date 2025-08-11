@@ -7,7 +7,8 @@ use ark_std::{
     rand::prelude::StdRng,
     rand::{SeedableRng, thread_rng},
 };
-use art::traits::{ARTPrivateAPI, ARTPublicAPI, ARTPublicView};
+use art::errors::ARTError;
+use art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
 use art::types::{NodeIndex, NodeIterWithPath, PrivateART, PublicART};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use bulletproofs::{BulletproofGens, PedersenGens};
@@ -18,12 +19,15 @@ use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use hyper::Response;
 use jsonwebtoken::errors::ErrorKind::Base64;
+use rand::{Rng, random};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
+use std::iter::Skip;
 use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::info;
-use types::art_schemas::GetARTQuery;
+use types::ARTChangesRecord;
+use types::art_schemas::*;
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
@@ -95,7 +99,6 @@ struct ARTTestContext {
     pub initial_secrets: Vec<ARTScalarField>,
     pub rng: StdRng,
     pub chat_uuid: Uuid,
-    pub gens: BulletproofGens,
     pub basis: PedersenBasis<CortadoAffine, Ed25519Affine>,
 }
 
@@ -122,7 +125,6 @@ impl ARTTestContext {
             initial_secrets: secrets,
             rng,
             chat_uuid,
-            gens: get_bulletproof_gens(),
             basis: get_pedersen_basis(),
         }
     }
@@ -131,6 +133,22 @@ impl ARTTestContext {
         Ok(NodeIndex::get_index_from_path(
             &self.art.node_index.get_path()?,
         )?)
+    }
+
+    pub fn derive_new(&self, index: u32) -> Result<Self, ARTError> {
+        let (mut art, _) =
+            PrivateART::new_art_from_secrets(&self.initial_secrets, &CortadoAffine::generator())?;
+        art.secret_key = self.initial_secrets[index as usize].clone();
+        art.update_node_index();
+
+        Ok(Self {
+            client: reqwest::Client::new(),
+            art,
+            initial_secrets: self.initial_secrets.clone(),
+            rng: self.rng.clone(),
+            chat_uuid: self.chat_uuid,
+            basis: get_pedersen_basis(),
+        })
     }
 }
 
@@ -241,14 +259,42 @@ async fn test_send_message() -> eyre::Result<()> {
 }
 
 #[tokio::test]
-async fn test_key_update() -> eyre::Result<()> {
+async fn test_key_and_metadata_update() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
+    let mut test_context = context.derive_new(2)?;
 
-    for _ in 0..TEST_REPEATS {
-        let key_update_response = update_key(&mut context).await?;
+    for i in 0..TEST_REPEATS {
+        let metadata = Some((0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>());
+        let payload = Some((0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>());
 
+        let key_update_response =
+            update_key(&mut context, metadata.clone(), payload.clone()).await?;
         assert_eq!(key_update_response.status(), StatusCode::OK);
+
+        let changes_response = get_changes(&mut test_context, 1000, i as u32).await?;
+        assert_eq!(changes_response.status(), StatusCode::OK);
+
+        let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(&changes_response.bytes().await?)?;
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].metadata, metadata);
+        assert_eq!(changes[0].payload, payload);
+
+        test_context.art.update_public_art(&changes[0].changes)?;
     }
+
+    // use None instead of some to use old metadata
+    let key_update_response = update_key(&mut context, None, None).await?;
+    assert_eq!(key_update_response.status(), StatusCode::OK);
+
+    let changes_response = get_changes(&mut test_context, 1000, TEST_REPEATS as u32).await?;
+    assert_eq!(changes_response.status(), StatusCode::OK);
+
+    let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(&changes_response.bytes().await?)?;
+
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].metadata, None);
+    assert_eq!(changes[0].payload, None);
 
     Ok(())
 }
@@ -283,7 +329,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_remove_member() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
-    let mut retrieval_context = context.clone();
+    let mut retrieval_context = context.derive_new(2)?;
 
     for i in 1..TEST_REPEATS + 1 {
         // skip the root node
@@ -312,12 +358,12 @@ async fn test_remove_member() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
-    let mut retrieval_context = context.clone();
+    let mut retrieval_context = context.derive_new(2)?;
     let mut art_roots = vec![context.art.root.public_key];
 
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
-        let key_update_response = update_key(&mut context).await?;
+        let key_update_response = update_key(&mut context, None, None).await?;
         art_roots.push(context.art.root.public_key);
 
         assert_eq!(key_update_response.status(), StatusCode::OK);
@@ -374,68 +420,6 @@ async fn test_delete_chat() -> eyre::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_update_metadata() -> eyre::Result<()> {
-    let mut context = ARTTestContext::new(100).await;
-
-    for _ in 0..1 {
-        let metadata = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-
-        // Create signature
-        let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
-        let index =
-            NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
-
-        let mut msg = Vec::new();
-        msg.extend_from_slice(context.chat_uuid.as_bytes());
-        msg.extend(&nonce);
-        msg.extend(index.to_le_bytes());
-
-        let pk = vec![context.art.public_key_of(&context.art.secret_key)];
-
-        let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
-        let verification_result = verify(&signature, &pk, &msg);
-        assert!(verification_result.is_ok());
-
-        // Send update metadata request
-        let update_metadata = context
-            .client
-            .put(format!("{}/{}", BACKEND_URL, "v1/messenger/metadata"))
-            .json(&json!({
-                "chatId": context.chat_uuid,
-                "index": index,
-                "signature": BASE64_STANDARD.encode(&signature),
-                "nonce": BASE64_STANDARD.encode(&nonce),
-                "metadata": BASE64_STANDARD.encode(&metadata),
-            }))
-            .send()
-            .await?;
-
-        assert_eq!(update_metadata.status(), StatusCode::NO_CONTENT);
-
-        let art_response = get_art(&mut context, None).await?;
-
-        let mut received_art = PublicART::<ARTGroup>::deserialize(
-            &BASE64_STANDARD
-                .decode(art_response.text().await.unwrap())
-                .unwrap(),
-        )?;
-
-        assert_eq!(received_art.root, context.art.root);
-        assert_eq!(received_art.generator, context.art.generator);
-        assert_eq!(
-            received_art
-                .get_node(&NodeIndex::Index(index))?
-                .metadata
-                .clone()
-                .unwrap(),
-            metadata
-        );
-    }
-
-    Ok(())
-}
-
 async fn crate_new_chat(art: PublicART<ARTGroup>, is_private: bool) -> eyre::Result<Uuid> {
     let chat_id = Uuid::now_v7();
     let client = reqwest::Client::new();
@@ -471,7 +455,11 @@ fn get_bulletproof_gens() -> BulletproofGens {
 }
 
 // update key in art, and send updates to the chat
-async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
+async fn update_key(
+    context: &mut ARTTestContext,
+    metadata: Option<Vec<u8>>,
+    payload: Option<Vec<u8>>,
+) -> reqwest::Result<reqwest::Response> {
     let secret_key = context.art.secret_key.clone();
     let new_secret_key = ARTScalarField::rand(&mut context.rng);
 
@@ -503,6 +491,7 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         blindings,
     )
     .unwrap();
+
     let verification_result = art_verify(
         context.basis.clone(),
         associated_data.as_slice(),
@@ -530,11 +519,18 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
     context
         .client
         .post(format!("{}/{}", BACKEND_URL, "v1/messenger/update-key"))
-        .json(&json!({
-          "branchChanges": BASE64_STANDARD.encode(key_update_changes_bytes),
-          "chatId": context.chat_uuid,
-          "proof": BASE64_STANDARD.encode(proof_bytes),
-        }))
+        // .json(&json!({
+        //   "branchChanges": BASE64_STANDARD.encode(key_update_changes_bytes),
+        //   "chatId": context.chat_uuid,
+        //   "proof": BASE64_STANDARD.encode(proof_bytes),
+        // }))
+        .json(&UpdateKeyRequest {
+            branch_changes: key_update_changes_bytes,
+            proof: proof_bytes,
+            chat_id: context.chat_uuid,
+            metadata,
+            payload,
+        })
         .send()
         .await
 }
@@ -809,6 +805,37 @@ async fn get_initial_art(mut context: &mut ARTTestContext) -> reqwest::Result<re
             "index": index,
             "nonce": BASE64_STANDARD.encode(&nonce),
         }))
+        .send()
+        .await
+}
+
+async fn get_changes(
+    mut context: &mut ARTTestContext,
+    limit: u32,
+    skip: u32,
+) -> reqwest::Result<reqwest::Response> {
+    let tk = context.art.recompute_root_key().unwrap().key;
+    let pk = context.art.root.public_key;
+
+    let mut msg = Vec::new();
+    let nonce = (0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>();
+    msg.extend_from_slice(context.chat_uuid.as_bytes());
+    msg.extend(&nonce);
+
+    let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
+
+    assert!(verify(&signature, &vec![pk], &msg).is_ok());
+
+    context
+        .client
+        .get(format!("{}/{}", BACKEND_URL, "v1/messenger/changes"))
+        .query(&GetChangesQuery {
+            chat_id: context.chat_uuid,
+            signature,
+            nonce,
+            limit: limit as i64,
+            skip: skip as i64,
+        })
         .send()
         .await
 }

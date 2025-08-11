@@ -109,20 +109,6 @@ impl From<RemoveMemberRequest> for VerificationHelper {
     }
 }
 
-impl From<UpdateMetadataRequest> for VerificationHelper {
-    fn from(query: UpdateMetadataRequest) -> Self {
-        Self {
-            chat_id: query.chat_id,
-            helper_type: HelperType::LeafKnowledge {
-                nonce: query.nonce,
-                index: query.index,
-                signature: query.signature,
-            },
-            sequence_number: None,
-        }
-    }
-}
-
 impl From<DeleteChatQuery> for VerificationHelper {
     fn from(query: DeleteChatQuery) -> Self {
         Self {
@@ -280,8 +266,6 @@ impl VerificationHelper {
         };
 
         info!("Verify the proof..");
-        // let path = branch_changes.public_keys.iter().cloned().rev().collect();
-        // let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
         let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
 
         let mut associated_data = Vec::new();

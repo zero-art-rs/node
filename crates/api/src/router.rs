@@ -50,7 +50,6 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes!(art_transport::update_key))
         .routes(routes!(art_transport::get_changes))
         .routes(routes!(art_transport::delete_chat))
-        .routes(routes!(art_transport::update_metadata))
         .layer(middleware::from_fn_with_state(
             container,
             verification_middleware,

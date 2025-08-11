@@ -101,7 +101,6 @@ impl ARTStorage for MongoARTStorage {
             .session(session)
             .await?;
 
-        info!("Art deleted successfully");
         Ok(())
     }
 
@@ -118,7 +117,6 @@ impl ARTStorage for MongoARTStorage {
             .session(session)
             .await?;
 
-        info!("Initial art deleted successfully");
         Ok(())
     }
 
@@ -189,6 +187,7 @@ impl ARTStorage for MongoARTStorage {
             art_record.sequence_number += 1;
 
             if let Some(metadata) = metadata {
+                info!("Update user metadata");
                 art_record
                     .art
                     .get_mut_node(&changes.node_index)
@@ -200,7 +199,6 @@ impl ARTStorage for MongoARTStorage {
                 .find_one_and_replace(filter, art_record)
                 .session(session)
                 .await?;
-            info!("Art updated successfully");
         } else {
             error!("Art not found");
             return Err(mongodb::error::Error::from(std::io::Error::other(
@@ -223,9 +221,6 @@ impl ARTStorage for MongoARTStorage {
             .is_none()
         {
             self.initial_arts_collection.drop().await?;
-            info!("Collection dropped successfully");
-        } else {
-            info!("Failed to drop collection. It isn't empty");
         }
 
         Ok(())
