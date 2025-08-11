@@ -17,7 +17,7 @@ cortado = { workspace = true }
 zk = { workspace = true }
 zkp = { workspace = true }
 crypto = { workspace = true }
-uuid = { version = "1.17.0", features = ["v4"] }
+uuid = { workspace = true, features = ["v4"] }
 serde = { workspace = true }
 art = { workspace = true }
 validator = { workspace = true }

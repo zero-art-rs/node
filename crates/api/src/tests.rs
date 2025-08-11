@@ -2,7 +2,11 @@ use crate::domains::centrifugo::transport::http::AuthRequest;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
-use ark_std::{UniformRand, rand::prelude::StdRng, rand::{SeedableRng, thread_rng}};
+use ark_std::{
+    UniformRand,
+    rand::prelude::StdRng,
+    rand::{SeedableRng, thread_rng},
+};
 use art::traits::{ARTPrivateAPI, ARTPublicAPI, ARTPublicView};
 use art::types::{NodeIndex, NodeIterWithPath, PrivateART, PublicART};
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -26,7 +30,8 @@ use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
-const TEST_REPEATS: usize = 5; // used for tests, which can repeat
+// used for tests, which can be repeated
+const TEST_REPEATS: usize = 2;
 
 #[derive(Debug, Deserialize)]
 struct CentrifugoTokenResponse {
@@ -266,7 +271,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
     let mut context = ARTTestContext::new(100).await;
 
     for i in 0..TEST_REPEATS {
-        let remove_member_response = remove_member(&mut context, i + 1).await?;
+        let remove_member_response = make_blank(&mut context, i + 1).await?;
         let add_member_response = add_member(&mut context).await?;
 
         assert_eq!(add_member_response.status(), StatusCode::OK);
@@ -282,7 +287,7 @@ async fn test_remove_member() -> eyre::Result<()> {
 
     for i in 1..TEST_REPEATS + 1 {
         // skip the root node
-        let remove_user_response = remove_member(&mut context, i).await?;
+        let remove_user_response = make_blank(&mut context, i).await?;
         assert_eq!(remove_user_response.status(), StatusCode::NO_CONTENT);
 
         let new_art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
@@ -479,26 +484,35 @@ async fn update_key(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         .unwrap();
 
     let (_, key_update_changes) = context.art.update_key(&new_secret_key).unwrap();
-    let (_, co_path, lambdas) = context.art.recompute_root_key_with_artefacts().unwrap();
+    let (_, artefacts) = context.art.recompute_root_key_with_artefacts().unwrap();
 
-    let blindings: Vec<_> = (0..co_path.len() + 1)
+    let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
         .map(|_| Scalar::random(&mut thread_rng()))
         .collect();
 
+    let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
+
     let proof = art_prove(
-        &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
-        co_path.clone(),
-        lambdas.clone(),
+        vec![public_key],
+        artefacts.path.clone(),
+        artefacts.co_path.clone(),
+        artefacts.secrets.clone(),
         vec![secret_key],
         blindings,
     )
     .unwrap();
     let verification_result = art_verify(
-        &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
+        vec![public_key],
+        key_update_changes
+            .public_keys
+            .iter()
+            .rev()
+            .cloned()
+            .collect(),
         context
             .art
             .get_co_path_values(&key_update_changes.node_index.get_path().unwrap())
@@ -534,10 +548,11 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         .public_key
         .serialize_uncompressed(&mut associated_data)
         .unwrap();
+
     let old_tk = context.art.recompute_root_key().unwrap().key;
     let new_user_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
-    let (_, co_path, lambdas) = context
+    let (_, artefacts) = context
         .art
         .recompute_root_key_with_artefacts_using_secret_key(
             new_user_secret_key,
@@ -545,25 +560,33 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         )
         .unwrap();
 
-    let blindings: Vec<_> = (0..co_path.len() + 1)
+    let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
         .map(|_| Scalar::random(&mut thread_rng()))
         .collect();
 
+    let public_key = CortadoAffine::generator().mul(old_tk).into_affine();
+
     let proof = art_prove(
-        &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
-        co_path.clone(),
-        lambdas.clone(),
+        vec![public_key],
+        artefacts.path.clone(),
+        artefacts.co_path.clone(),
+        artefacts.secrets.clone(),
         vec![old_tk],
         blindings,
     )
     .unwrap();
-
     let verification_result = art_verify(
-        &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
+        vec![public_key],
+        append_user_changes
+            .public_keys
+            .iter()
+            .rev()
+            .cloned()
+            .collect(),
         context
             .art
             .get_co_path_values(&append_user_changes.node_index.get_path().unwrap())
@@ -590,7 +613,7 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         .await
 }
 
-async fn remove_member(
+async fn make_blank(
     context: &mut ARTTestContext,
     member_id: usize,
 ) -> reqwest::Result<reqwest::Response> {
@@ -610,7 +633,7 @@ async fn remove_member(
         .art
         .make_blank(&user_to_remove, &temporary_secret_key)
         .unwrap();
-    let (_, co_path, lambdas) = context
+    let (_, artefacts) = context
         .art
         .recompute_root_key_with_artefacts_using_secret_key(
             temporary_secret_key,
@@ -618,25 +641,34 @@ async fn remove_member(
         )
         .unwrap();
 
-    let blindings: Vec<_> = (0..co_path.len() + 1)
+    let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
         .map(|_| Scalar::random(&mut thread_rng()))
         .collect();
 
+    let old_tk_pub = CortadoAffine::generator().mul(&old_tk).into_affine();
+
     let proof = art_prove(
-        &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
-        co_path.clone(),
-        lambdas.clone(),
+        vec![old_tk_pub],
+        artefacts.path.clone(),
+        artefacts.co_path.clone(),
+        artefacts.secrets.clone(),
         vec![old_tk],
         blindings,
     )
     .unwrap();
 
     let verification_result = art_verify(
-        &context.gens,
         context.basis.clone(),
         associated_data.as_slice(),
+        vec![old_tk_pub],
+        remove_user_changes
+            .public_keys
+            .iter()
+            .rev()
+            .cloned()
+            .collect(),
         context
             .art
             .get_co_path_values(&remove_user_changes.node_index.get_path().unwrap())

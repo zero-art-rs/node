@@ -1,12 +1,12 @@
 use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
-use tracing::info;
 use mongodb::{
     bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
     options::IndexOptions,
     Collection, IndexModel,
 };
+use tracing::info;
 use types::Message;
 use uuid::Uuid;
 

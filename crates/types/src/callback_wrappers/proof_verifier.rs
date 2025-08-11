@@ -4,9 +4,11 @@ use cortado::CortadoAffine;
 #[derive(Debug, Clone)]
 pub enum ProofVerifierMessage {
     ArtUpdate {
-        proof: Vec<u8>,
-        co_path: Vec<CortadoAffine>,
         associated_data: Vec<u8>,
+        aux_public_keys: Vec<CortadoAffine>,
+        path: Vec<CortadoAffine>,
+        co_path: Vec<CortadoAffine>,
+        proof: Vec<u8>,
     },
     SchnorrSignature {
         signature: Vec<u8>,

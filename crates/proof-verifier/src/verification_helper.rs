@@ -56,7 +56,7 @@ impl HelperType {
     }
 
     pub fn set_challenge(&mut self, new_challenge: Vec<u8>) {
-        if let Self::InvitePossession { challenge, .. } = self{
+        if let Self::InvitePossession { challenge, .. } = self {
             *challenge = new_challenge;
         }
     }
@@ -270,22 +270,20 @@ impl VerificationHelper {
         let branch_changes = BranchChanges::<CortadoAffine>::deserialize(branch_changes)?;
 
         info!("Check aux keys correctness..");
-        match branch_changes.change_type {
-            BranchChangesType::UpdateKey => Self::check_auxiliary_public_keys(
-                proof,
-                vec![art.get_node(&branch_changes.node_index)?.public_key],
-            )?,
-            BranchChangesType::AppendNode(_) => {
-                Self::check_auxiliary_public_keys(proof, vec![art.root.public_key])?
+        let aux_public_keys = match branch_changes.change_type {
+            BranchChangesType::UpdateKey => {
+                vec![art.get_node(&branch_changes.node_index)?.public_key]
             }
-            BranchChangesType::MakeBlank(_, _) => {
-                Self::check_auxiliary_public_keys(proof, vec![art.root.public_key])?
-            }
+            BranchChangesType::AppendNode => vec![art.root.public_key],
+            BranchChangesType::MakeBlank => vec![art.root.public_key],
             _ => return Err(VerificationError::UnsupportedOperation),
         };
 
         info!("Verify the proof..");
-        let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
+        // let path = branch_changes.public_keys.iter().cloned().rev().collect();
+        // let co_path = art.get_co_path_values(&branch_changes.node_index.get_path()?)?;
+        let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
+
         let mut associated_data = Vec::new();
         art.root
             .public_key
@@ -293,8 +291,10 @@ impl VerificationHelper {
 
         let key_update_message = ProofVerifierMessage::ArtUpdate {
             proof: proof.to_vec(),
-            co_path,
+            co_path: verification_artefacts.co_path,
             associated_data,
+            aux_public_keys,
+            path: verification_artefacts.path,
         };
 
         let ProofVerifierResult::ArtUpdate { verdict } =
@@ -310,26 +310,6 @@ impl VerificationHelper {
         Ok(())
     }
 
-    /// Deserializes and checks if auxiliary public key is correct,
-    fn check_auxiliary_public_keys(
-        proof: &[u8],
-        new_r: Vec<CortadoAffine>,
-    ) -> Result<(), VerificationError> {
-        let proof_r = ARTProof::deserialize_uncompressed(proof.reader())?.R;
-
-        if proof_r.len() != new_r.len() {
-            return Err(VerificationError::InvalidProof);
-        }
-
-        for (a, b) in proof_r.iter().zip(new_r.iter()) {
-            if a != b {
-                return Err(VerificationError::InvalidProof);
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn verify_leaf_knowledge(
         &self,
         art: &PublicART<CortadoAffine>,
@@ -338,7 +318,6 @@ impl VerificationHelper {
         index: u32,
         signature: &[u8],
     ) -> Result<(), VerificationError> {
-        let art = art.clone();
         // Check if provided index maps to leaf node
         let leaf = art.get_node(&NodeIndex::Index(index))?;
         if !leaf.is_leaf() {

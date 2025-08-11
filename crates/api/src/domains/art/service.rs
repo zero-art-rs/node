@@ -238,7 +238,7 @@ impl ARTService {
         proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::AppendNode(_) => self.update_art(chat_id, changes, proof).await,
+            BranchChangesType::AppendNode => self.update_art(chat_id, changes, proof).await,
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }
@@ -250,7 +250,7 @@ impl ARTService {
         proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         match changes.change_type {
-            BranchChangesType::MakeBlank(_, _) => self.update_art(chat_id, changes, proof).await,
+            BranchChangesType::MakeBlank => self.update_art(chat_id, changes, proof).await,
             _ => Err(ARTServiceError::InvalidChangeType),
         }
     }

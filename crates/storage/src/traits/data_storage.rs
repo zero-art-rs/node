@@ -1,9 +1,9 @@
 use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
+use mongodb::{bson::Document, ClientSession, Collection};
+use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
-use mongodb::{ClientSession, Collection, bson::Document};
-use serde::{Serialize, de::DeserializeOwned};
 
 #[async_trait::async_trait]
 pub trait DataStorage: Send + Sync {
