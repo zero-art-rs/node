@@ -41,6 +41,7 @@ pub trait ARTStorage: Send + Sync {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
+        metadata: Option<Vec<u8>>,
     ) -> Result<(), mongodb::error::Error>;
 
     /// Drop initial_arts_collection and/or arts_collection if empty

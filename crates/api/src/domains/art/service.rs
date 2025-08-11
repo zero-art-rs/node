@@ -273,6 +273,8 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
         proof: &Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
@@ -328,6 +330,8 @@ impl ARTService {
         session: &mut ClientSession,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,
+        metadata: &Option<Vec<u8>>,
+        payload: &Option<Vec<u8>>,
         proof: &Vec<u8>,
     ) -> Result<(), mongodb::error::Error> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;

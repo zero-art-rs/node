@@ -12,6 +12,8 @@ pub trait ARTChangesStorage: Send + Sync + DataStorage {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
         proof_record: Vec<u8>,
     ) -> Result<(), mongodb::error::Error>;
 }

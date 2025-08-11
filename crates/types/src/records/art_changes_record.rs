@@ -19,6 +19,8 @@ where
     pub sequence_number: i64,
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Uuid,
+    pub metadata: Option<Vec<u8>>,
+    pub payload: Option<Vec<u8>>,
     /// Correctness proof
     pub proof: Vec<u8>,
 }
@@ -33,6 +35,8 @@ pub struct ARTChangesOutboxRecord {
     pub sequence_number: i64,
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Uuid,
+    pub metadata: Option<Vec<u8>>,
+    pub payload: Option<Vec<u8>>,
     /// Correctness proof
     pub proof: Vec<u8>,
 }
@@ -45,6 +49,8 @@ where
         data: BranchChanges<G>,
         sequence_number: i64,
         chat_id: Uuid,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
         proof: Vec<u8>,
     ) -> Self {
         Self {
@@ -52,18 +58,29 @@ where
             created_at: Utc::now(),
             sequence_number,
             chat_id,
+            metadata,
+            payload,
             proof,
         }
     }
 }
 
 impl ARTChangesOutboxRecord {
-    pub fn new(data: Vec<u8>, sequence_number: i64, chat_id: Uuid, proof: Vec<u8>) -> Self {
+    pub fn new(
+        data: Vec<u8>,
+        sequence_number: i64,
+        chat_id: Uuid,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
+        proof: Vec<u8>
+    ) -> Self {
         Self {
             data,
             created_at: Utc::now(),
             sequence_number,
             chat_id,
+            metadata,
+            payload,
             proof,
         }
     }
