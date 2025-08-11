@@ -141,6 +141,8 @@ impl ARTService {
         &self,
         chat_id: Uuid,
         changes: &BranchChanges<ARTGroup>,
+        metadata: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         if arts_storage.get_art(chat_id).await?.is_private {
@@ -159,9 +161,16 @@ impl ARTService {
 
         session
             .start_transaction()
-            .and_run((chat_id, changes), |session, (chat_id, changes)| {
-                async move { self.update_art_callback(session, *chat_id, changes).await }.boxed()
-            })
+            .and_run(
+                (chat_id, changes, metadata, payload),
+                |session, (chat_id, changes, metadata, payload)| {
+                    async move {
+                        self.update_art_callback(session, *chat_id, changes, metadata, payload)
+                            .await
+                    }
+                    .boxed()
+                },
+            )
             .await
             .map_err(ARTServiceError::MongoDB)?;
 
@@ -188,16 +197,24 @@ impl ARTService {
         session: &mut ClientSession,
         chat_id: Uuid,
         changes: &BranchChanges<ARTGroup>,
+        metadata: &Option<Vec<u8>>,
+        payload: &Option<Vec<u8>>,
     ) -> Result<(), mongodb::error::Error> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let art_changes_storage = MongoARTChangesStorage::get_existing_collection(&chat_id).await?;
 
         arts_storage
-            .update_art_in_session(session, changes.clone(), chat_id)
+            .update_art_in_session(session, changes.clone(), chat_id, metadata.clone())
             .await?;
 
         art_changes_storage
-            .push_change(session, changes.clone(), chat_id)
+            .push_change(
+                session,
+                changes.clone(),
+                chat_id,
+                metadata.clone(),
+                payload.clone(),
+            )
             .await?;
 
         Ok(())

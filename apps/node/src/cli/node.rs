@@ -73,7 +73,7 @@ impl Node {
             vec![
                 self.config.nats.messages_namespace.clone(),
                 self.config.nats.art_changes_namespace.clone(),
-            ]
+            ],
         );
         let art_service = ARTService::new();
 

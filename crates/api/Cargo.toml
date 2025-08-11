@@ -37,3 +37,4 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
 postcard = { workspace = true }
+serde_with = { workspace = true }

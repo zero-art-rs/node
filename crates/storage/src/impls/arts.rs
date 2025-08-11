@@ -157,6 +157,7 @@ impl ARTStorage for MongoARTStorage {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
+        metadata: Option<Vec<u8>>,
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
@@ -165,6 +166,14 @@ impl ARTStorage for MongoARTStorage {
                 .art
                 .update_public_art(&changes)
                 .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?;
+
+            if let Some(metadata) = metadata {
+                art_record
+                    .art
+                    .get_mut_node(&changes.node_index)
+                    .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?
+                    .metadata = Some(metadata);
+            }
 
             self.arts_collection
                 .find_one_and_replace(filter, art_record)
