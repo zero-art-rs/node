@@ -2,6 +2,7 @@ use crate::ProofVerifierSender;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::traits::{ARTPublicAPI, ARTPublicView};
 use art::types::{BranchChanges, BranchChangesType, LeafIterWithPath, NodeIndex, PublicART};
+use art::types::Direction;
 use callbacks::callback;
 use cortado::CortadoAffine;
 use tokio_util::bytes::Buf;
@@ -16,7 +17,7 @@ use zk::art::ARTProof;
 pub struct VerificationHelper {
     pub chat_id: Uuid,
     pub helper_type: HelperType,
-    pub sequence_number: Option<i64>,
+    pub sequence_number: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -24,11 +25,6 @@ pub enum HelperType {
     ArtUpdate {
         branch_changes: Vec<u8>,
         proof: Vec<u8>,
-    },
-    LeafKnowledge {
-        nonce: Vec<u8>,
-        index: u32,
-        signature: Vec<u8>,
     },
     InvitePossession {
         nonce: Vec<u8>,
@@ -58,14 +54,6 @@ impl HelperType {
     pub fn set_challenge(&mut self, new_challenge: Vec<u8>) {
         if let Self::InvitePossession { challenge, .. } = self {
             *challenge = new_challenge;
-        }
-    }
-
-    pub fn get_index(&self) -> Option<u32> {
-        if let Self::LeafKnowledge { index, .. } = self {
-            Some(*index)
-        } else {
-            None
         }
     }
 }
@@ -209,14 +197,6 @@ impl VerificationHelper {
                 self.verify_art_update(art, proof_verifier_sender, branch_changes, proof)
                     .await
             }
-            HelperType::LeafKnowledge {
-                nonce,
-                index,
-                signature,
-            } => {
-                self.verify_leaf_knowledge(art, proof_verifier_sender, nonce, *index, signature)
-                    .await
-            }
             HelperType::InvitePossession {
                 nonce,
                 signature,
@@ -234,7 +214,8 @@ impl VerificationHelper {
                 .await
             }
             HelperType::Ownership { nonce, signature } => {
-                self.verify_ownership(art, proof_verifier_sender, nonce, signature)
+                let index = self.get_owner_index(&art);
+                self.verify_leaf_knowledge(art, proof_verifier_sender, nonce, index, signature)
                     .await
             }
             HelperType::RootKnowledge {
@@ -299,11 +280,11 @@ impl VerificationHelper {
         art: &PublicART<CortadoAffine>,
         proof_verifier_sender: &ProofVerifierSender,
         nonce: &Vec<u8>,
-        index: u32,
+        index: NodeIndex,
         signature: &[u8],
     ) -> Result<(), VerificationError> {
         // Check if provided index maps to leaf node
-        let leaf = art.get_node(&NodeIndex::Index(index))?;
+        let leaf = art.get_node(&index)?;
         if !leaf.is_leaf() {
             return Err(VerificationError::InvalidProof);
         }
@@ -312,7 +293,6 @@ impl VerificationHelper {
         let mut msg = Vec::new();
         msg.extend_from_slice(self.chat_id.as_bytes());
         msg.extend(nonce);
-        msg.extend(index.to_le_bytes());
 
         let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
             signature: signature.to_vec(),
@@ -351,7 +331,7 @@ impl VerificationHelper {
         }
 
         if public_key_is_wrong {
-            error!("Provided public key isn't correct, or thecorresponding node isn't leaf");
+            error!("Provided public key isn't correct, or the corresponding node isn't leaf");
             return Err(VerificationError::InvalidProof);
         }
 
@@ -371,44 +351,6 @@ impl VerificationHelper {
         let verdict = match callback(proof_verifier_sender, schnorr_signature_message).await? {
             ProofVerifierResult::SchnorrSignature { verdict } => verdict,
             _ => return Err(VerificationError::InvalidResultMessage),
-        };
-
-        if !verdict {
-            return Err(VerificationError::InvalidProof);
-        }
-
-        Ok(())
-    }
-
-    pub async fn verify_ownership(
-        &self,
-        art: &PublicART<CortadoAffine>,
-        proof_verifier_sender: &ProofVerifierSender,
-        nonce: &Vec<u8>,
-        signature: &[u8],
-    ) -> Result<(), VerificationError> {
-        info!("Verifying ownership...");
-        info!("Recompute message...");
-        let mut msg = Vec::new();
-        msg.extend_from_slice(self.chat_id.as_bytes());
-        msg.extend(nonce);
-
-        info!("Retrieving owner node (left most leaf)...");
-        let mut left_most_leaf = &art.root;
-        while let Ok(node) = left_most_leaf.get_left() {
-            left_most_leaf = node;
-        }
-
-        let schnorr_signature_message = ProofVerifierMessage::SchnorrSignature {
-            signature: signature.to_vec(),
-            public_keys: vec![left_most_leaf.public_key],
-            msg,
-        };
-
-        let ProofVerifierResult::SchnorrSignature { verdict } =
-            callback(proof_verifier_sender, schnorr_signature_message).await?
-        else {
-            return Err(VerificationError::InvalidResultMessage);
         };
 
         if !verdict {
@@ -446,5 +388,16 @@ impl VerificationHelper {
         }
 
         Ok(())
+    }
+
+    pub fn get_owner_index(&self, art: &PublicART<CortadoAffine>) -> NodeIndex {
+        let mut left_most_leaf = &art.root;
+        let mut path = Vec::new();
+        while let Ok(node) = left_most_leaf.get_left() {
+            path.push(Direction::Left);
+            left_most_leaf = node;
+        }
+
+        NodeIndex::Direction(path)
     }
 }

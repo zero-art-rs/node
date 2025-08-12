@@ -229,7 +229,7 @@ impl ARTStorage for MongoARTStorage {
     async fn get_latest_sequence_number(
         &self,
         chat_id: &Uuid,
-    ) -> Result<i64, mongodb::error::Error> {
+    ) -> Result<u32, mongodb::error::Error> {
         let cursor = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })

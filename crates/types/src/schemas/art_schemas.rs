@@ -36,7 +36,7 @@ pub struct GetARTQuery {
     pub nonce: Vec<u8>,
 
     /// Sequence number of the requested art. If not set, return the latest.
-    pub sequence_number: Option<i64>,
+    pub sequence_number: Option<u32>,
 
     /// Server given challenge
     #[serde_as(as = "Base64")]
@@ -95,12 +95,10 @@ pub struct UpdateKeyRequest {
     pub chat_id: Uuid,
 
     /// Optional new user metadata
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<Base64>")]
     pub metadata: Option<Vec<u8>>,
 
     /// Additional data
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<Base64>")]
     pub payload: Option<Vec<u8>>,
 }
@@ -113,10 +111,10 @@ pub struct GetChangesQuery {
     pub chat_id: Uuid,
 
     /// Number of results to be returned.
-    pub limit: i64,
+    pub limit: u32,
 
     /// The amount or results to skip at first.
-    pub skip: i64,
+    pub skip: u32,
 
     /// Serialized proof.
     #[serde_as(as = "Base64")]

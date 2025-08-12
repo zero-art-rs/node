@@ -3,8 +3,8 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::types::BranchChanges;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use serde_with::{base64::Base64, serde_as};
+use uuid::Uuid;
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -16,26 +16,29 @@ where
     /// ART changes
     pub changes: BranchChanges<G>, //BranchChanges<G>,
     pub created_at: DateTime<Utc>,
-    pub sequence_number: i64,
+    pub sequence_number: u32,
     pub chat_id: Uuid,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
     pub metadata: Option<Vec<u8>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
     pub payload: Option<Vec<u8>>,
+    #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 }
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ARTChangesOutboxRecord {
+    #[serde_as(as = "Base64")]
     pub data: Vec<u8>,
     pub created_at: DateTime<Utc>,
-    pub sequence_number: i64,
+    pub sequence_number: u32,
     pub chat_id: Uuid,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
     pub metadata: Option<Vec<u8>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
     pub payload: Option<Vec<u8>>,
+    #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 }
 
@@ -45,7 +48,7 @@ where
 {
     pub fn new(
         data: BranchChanges<G>,
-        sequence_number: i64,
+        sequence_number: u32,
         chat_id: Uuid,
         metadata: Option<Vec<u8>>,
         payload: Option<Vec<u8>>,
@@ -66,7 +69,7 @@ where
 impl ARTChangesOutboxRecord {
     pub fn new(
         data: Vec<u8>,
-        sequence_number: i64,
+        sequence_number: u32,
         chat_id: Uuid,
         metadata: Option<Vec<u8>>,
         payload: Option<Vec<u8>>,

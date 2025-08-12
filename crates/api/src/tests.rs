@@ -18,11 +18,11 @@ use curve25519_dalek::Scalar;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use hyper::Response;
-use jsonwebtoken::errors::ErrorKind::Base64;
 use rand::{Rng, random};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
+use serde_with::{base64::Base64, serde_as};
 use std::iter::Skip;
 use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::info;
@@ -87,8 +87,10 @@ struct CentrifugoPub {
     data: MessageData,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct MessageData {
+    #[serde_as(as = "Base64")]
     content: Vec<u8>,
 }
 
@@ -274,7 +276,9 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
         let changes_response = get_changes(&mut test_context, 1000, i as u32).await?;
         assert_eq!(changes_response.status(), StatusCode::OK);
 
-        let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(&changes_response.bytes().await?)?;
+        let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(
+            &changes_response.bytes().await?,
+        )?;
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].metadata, metadata);
@@ -290,7 +294,9 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
     let changes_response = get_changes(&mut test_context, 1000, TEST_REPEATS as u32).await?;
     assert_eq!(changes_response.status(), StatusCode::OK);
 
-    let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(&changes_response.bytes().await?)?;
+    let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(
+        &changes_response.bytes().await?,
+    )?;
 
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].metadata, None);
@@ -336,7 +342,7 @@ async fn test_remove_member() -> eyre::Result<()> {
         let remove_user_response = make_blank(&mut context, i).await?;
         assert_eq!(remove_user_response.status(), StatusCode::NO_CONTENT);
 
-        let new_art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
+        let new_art_response = get_art(&mut retrieval_context, Some(i as u32)).await?;
         assert_eq!(new_art_response.status(), StatusCode::OK);
 
         let received_art = PublicART::<ARTGroup>::deserialize(
@@ -371,7 +377,7 @@ async fn test_get_art() -> eyre::Result<()> {
 
     // Test if retrieval is correct
     for i in 0..TEST_REPEATS {
-        let art_response = get_art(&mut retrieval_context, Some(i as i64)).await?;
+        let art_response = get_art(&mut retrieval_context, Some(i as u32)).await?;
 
         assert_eq!(art_response.status(), StatusCode::OK);
 
@@ -693,7 +699,7 @@ async fn make_blank(
 
 async fn get_art(
     context: &mut ARTTestContext,
-    sequence_number: Option<i64>,
+    sequence_number: Option<u32>,
 ) -> reqwest::Result<reqwest::Response> {
     // Get challenge for proof
     let challenge_response = get_challenge(context).await?;
@@ -833,8 +839,8 @@ async fn get_changes(
             chat_id: context.chat_uuid,
             signature,
             nonce,
-            limit: limit as i64,
-            skip: skip as i64,
+            limit: limit as u32,
+            skip: skip as u32,
         })
         .send()
         .await

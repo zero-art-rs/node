@@ -39,8 +39,8 @@ impl MessengerService {
         &self,
         chat_id: &Uuid,
         filter: Document,
-        limit: i64,
-        skip: i64,
+        limit: u32,
+        skip: u32,
     ) -> Result<Vec<Message>, MessengerError> {
         let message_record = MongoMessageStorage::new(chat_id)
             .await?

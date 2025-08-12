@@ -1,33 +1,34 @@
-use crate::utils::as_base64;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, serde_as};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageRequest {
     /// Message content
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub message: Vec<u8>,
 
     /// Unique identifier of the chat to send the message to.
-    #[schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")]
     pub chat_id: Uuid,
 
     /// Sequential number of epoch during which the message was sent
     pub epoch: u32,
 
     /// Serialized proof.
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
@@ -38,26 +39,27 @@ pub struct GetMessageQuery {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 
     // Unique sequence number of the message
-    pub message_sequence_number: Option<i64>,
+    pub message_sequence_number: Option<u32>,
 
     /// Number of results to be returned
-    pub limit: i64,
+    pub limit: u32,
 
     /// The amount or results to skip
-    pub skip: i64,
+    pub skip: u32,
 
     /// Serialized proof.
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
 
     /// Sequence number of the art used in proof. If not set, return the latest.
-    pub epoch: Option<i64>,
+    pub epoch: Option<u32>,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteMessageQuery {
@@ -68,13 +70,13 @@ pub struct DeleteMessageQuery {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 
     // Unique sequence number of the message
-    pub sequence_number: Option<i64>,
+    pub sequence_number: Option<u32>,
 
     /// Serialized proof.
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
-    #[serde(with = "as_base64")]
+    #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
 }

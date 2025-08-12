@@ -18,7 +18,7 @@ where
     pub chat_id: Uuid,
     pub art: PublicART<G>,
     pub is_private: bool,
-    pub sequence_number: i64,
+    pub sequence_number: u32,
 }
 
 impl<G> fmt::Display for ARTRecord<G>

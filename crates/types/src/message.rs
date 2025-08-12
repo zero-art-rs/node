@@ -4,6 +4,7 @@ use mongodb::{
     change_stream::{ChangeStream, event::ChangeStreamEvent},
 };
 use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, serde_as};
 use std::fmt;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -15,14 +16,16 @@ pub struct Subscription {
     pub sender: mpsc::Sender<Message>,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Message {
     /// The message content as binary data
+    #[serde_as(as = "Base64")]
     pub content: Vec<u8>, // binary string, Vec<u8>
     /// When the message was created
     pub created_at: DateTime<Utc>,
     /// Sequential number of this message in the chat
-    pub sequence_number: i64,
+    pub sequence_number: u32,
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Option<Uuid>,
     /// Sequential number of epoch during which the message was sent
@@ -30,7 +33,7 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn new(content: Vec<u8>, sequence_number: i64, chat_id: Option<Uuid>, epoch: u32) -> Self {
+    pub fn new(content: Vec<u8>, sequence_number: u32, chat_id: Option<Uuid>, epoch: u32) -> Self {
         Self {
             content,
             created_at: Utc::now(),

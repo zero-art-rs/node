@@ -3,7 +3,6 @@ pub mod errors;
 mod message;
 mod records;
 mod schemas;
-pub mod utils;
 
 pub use message::{Message, Subscription};
 pub use records::{ARTChangesOutboxRecord, ARTChangesRecord, ARTRecord, Record};

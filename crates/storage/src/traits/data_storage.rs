@@ -14,15 +14,15 @@ pub trait DataStorage: Send + Sync {
     async fn list(
         &self,
         filter: Document,
-        limit: i64,
-        skip: i64,
+        limit: u32,
+        skip: u32,
     ) -> Result<Vec<Self::Data>, StorageError> {
         let mut cursor = self
             .get_collection()
             .await
             .find(filter)
             .skip(skip as u64)
-            .limit(limit)
+            .limit(limit as i64)
             .await?;
 
         let mut records = Vec::new();
