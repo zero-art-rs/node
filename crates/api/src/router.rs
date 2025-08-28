@@ -1,6 +1,7 @@
 use crate::verification_middleware;
 use axum::{Router, middleware};
 use std::sync::Arc;
+use tracing::warn;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -40,20 +41,30 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes!(art_transport::init_chat))
         .routes(routes!(art_transport::get_challenge));
 
-    let protected_routes = OpenApiRouter::new()
+    let mut protected_routes = OpenApiRouter::new()
         .routes(routes!(messenger_transport::send_message))
         .routes(routes!(messenger_transport::list_messages))
         .routes(routes!(messenger_transport::delete_messages))
-        .routes(routes!(art_transport::get_art))
+        .routes(routes!(art_transport::delete_chat));
+
+    #[cfg(feature = "art_modifications")]{
+        protected_routes = protected_routes.routes(routes!(art_transport::get_art))
         .routes(routes!(art_transport::add_member))
         .routes(routes!(art_transport::remove_member))
         .routes(routes!(art_transport::update_key))
-        .routes(routes!(art_transport::get_changes))
-        .routes(routes!(art_transport::delete_chat))
-        .layer(middleware::from_fn_with_state(
+        .routes(routes!(art_transport::get_changes));
+    }
+
+    #[cfg(not(feature = "verification"))]{
+        warn!("Verification middleware is disabled.");
+    }
+
+    #[cfg(feature = "verification")]{
+        protected_routes = protected_routes.layer(middleware::from_fn_with_state(
             container,
             verification_middleware,
         ));
+    }
 
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(routes)
