@@ -24,9 +24,6 @@ pub struct InitChatRequest {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetARTQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
     /// Serialized proof.
     #[serde_as(as = "Base64")]
     pub signature: Vec<u8>,
@@ -34,9 +31,6 @@ pub struct GetARTQuery {
     /// User provided nonce
     #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
-
-    /// Sequence number of the requested art. If not set, return the latest.
-    pub sequence_number: Option<u32>,
 
     /// Server given challenge
     #[serde_as(as = "Base64")]
@@ -58,9 +52,6 @@ pub struct AddMemberRequest {
     /// Serialized proof.
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
-
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
 }
 
 #[serde_as]
@@ -74,9 +65,6 @@ pub struct RemoveMemberRequest {
     /// Serialized proof.
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
-
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
 }
 
 #[serde_as]
@@ -91,8 +79,26 @@ pub struct UpdateKeyRequest {
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
+    /// Optional new user metadata
+    #[serde_as(as = "Option<Base64>")]
+    pub metadata: Option<Vec<u8>>,
+
+    /// Additional data
+    #[serde_as(as = "Option<Base64>")]
+    pub payload: Option<Vec<u8>>,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateARTRequest {
+    /// Serialized BranchChanges:UpdateKeys structure
+    #[serde_as(as = "Base64")]
+    pub branch_changes: Vec<u8>,
+
+    /// Serialized proof
+    #[serde_as(as = "Base64")]
+    pub proof: Vec<u8>,
 
     /// Optional new user metadata
     #[serde_as(as = "Option<Base64>")]
@@ -107,14 +113,11 @@ pub struct UpdateKeyRequest {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetChangesQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
     /// Number of results to be returned.
-    pub limit: u32,
+    pub limit: i64,
 
     /// The amount or results to skip at first.
-    pub skip: u32,
+    pub skip: i64,
 
     /// Serialized proof.
     #[serde_as(as = "Base64")]
@@ -129,9 +132,6 @@ pub struct GetChangesQuery {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteChatQuery {
-    /// Unique identifier of the chat to send the message to.
-    pub chat_id: Uuid,
-
     /// Serialized proof.
     #[serde_as(as = "Base64")]
     pub signature: Vec<u8>,

@@ -25,15 +25,15 @@ pub struct Message {
     /// When the message was created
     pub created_at: DateTime<Utc>,
     /// Sequential number of this message in the chat
-    pub sequence_number: u32,
+    pub sequence_number: i64,
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Option<Uuid>,
     /// Sequential number of epoch during which the message was sent
-    pub epoch: u32,
+    pub epoch: i64,
 }
 
 impl Message {
-    pub fn new(content: Vec<u8>, sequence_number: u32, chat_id: Option<Uuid>, epoch: u32) -> Self {
+    pub fn new(content: Vec<u8>, sequence_number: i64, chat_id: Option<Uuid>, epoch: i64) -> Self {
         Self {
             content,
             created_at: Utc::now(),

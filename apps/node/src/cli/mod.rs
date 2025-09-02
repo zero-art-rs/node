@@ -4,6 +4,7 @@ mod logging;
 mod node;
 
 use clap::Parser;
+use tracing::warn;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]

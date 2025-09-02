@@ -1,6 +1,6 @@
 use mongodb::bson::Document;
 use storage::{DataStorage, MessageStorage, MongoMessageStorage};
-use tracing::info;
+use tracing::debug;
 use types::Message;
 use types::errors::MessengerError;
 use uuid::Uuid;
@@ -24,14 +24,14 @@ impl MessengerService {
         &self,
         message: Vec<u8>,
         chat_id: &Uuid,
-        epoch: u32,
+        epoch: i64,
     ) -> Result<(), MessengerError> {
-        info!("Store and send new message");
+        debug!("Store and send new message");
         MongoMessageStorage::new(chat_id)
             .await?
             .store_message(message, epoch)
             .await?;
-        info!("Message sent");
+        debug!("Message sent");
         Ok(())
     }
 
@@ -39,8 +39,8 @@ impl MessengerService {
         &self,
         chat_id: &Uuid,
         filter: Document,
-        limit: u32,
-        skip: u32,
+        limit: i64,
+        skip: i64,
     ) -> Result<Vec<Message>, MessengerError> {
         let message_record = MongoMessageStorage::new(chat_id)
             .await?

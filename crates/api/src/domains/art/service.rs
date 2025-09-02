@@ -8,7 +8,7 @@ use storage::{
     ARTChangesStorage, ARTStorage, DATABASE, DataStorage, MongoARTChangesStorage, MongoARTStorage,
     StorageError,
 };
-use tracing::{error, info};
+use tracing::{debug, error};
 use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ impl ARTService {
     pub async fn get_art(
         &self,
         chat_id: &Uuid,
-        sequence_number: Option<u32>,
+        sequence_number: Option<i64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         let record = match &sequence_number {
@@ -52,10 +52,10 @@ impl ARTService {
     pub async fn get_previous_art(
         &self,
         chat_id: &Uuid,
-        sequence_number: Option<u32>,
+        sequence_number: Option<i64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        info!(
-            "Retreiving previous art for sequence_number: {}",
+        debug!(
+            "Retrieving previous art for sequence_number: {}",
             sequence_number.unwrap_or(0)
         );
         let arts_storage = MongoARTStorage::new().await?;
@@ -93,12 +93,12 @@ impl ARTService {
     pub async fn get_art_by_sequence_number(
         &self,
         chat_id: &Uuid,
-        sequence_number: u32,
+        sequence_number: i64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let art_record = self.get_initial_art(chat_id).await?;
         let mut initial_art = art_record.art;
 
-        info!(
+        debug!(
             "Recomputing {} state of the art in the chat: {}",
             sequence_number, chat_id
         );
@@ -121,7 +121,7 @@ impl ARTService {
             initial_art.update_public_art(&change.changes)?;
         }
 
-        info!("Successfully recomputed {} state of art", sequence_number);
+        debug!("Successfully recomputed {} state of art", sequence_number);
         Ok(ARTRecord {
             chat_id: *chat_id,
             art: initial_art,
@@ -178,8 +178,8 @@ impl ARTService {
         &self,
         chat_id: &Uuid,
         filter: Document,
-        limit: u32,
-        skip: u32,
+        limit: i64,
+        skip: i64,
     ) -> Result<Vec<ARTChangesRecord<ARTGroup>>, ARTServiceError> {
         let record = MongoARTChangesStorage::new(chat_id)
             .await?
@@ -196,12 +196,12 @@ impl ARTService {
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
 
-        info!("Check if ART for chat {} already exists", chat_id);
+        debug!("Check if ART for chat {} already exists", chat_id);
         if arts_storage.get_art(*chat_id).await.is_ok() {
             return Err(ARTServiceError::AlreadyExists);
         }
 
-        info!("Chat isn't created yet.");
+        debug!("Chat {} isn't created yet.", chat_id);
 
         let mut session = DATABASE
             .get()
@@ -268,7 +268,7 @@ impl ARTService {
         &self,
         chat_id: Uuid,
         new_metadata: Vec<u8>,
-        node_index: u32,
+        node_index: i64,
     ) -> Result<(), ARTServiceError> {
         MongoARTStorage::new()
             .await?
@@ -278,7 +278,7 @@ impl ARTService {
         Ok(())
     }
 
-    async fn update_art(
+    pub async fn update_art(
         &self,
         chat_id: &Uuid,
         changes: &BranchChanges<ARTGroup>,

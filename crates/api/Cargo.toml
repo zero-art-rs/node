@@ -43,6 +43,7 @@ hyper = { workspace = true }
 axum-core = {  workspace = true }
 serde_urlencoded = {workspace = true}
 serde_with = { workspace = true }
+log = "0.4.27"
 
 [dev-dependencies]
 reqwest = { version = "0.12.22", features = ["json", "stream"] }

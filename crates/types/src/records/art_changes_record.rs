@@ -16,7 +16,7 @@ where
     /// ART changes
     pub changes: BranchChanges<G>, //BranchChanges<G>,
     pub created_at: DateTime<Utc>,
-    pub sequence_number: u32,
+    pub sequence_number: i64,
     pub chat_id: Uuid,
     #[serde_as(as = "Option<Base64>")]
     pub metadata: Option<Vec<u8>>,
@@ -32,7 +32,7 @@ pub struct ARTChangesOutboxRecord {
     #[serde_as(as = "Base64")]
     pub data: Vec<u8>,
     pub created_at: DateTime<Utc>,
-    pub sequence_number: u32,
+    pub sequence_number: i64,
     pub chat_id: Uuid,
     #[serde_as(as = "Option<Base64>")]
     pub metadata: Option<Vec<u8>>,
@@ -48,7 +48,7 @@ where
 {
     pub fn new(
         data: BranchChanges<G>,
-        sequence_number: u32,
+        sequence_number: i64,
         chat_id: Uuid,
         metadata: Option<Vec<u8>>,
         payload: Option<Vec<u8>>,
@@ -69,7 +69,7 @@ where
 impl ARTChangesOutboxRecord {
     pub fn new(
         data: Vec<u8>,
-        sequence_number: u32,
+        sequence_number: i64,
         chat_id: Uuid,
         metadata: Option<Vec<u8>>,
         payload: Option<Vec<u8>>,

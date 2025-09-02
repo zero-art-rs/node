@@ -3,7 +3,7 @@ use bson::doc;
 use futures_util::TryStreamExt;
 use mongodb::{bson::Document, ClientSession, Collection};
 use serde::{de::DeserializeOwned, Serialize};
-use tracing::info;
+use tracing::debug;
 
 #[async_trait::async_trait]
 pub trait DataStorage: Send + Sync {
@@ -14,8 +14,8 @@ pub trait DataStorage: Send + Sync {
     async fn list(
         &self,
         filter: Document,
-        limit: u32,
-        skip: u32,
+        limit: i64,
+        skip: i64,
     ) -> Result<Vec<Self::Data>, StorageError> {
         let mut cursor = self
             .get_collection()
@@ -66,14 +66,14 @@ pub trait DataStorage: Send + Sync {
     }
 
     async fn clear(&self, session: &mut ClientSession) -> Result<(), mongodb::error::Error> {
-        info!("Clear message collection");
+        debug!("Clear message collection ...");
         self.get_collection()
             .await
             .delete_many(doc! {})
             .session(session)
             .await?;
 
-        info!("Message collection cleared successfully");
+        debug!("Message collection cleared successfully");
         Ok(())
     }
 

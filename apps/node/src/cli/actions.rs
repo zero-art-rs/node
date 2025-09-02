@@ -33,7 +33,7 @@ pub async fn run(args: arguments::Run) -> eyre::Result<()> {
 
     select! {
         _ = node.cancelled() => {
-            tracing::info!("Node run failed");
+            tracing::error!("Node run failed");
         }
         _ = sigterm.recv() => {
             tracing::info!("Received SIGTERM signal");

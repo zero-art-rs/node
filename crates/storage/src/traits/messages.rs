@@ -7,5 +7,5 @@ pub trait MessageStorage: Send + Sync {
     async fn stream_messages(
         &self,
     ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, StorageError>;
-    async fn store_message(&self, content: Vec<u8>, epoch: u32) -> Result<(), StorageError>;
+    async fn store_message(&self, content: Vec<u8>, epoch: i64) -> Result<(), StorageError>;
 }

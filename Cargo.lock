@@ -140,6 +140,7 @@ dependencies = [
  "hex",
  "hyper",
  "jsonwebtoken",
+ "log",
  "mongodb",
  "postcard",
  "proof-verifier",

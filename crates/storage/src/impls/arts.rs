@@ -7,7 +7,7 @@ use art::{
 };
 use cortado::CortadoAffine as ARTGroup;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
-use tracing::{error, info};
+use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
 
@@ -95,7 +95,7 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        info!("Deleting art for chat: {chat_id}");
+        debug!("Deleting art for chat: {chat_id}");
         self.arts_collection
             .delete_one(filter.clone())
             .session(session)
@@ -111,7 +111,7 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        info!("Deleting initial art for chat: {chat_id}");
+        debug!("Deleting initial art for chat: {chat_id}");
         self.initial_arts_collection
             .delete_one(filter)
             .session(session)
@@ -122,7 +122,7 @@ impl ARTStorage for MongoARTStorage {
 
     /// return the latest art
     async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
-        info!("Retrieving latest art for chat: {chat_id}");
+        debug!("Retrieving latest art for chat: {chat_id}");
         let art = self
             .arts_collection
             .find_one(doc! {"chat_id": chat_id})
@@ -136,7 +136,7 @@ impl ARTStorage for MongoARTStorage {
 
     /// Return the first art state in the chat
     async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
-        info!("Retrieving initial art for chat: {chat_id}");
+        debug!("Retrieving initial art for chat: {chat_id}");
         let art = self
             .initial_arts_collection
             .find_one(doc! {"chat_id": chat_id})
@@ -152,7 +152,7 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), StorageError> {
         let filter = doc! { "chat_id": chat_id };
 
-        info!("Updating art for chat: {}", chat_id);
+        debug!("Updating art for chat: {}", chat_id);
         if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
             art_record.art.update_public_art(&changes)?;
 
@@ -160,9 +160,9 @@ impl ARTStorage for MongoARTStorage {
                 .find_one_and_replace(filter, art_record)
                 .await?;
 
-            info!("Art updated successfully");
+            debug!("Art updated successfully");
         } else {
-            info!("Art not found");
+            warn!("Art not found");
             return Err(StorageError::NotFound);
         }
 
@@ -178,7 +178,7 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        info!("Updating art for chat: {}", chat_id);
+        debug!("Updating art for chat: {}", chat_id);
         if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
             art_record
                 .art
@@ -187,7 +187,7 @@ impl ARTStorage for MongoARTStorage {
             art_record.sequence_number += 1;
 
             if let Some(metadata) = metadata {
-                info!("Update user metadata");
+                debug!("Update user metadata");
                 art_record
                     .art
                     .get_mut_node(&changes.node_index)
@@ -229,7 +229,7 @@ impl ARTStorage for MongoARTStorage {
     async fn get_latest_sequence_number(
         &self,
         chat_id: &Uuid,
-    ) -> Result<u32, mongodb::error::Error> {
+    ) -> Result<i64, mongodb::error::Error> {
         let cursor = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })
@@ -246,11 +246,11 @@ impl ARTStorage for MongoARTStorage {
         &self,
         chat_id: Uuid,
         new_metadata: Vec<u8>,
-        node_index: u32,
+        node_index: i64,
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
         art.art
-            .get_mut_node(&NodeIndex::Index(node_index))?
+            .get_mut_node(&NodeIndex::Index(node_index as u32))?
             .metadata = Some(new_metadata);
         self.replace_art(chat_id, art).await?;
 
@@ -262,7 +262,7 @@ impl ARTStorage for MongoARTStorage {
         chat_id: Uuid,
         new_art: ARTRecord<ARTGroup>,
     ) -> Result<(), StorageError> {
-        info!("Retrieving latest art for chat: {}", chat_id);
+        debug!("Retrieving latest art for chat: {}", chat_id);
         let art = self
             .arts_collection
             .find_one_and_replace(doc! {"chat_id": chat_id}, new_art)

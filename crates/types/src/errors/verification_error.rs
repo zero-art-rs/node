@@ -1,18 +1,20 @@
 use crate::errors::ARTServiceError;
 use art::errors::ARTError;
+use axum::extract::rejection::{JsonRejection, PathRejection};
+use axum::response::IntoResponse;
 use eyre::Report;
 use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
+    #[error("Invalid input Provided")]
+    InvalidInput,
     #[error("Failed to use ART {0}")]
     ArtError(#[from] ARTError),
     #[error("ARTServiceError error: {0}")]
     ArtServiceError(#[from] ARTServiceError),
     #[error("Missing query string")]
     MissingQuery,
-    #[error("Unsupported method")]
-    UnsupportedMethod,
     #[error("Unknown endpoint")]
     UnknownEndpoint,
     #[error("Invalid message from proof verifier")]
@@ -27,6 +29,12 @@ pub enum VerificationError {
     UnsupportedOperation,
     #[error("Serialization error: {0}")]
     SerializationError(String),
+    #[error("Failed to send message to proof verifier: {0}")]
+    AxumError(#[from] axum::Error),
+    #[error("Failed to retrieve data from path: {0}")]
+    PathRejection(#[from] PathRejection),
+    #[error("Failed to retrieve json body: {0}")]
+    JsonRejection(#[from] JsonRejection),
 }
 
 impl From<serde_json::Error> for VerificationError {

@@ -6,7 +6,7 @@ use mongodb::{
     options::IndexOptions,
     Collection, IndexModel,
 };
-use tracing::info;
+use tracing::debug;
 use types::Message;
 use uuid::Uuid;
 
@@ -54,7 +54,7 @@ impl MessageStorage for MongoMessageStorage {
         Ok(change_stream)
     }
 
-    async fn store_message(&self, content: Vec<u8>, epoch: u32) -> Result<(), StorageError> {
+    async fn store_message(&self, content: Vec<u8>, epoch: i64) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -67,7 +67,7 @@ impl MessageStorage for MongoMessageStorage {
             Some(result) => result.sequence_number + 1,
             None => 0,
         };
-        info!(
+        debug!(
             "Store message with sequence number {}",
             next_sequence_number
         );

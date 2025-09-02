@@ -6,7 +6,7 @@ use crypto::schnorr;
 use tokio::sync::mpsc;
 use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
@@ -14,10 +14,9 @@ use zk::art::{ARTProof, art_verify};
 use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
-mod verification_helper;
+pub mod verifier_engine;
 
 pub use types::errors::VerificationError;
-pub use verification_helper::VerificationHelper;
 
 pub type ProofVerifierSender = mpsc::Sender<ProofVerifierMessageWrapper>;
 
@@ -98,7 +97,7 @@ impl ProofVerifier {
         co_path: Vec<CortadoAffine>,
         proof: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verify art update proof");
+        debug!("Verify art update proof");
 
         let verification_result = art_verify(
             get_pedersen_basis(),
@@ -112,7 +111,7 @@ impl ProofVerifier {
         match verification_result {
             Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
             Err(e) => {
-                info!("Failed to verify art update proof: {}", e);
+                error!("Failed to verify art update proof: {}", e);
                 Ok(ProofVerifierResult::ArtUpdate { verdict: false })
             }
         }
@@ -124,11 +123,11 @@ impl ProofVerifier {
         public_keys: &Vec<CortadoAffine>,
         msg: &[u8],
     ) -> eyre::Result<ProofVerifierResult> {
-        info!("Verifying schnorr signature");
+        debug!("Verifying schnorr signature");
         match schnorr::verify(signature, public_keys, msg) {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
             Err(e) => {
-                info!("Failed to verify schnorr signature: {}", e);
+                warn!("Failed to verify schnorr signature: {}", e);
                 Ok(ProofVerifierResult::SchnorrSignature { verdict: false })
             }
         }

@@ -1,211 +1,315 @@
 use crate::Container;
-use axum::extract::State;
+use axum::Json;
+use axum::extract::{Path, State};
 use axum::http::Method;
 use axum::middleware::Next;
 use axum_core::body::Body;
-use axum_core::extract::Request;
+use axum_core::extract::{FromRequestParts, Request};
 use axum_core::response::{IntoResponse, Response};
-use proof_verifier::VerificationHelper;
+use hyper::StatusCode;
 use std::sync::Arc;
-use tracing::{error, info};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use art::traits::{ARTPublicAPI, ARTPublicView};
+use art::types::{BranchChanges, BranchChangesType, Direction, LeafIterWithPath, NodeIndex};
+use cortado::CortadoAffine;
+use tracing::{debug, error, warn};
 use types::art_schemas::{
     AddMemberRequest, DeleteChatQuery, GetARTQuery, GetChangesQuery, RemoveMemberRequest,
-    UpdateKeyRequest,
+    UpdateARTRequest, UpdateKeyRequest,
 };
-use types::errors::ApiError;
-use types::errors::VerificationError;
-use types::messenger_schemas::{DeleteMessageQuery, GetMessageQuery, SendMessageRequest};
+use types::messenger_schemas::{GetMessageQuery, SendMessageRequest};
+use types::{
+    RouteId, add_route_id,
+    errors::{ApiError, VerificationError},
+};
+use uuid::Uuid;
+
+use proof_verifier::verifier_engine::*;
+use types::centrifugo_schemas::AuthRequest;
 
 pub async fn verification_middleware(
-    State(state): State<Arc<Container>>,
+    state: State<Arc<Container>>,
     request: Request,
     next: Next,
 ) -> Response {
-    info!(
-        "Incoming verification request: {} {}",
+    #[cfg(not(feature = "verification"))]
+    {
+        // warn!("Verification middleware is disabled.");
+        return next.run(request).await;
+    }
+    #[cfg(feature = "verification")]
+    {
+        verification_middleware_inner(state, request, next)
+            .await
+            .unwrap_or_else(|error| {
+                error!("{}", error);
+                ApiError::from(error).into_response()
+            })
+    }
+}
+
+async fn verification_middleware_inner(
+    State(state): State<Arc<Container>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, VerificationError> {
+
+    let route_id = request
+        .extensions()
+        .get::<RouteId>()
+        .map(|id| id.0)
+        .ok_or(VerificationError::UnknownEndpoint)?;
+
+    debug!(
+        "Incoming verification request: {} {}, handled by route {}",
         request.method(),
-        request.uri()
+        request.uri(),
+        route_id,
     );
 
     let (parts, body) = request.into_parts();
+    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+    let query = parts.uri.query();
 
-    let bytes = match axum::body::to_bytes(body, usize::MAX).await {
-        Ok(bytes) => bytes,
-        Err(err) => return ApiError::Unauthorized(err.to_string()).into_response(),
-    };
+    let verification_req = match route_id {
+        "authenticate" => {
+            let Json(payload) = Json::<AuthRequest>::from_bytes(&bytes)?;
 
-    let response = route_by_method_and_verify(
-        parts.method.clone(),
-        parts.uri.path(),
-        state.clone(),
-        bytes.as_ref(),
-        parts.uri.query(),
-    )
-    .await;
+            let mut root_keys = Vec::new();
+            for (chat_id, epoch) in payload.chat_ids.iter().zip(payload.epochs.iter()) {
+                let art = state
+                    .art_service
+                    .get_art(&chat_id, Some(*epoch))
+                    .await?
+                    .art;
 
-    match response {
-        Ok(_) => {
-            info!("verification completed successfully");
-            next.run(Request::from_parts(
-                parts.clone(),
-                Body::from(bytes.clone()),
-            ))
-            .await
-        }
-        Err(err) => {
-            error!("Verification Failed: {}", err);
-            err.into_response()
-        }
-    }
-}
+                root_keys.push(art.get_root().public_key);
+            }
 
-async fn route_by_method_and_verify(
-    method: Method,
-    url_path: &str,
-    state: Arc<Container>,
-    body_bytes: &[u8],
-    query: Option<&str>,
-) -> Result<(), ApiError> {
-    match method {
-        Method::POST => verify_post_request(state.clone(), url_path, body_bytes).await,
-        Method::GET => {
-            let query_bytes = query
-                .ok_or(ApiError::from(VerificationError::MissingQuery))?
-                .as_bytes();
-            verify_get_query(state.clone(), url_path, query_bytes).await
-        }
-        Method::DELETE => {
-            let query_bytes = query
-                .ok_or(ApiError::from(VerificationError::MissingQuery))?
-                .as_bytes();
-            verify_delete_query(state.clone(), url_path, query_bytes).await
-        }
-        _ => Err(VerificationError::UnsupportedMethod),
-    }
-    .map_err(ApiError::from)
-}
+            VerificationRequest {
+                opcode: VerificationOpcode::AuthRequest,
+                data: VerifierData {
+                    proof: payload.proof,
+                    public_inputs: PublicInputs::Signature {
+                        public_keys: root_keys,
+                    },
+                    context: payload.challenge,
+                },
+            }
+        },
+        "list_messages" => {
+            debug!("list_messages");
+            let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
-async fn verify_post_request(
-    state: Arc<Container>,
-    url_path: &str,
-    body_bytes: &[u8],
-) -> Result<(), VerificationError> {
-    let (helper, art) = match url_path {
-        // ChatOperations
-        "/v1/messenger/add-member" => {
-            let helper =
-                VerificationHelper::from(serde_json::from_slice::<AddMemberRequest>(body_bytes)?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
-            (helper, art)
-        }
-        "/v1/messenger/remove-member" => {
-            let helper = VerificationHelper::from(serde_json::from_slice::<RemoveMemberRequest>(
-                body_bytes,
-            )?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
-            (helper, art)
-        }
-        "/v1/messenger/update-key" => {
-            let helper =
-                VerificationHelper::from(serde_json::from_slice::<UpdateKeyRequest>(body_bytes)?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
-            (helper, art)
-        }
-        // Messages
-        "/v1/messenger/messages" => {
-            let helper =
-                VerificationHelper::from(serde_json::from_slice::<SendMessageRequest>(body_bytes)?);
+            let Path(chat_id) =
+                Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+            let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
+
             let art = state
                 .art_service
-                .get_art(&helper.chat_id, helper.sequence_number)
+                .get_art(&chat_id, payload.epoch.clone())
                 .await?
                 .art;
-            (helper, art)
-        }
-        _ => {
-            error!("ERROR: Unknown request occurred");
-            return Err(VerificationError::UnknownEndpoint);
-        }
-    };
 
-    helper.verify(&art, &state.proof_verifier_sender).await
-}
+            let mut msg = Vec::new();
+            msg.extend_from_slice(chat_id.as_bytes());
+            msg.extend(&payload.nonce);
 
-async fn verify_get_query(
-    state: Arc<Container>,
-    url_path: &str,
-    query_bytes: &[u8],
-) -> Result<(), VerificationError> {
-    let (helper, art) = match url_path {
-        // ChatOperations
-        "/v1/messenger/art" => {
-            let helper =
-                VerificationHelper::from(serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?);
+            VerificationRequest {
+                opcode: VerificationOpcode::GetMessages,
+                data: VerifierData {
+                    proof: payload.signature.clone(),
+                    public_inputs: PublicInputs::Signature {
+                        public_keys: vec![art.root.public_key]
+                    },
+                    context: msg,
+                },
+            }
+        }
+        "send_message" => {
+            let Path(chat_id) =
+                Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+            let Json(payload) = Json::<SendMessageRequest>::from_bytes(&bytes)?;
+
             let art = state
                 .art_service
-                .get_art(&helper.chat_id, helper.sequence_number)
+                .get_art(&chat_id, None)
                 .await?
                 .art;
-            (helper, art)
+
+            let mut msg = Vec::new();
+            msg.extend_from_slice(chat_id.as_bytes());
+            msg.extend(&payload.nonce);
+
+            VerificationRequest {
+                opcode: VerificationOpcode::SendMessage,
+                data: VerifierData {
+                    proof: payload.signature.clone(),
+                    public_inputs: PublicInputs::Signature {
+                        public_keys: vec![art.root.public_key]
+                    },
+                    context: msg,
+                },
+            }
         }
-        "/v1/messenger/changes" => {
-            let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<GetChangesQuery>(
-                query_bytes,
-            )?);
+        "get_art" => {
+            let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
+
+            let Path((chat_id, epoch)) =
+                Path::<(Uuid, i64)>::from_request_parts(&mut parts.clone(), &state).await?;
+            let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
+
             let art = state
                 .art_service
-                .get_art(&helper.chat_id, helper.sequence_number)
+                .get_art(&chat_id, Some(epoch))
                 .await?
                 .art;
-            (helper, art)
+
+            let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)
+                .unwrap_or_else(|_| {
+                    error!("Failed to deserialize public key");
+                    CortadoAffine::default()
+                });
+
+            debug!("Check if provided public key is correct");
+            let mut public_key_is_wrong = true;
+            for (node, _) in LeafIterWithPath::new(art.get_root()) {
+                if node.public_key.eq(&public_key) {
+                    public_key_is_wrong = false;
+                }
+            }
+
+            if public_key_is_wrong {
+                error!("Provided public key isn't correct, or the corresponding node isn't leaf");
+                return Err(VerificationError::InvalidProof);
+            }
+
+            let mut msg = Vec::new();
+            msg.extend_from_slice(chat_id.as_bytes());
+            msg.extend(&payload.nonce);
+            msg.extend(payload.challenge);
+
+            VerificationRequest {
+                opcode: VerificationOpcode::GetMessages,
+                data: VerifierData {
+                    proof: payload.signature.clone(),
+                    public_inputs: PublicInputs::Signature {
+                        public_keys: vec![public_key]
+                    },
+                    context: msg,
+                },
+            }
         }
-        // Message
-        "/v1/messenger/messages" => {
-            let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<GetMessageQuery>(
-                query_bytes,
-            )?);
+        "get_changes" => {
+            let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
+
+            let Path(chat_id) =
+                Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+            let payload = serde_urlencoded::from_bytes::<GetChangesQuery>(query_bytes)?;
+
             let art = state
                 .art_service
-                .get_art(&helper.chat_id, helper.sequence_number)
+                .get_art(&chat_id, Some(payload.skip))
                 .await?
                 .art;
-            (helper, art)
+
+            let mut msg = Vec::new();
+            msg.extend_from_slice(chat_id.as_bytes());
+            msg.extend(payload.nonce);
+
+            VerificationRequest {
+                opcode: VerificationOpcode::GetChanges,
+                data: VerifierData {
+                    proof: payload.signature,
+                    public_inputs: PublicInputs::Signature {
+                        public_keys: vec![art.root.public_key]
+                    },
+                    context: msg,
+                },
+            }
         }
-        _ => {
-            error!("ERROR: Unknown request occurred");
-            return Err(VerificationError::UnknownEndpoint);
+        "update_art" => {
+            warn!("update art");
+            let Path(chat_id) =
+                Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+            let Json(payload) = Json::<UpdateARTRequest>::from_bytes(&bytes)?;
+
+            let branch_changes = BranchChanges::<CortadoAffine>::deserialize(payload.branch_changes.as_slice())?;
+            let art = state.art_service.get_art(&chat_id, None).await?.art;
+            let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
+            let mut associated_data = Vec::new();
+            art.root.public_key.serialize_uncompressed(&mut associated_data)?;
+
+            debug!("Check aux keys correctness..");
+            let (opcode, aux_public_keys) = match branch_changes.change_type {
+                BranchChangesType::UpdateKey => {
+                    (VerificationOpcode::KeyUpdate, vec![art.get_node(&branch_changes.node_index)?.public_key])
+                }
+                BranchChangesType::AppendNode => (VerificationOpcode::AddMember, vec![art.root.public_key]),
+                BranchChangesType::MakeBlank => (VerificationOpcode::MakeBlank, vec![art.root.public_key]),
+                _ => return Err(VerificationError::UnsupportedOperation),
+            };
+
+            VerificationRequest{
+                opcode,
+                data: VerifierData {
+                    proof: payload.proof,
+                    public_inputs: PublicInputs::ArtUpdateInput {
+                        aux_public_keys,
+                        path: verification_artefacts.path,
+                        co_path: verification_artefacts.co_path,
+                    },
+                    context: associated_data,
+                }
+            }
         }
+        "delete_chat" => {
+            let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
+
+            let Path(chat_id) =
+                Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+            let payload = serde_urlencoded::from_bytes::<DeleteChatQuery>(query_bytes)?;
+
+            let art = state.art_service.get_art(&chat_id, None).await?.art;
+
+            let mut left_most_leaf = &art.root;
+            let mut path = Vec::new();
+            while let Ok(node) = left_most_leaf.get_left() {
+                path.push(Direction::Left);
+                left_most_leaf = node;
+            }
+
+            let leaf = art.get_node(&NodeIndex::Direction(path))?;
+            if !leaf.is_leaf() {
+                return Err(VerificationError::InvalidProof);
+            }
+
+            let mut msg = Vec::new();
+            msg.extend_from_slice(chat_id.as_bytes());
+            msg.extend(payload.nonce);
+
+            VerificationRequest {
+                opcode: VerificationOpcode::DeleteGroup,
+                data: VerifierData {
+                    proof: payload.signature,
+                    public_inputs: PublicInputs::Signature {
+                        public_keys: vec![leaf.public_key],
+                    },
+                    context: msg,
+                },
+            }
+        }
+        _ => return Err(VerificationError::UnknownEndpoint),
     };
 
-    helper.verify(&art, &state.proof_verifier_sender).await
+    verification_req.verify(&state.proof_verifier_sender).await?;
+
+    debug!("verification completed successfully");
+    Ok(next
+        .run(Request::from_parts(
+            parts.clone(),
+            Body::from(bytes.clone()),
+        ))
+        .await)
 }
 
-async fn verify_delete_query(
-    state: Arc<Container>,
-    url_path: &str,
-    query_bytes: &[u8],
-) -> Result<(), VerificationError> {
-    let (helper, art) = match url_path {
-        "/v1/messenger/chat" => {
-            let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<DeleteChatQuery>(
-                query_bytes,
-            )?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
-            (helper, art)
-        }
-        // Message
-        "/v1/messenger/messages" => {
-            let helper = VerificationHelper::from(serde_urlencoded::from_bytes::<
-                DeleteMessageQuery,
-            >(query_bytes)?);
-            let art = state.art_service.get_art(&helper.chat_id, None).await?.art;
-            (helper, art)
-        }
-        _ => {
-            error!("ERROR: Unknown request occurred");
-            return Err(VerificationError::UnknownEndpoint);
-        }
-    };
-
-    helper.verify(&art, &state.proof_verifier_sender).await
-}

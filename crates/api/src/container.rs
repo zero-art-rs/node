@@ -6,7 +6,7 @@ use proof_verifier::ProofVerifierSender;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::debug;
 use types::errors::{ARTServiceError, ApiError};
 use uuid::Uuid;
 
@@ -28,7 +28,7 @@ impl Container {
 
     pub async fn start_updating(&self, chat_id: Uuid) -> Result<(), ApiError> {
         if self.art_is_updating(chat_id).await {
-            info!("Failed to update art. It is currently changing");
+            debug!("Failed to update art. It is currently changing");
             Err(ApiError::from(ARTServiceError::ArtIsChanging))
         } else {
             self.art_is_updating.write().await.insert(chat_id);

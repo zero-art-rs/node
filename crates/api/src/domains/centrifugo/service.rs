@@ -5,12 +5,11 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, deco
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::domains::centrifugo::transport::http::AuthRequest;
+use types::centrifugo_schemas::{AuthRequest, AuthResponse};
 use types::errors::ApiError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,
     pub channels: Vec<String>,
     pub exp: i64,
     pub iat: i64,
@@ -49,7 +48,6 @@ impl CentrifugoService {
         }
 
         let claims = Claims {
-            sub: hex::encode(request.public_key.clone()),
             channels,
             exp: expiration.timestamp(),
             iat: now.timestamp(),

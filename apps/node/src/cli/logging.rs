@@ -75,17 +75,16 @@ where
             _ => event.metadata().target(),
         };
 
-        print!(
-            "[{}] {} {}: ",
-            chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            event.metadata().level(),
-            target,
-        );
-
         let mut message = String::new();
 
         event.record(&mut DefaultVisitor::new(Writer::new(&mut message), true));
 
-        println!("{}", message);
+        println!(
+            "[{}] {} {}: {}",
+            chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            event.metadata().level(),
+            target,
+            message,
+        );
     }
 }

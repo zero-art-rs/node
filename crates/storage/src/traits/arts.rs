@@ -51,13 +51,13 @@ pub trait ARTStorage: Send + Sync {
     async fn get_latest_sequence_number(
         &self,
         chat_id: &Uuid,
-    ) -> Result<u32, mongodb::error::Error>;
+    ) -> Result<i64, mongodb::error::Error>;
 
     async fn update_metadata(
         &self,
         chat_id: Uuid,
         new_metadata: Vec<u8>,
-        node_index: u32,
+        node_index: i64,
     ) -> Result<(), StorageError>;
 
     async fn replace_art(

@@ -3,6 +3,7 @@ use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 
 use crate::errors::ARTServiceError;
+use crate::errors::ApiError::Unauthorized;
 use serde_json::json;
 use utoipa::ToSchema;
 
