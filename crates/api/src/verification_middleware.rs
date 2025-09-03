@@ -20,9 +20,11 @@ use types::{
     errors::{ApiError, VerificationError},
 };
 use uuid::Uuid;
-
+use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
+use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
+use callbacks::callback;
 
 pub async fn verification_middleware(
     state: State<Arc<Container>>,
@@ -226,10 +228,6 @@ async fn verification_middleware_inner(
                 BranchChanges::<CortadoAffine>::deserialize(payload.branch_changes.as_slice())?;
             let art = state.art_service.get_art(&chat_id, None).await?.art;
             let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
-            let mut associated_data = Vec::new();
-            art.root
-                .public_key
-                .serialize_uncompressed(&mut associated_data)?;
 
             debug!("Check aux keys correctness..");
             let (opcode, aux_public_keys) = match branch_changes.change_type {
@@ -245,6 +243,8 @@ async fn verification_middleware_inner(
                 }
                 _ => return Err(VerificationError::UnsupportedOperation),
             };
+
+            let associated_data = payload.get_aux_data();
 
             VerificationRequest {
                 opcode,
@@ -285,7 +285,7 @@ async fn verification_middleware_inner(
             msg.extend(payload.nonce);
 
             VerificationRequest {
-                opcode: VerificationOpcode::DeleteGroup,
+                opcode: VerificationOpcode::DeleteChat,
                 data: VerifierData {
                     proof: payload.signature,
                     public_inputs: PublicInputs::Signature {
@@ -298,8 +298,8 @@ async fn verification_middleware_inner(
         _ => return Err(VerificationError::UnknownEndpoint),
     };
 
-    verification_req
-        .verify(&state.proof_verifier_sender)
+    
+    verify(verification_req.to_message()?, &state.proof_verifier_sender)
         .await?;
 
     debug!("verification completed successfully");
@@ -309,4 +309,29 @@ async fn verification_middleware_inner(
             Body::from(bytes.clone()),
         ))
         .await)
+}
+
+pub async fn verify(
+    message: ProofVerifierMessage,
+    proof_verifier_sender: &ProofVerifierSender,
+) -> Result<(), VerificationError> {
+    let verdict = match message {
+        ProofVerifierMessage::ArtUpdate { .. } => {
+            match callback(proof_verifier_sender, message).await? {
+                ProofVerifierResult::ArtUpdate { verdict } => verdict,
+                _ => return Err(VerificationError::InvalidResultMessage),
+            }
+        }
+        ProofVerifierMessage::SchnorrSignature { .. } => {
+            match callback(proof_verifier_sender, message).await? {
+                ProofVerifierResult::SchnorrSignature { verdict } => verdict,
+                _ => return Err(VerificationError::InvalidResultMessage),
+            }
+        }
+    };
+
+    match verdict {
+        true => Ok(()),
+        false => Err(VerificationError::InvalidProof),
+    }
 }

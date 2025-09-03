@@ -3,7 +3,6 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use art::traits::{ARTPublicAPI, ARTPublicView};
 use art::types::Direction;
 use art::types::{BranchChanges, BranchChangesType, LeafIterWithPath, NodeIndex, PublicART};
-use callbacks::callback;
 use cortado::CortadoAffine;
 use tokio_util::bytes::Buf;
 use tracing::{debug, error};
@@ -20,7 +19,7 @@ pub enum VerificationOpcode {
     GetMessages,
     GetChanges,
     AuthRequest,
-    DeleteGroup,
+    DeleteChat,
 }
 
 pub enum PublicInputs {
@@ -46,7 +45,7 @@ pub struct VerificationRequest {
 }
 
 impl VerificationRequest {
-    pub fn create_message(&self) -> Result<ProofVerifierMessage, VerificationError> {
+    pub fn to_message(self) -> Result<ProofVerifierMessage, VerificationError> {
         match self.opcode {
             VerificationOpcode::KeyUpdate
             | VerificationOpcode::AddMember
@@ -55,57 +54,30 @@ impl VerificationRequest {
                     path,
                     co_path,
                     aux_public_keys,
-                } = &self.data.public_inputs
+                } = self.data.public_inputs
                 else {
                     return Err(VerificationError::InvalidInput);
                 };
 
                 Ok(ProofVerifierMessage::ArtUpdate {
-                    proof: self.data.proof.clone(),
-                    co_path: co_path.clone(),
-                    associated_data: self.data.context.clone(),
-                    aux_public_keys: aux_public_keys.clone(),
-                    path: path.clone(),
+                    proof: self.data.proof,
+                    co_path,
+                    associated_data: self.data.context,
+                    aux_public_keys,
+                    path,
                 })
             }
             _ => {
-                let PublicInputs::Signature { public_keys } = &self.data.public_inputs else {
+                let PublicInputs::Signature { public_keys } = self.data.public_inputs else {
                     return Err(VerificationError::InvalidInput);
                 };
 
                 Ok(ProofVerifierMessage::SchnorrSignature {
-                    signature: self.data.proof.clone(),
-                    public_keys: public_keys.clone(),
-                    msg: self.data.context.clone(),
+                    signature: self.data.proof,
+                    public_keys,
+                    msg: self.data.context,
                 })
             }
-        }
-    }
-
-    pub async fn verify(
-        &self,
-        proof_verifier_sender: &ProofVerifierSender,
-    ) -> Result<(), VerificationError> {
-        let message = self.create_message()?;
-
-        let verdict = match message {
-            ProofVerifierMessage::ArtUpdate { .. } => {
-                match callback(proof_verifier_sender, message).await? {
-                    ProofVerifierResult::ArtUpdate { verdict } => verdict,
-                    _ => return Err(VerificationError::InvalidResultMessage),
-                }
-            }
-            ProofVerifierMessage::SchnorrSignature { .. } => {
-                match callback(proof_verifier_sender, message).await? {
-                    ProofVerifierResult::SchnorrSignature { verdict } => verdict,
-                    _ => return Err(VerificationError::InvalidResultMessage),
-                }
-            }
-        };
-
-        match verdict {
-            true => Ok(()),
-            false => Err(VerificationError::InvalidProof),
         }
     }
 }

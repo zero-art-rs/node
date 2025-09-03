@@ -27,4 +27,5 @@ chrono = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 serde_urlencoded = { workspace = true }
 serde_with = { workspace = true }
+sha3 = { workspace = true }
 

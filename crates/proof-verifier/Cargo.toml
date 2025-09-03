@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-callbacks = { path = "../callback" }
 types = { path = "../types" }
 tracing = { workspace = true }
 eyre = { workspace = true }

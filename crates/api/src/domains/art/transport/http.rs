@@ -18,7 +18,7 @@ use types::{
 use uuid::Uuid;
 use validator::Validate;
 
-const DEFAULT_CHALLENGE_LENGTH: u32 = 128; // 16 bytes
+const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
 #[utoipa::path(
     post,

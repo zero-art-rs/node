@@ -36,7 +36,7 @@ const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
 // used for tests, which can be repeated
 const TEST_REPEATS: usize = 2;
-const DEFAULT_NONCE_LENGTH: u32 = 128; // 16 bytes
+const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
 
 #[derive(Debug, Deserialize)]
 struct CentrifugoTokenResponse {
@@ -494,16 +494,24 @@ async fn update_key(
     let secret_key = context.art.secret_key.clone();
     let new_secret_key = ARTScalarField::rand(&mut context.rng);
 
-    let mut associated_data = Vec::new();
-    context
-        .art
-        .root
-        .public_key
-        .serialize_uncompressed(&mut associated_data)
-        .unwrap();
+    // let mut associated_data = Vec::new();
+    // context
+    //     .art
+    //     .root
+    //     .public_key
+    //     .serialize_uncompressed(&mut associated_data)
+    //     .unwrap();
 
     let (_, key_update_changes) = context.art.update_key(&new_secret_key).unwrap();
     let (_, artefacts) = context.art.recompute_root_key_with_artefacts().unwrap();
+
+    let mut req = GroupOperationRequest {
+        branch_changes: key_update_changes.serialze().unwrap(),
+        proof: vec![],
+        payload,
+    };
+
+    let associated_data = req.get_aux_data();
 
     let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
         .map(|_| Scalar::random(&mut thread_rng()))
@@ -543,35 +551,23 @@ async fn update_key(
 
     assert_eq!(verification_result, true);
 
-    let key_update_changes_bytes = key_update_changes.serialze().unwrap();
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
+    req.proof = proof_bytes;
     context
         .client
         .put(format!(
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        .json(&GroupOperationRequest {
-            branch_changes: key_update_changes_bytes,
-            proof: proof_bytes,
-            payload,
-        })
+        .json(&req)
         .send()
         .await
 }
 
 // add node to the art, and send updates to the chat
 async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
-    let mut associated_data = Vec::new();
-    context
-        .art
-        .root
-        .public_key
-        .serialize_uncompressed(&mut associated_data)
-        .unwrap();
-
     let old_tk = context.art.recompute_root_key().unwrap().key;
     let new_user_secret_key = ARTScalarField::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
@@ -588,6 +584,14 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
         .collect();
 
     let public_key = CortadoAffine::generator().mul(old_tk).into_affine();
+
+    let mut req = GroupOperationRequest {
+        branch_changes: append_user_changes.serialze().unwrap(),
+        proof: vec![],
+        payload: None,
+    };
+
+    let mut associated_data = req.get_aux_data();
 
     let proof = art_prove(
         context.basis.clone(),
@@ -620,9 +624,10 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
 
     assert_eq!(verification_result, true);
 
-    let add_user_changes_bytes = append_user_changes.serialze().unwrap();
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
+
+    req.proof = proof_bytes;
 
     context
         .client
@@ -630,11 +635,7 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        .json(&GroupOperationRequest {
-            branch_changes: add_user_changes_bytes,
-            proof: proof_bytes,
-            payload: None,
-        })
+        .json(&req)
         .send()
         .await
 }
@@ -643,13 +644,6 @@ async fn make_blank(
     context: &mut ARTTestContext,
     member_id: usize,
 ) -> reqwest::Result<reqwest::Response> {
-    let mut associated_data = Vec::new();
-    context
-        .art
-        .root
-        .public_key
-        .serialize_uncompressed(&mut associated_data)
-        .unwrap();
     let old_tk = context.art.recompute_root_key().unwrap().key;
     let user_to_remove = ARTGroup::generator()
         .mul(&context.initial_secrets[member_id])
@@ -672,6 +666,14 @@ async fn make_blank(
         .collect();
 
     let old_tk_pub = CortadoAffine::generator().mul(&old_tk).into_affine();
+
+    let mut req = GroupOperationRequest {
+        branch_changes: remove_user_changes.serialze().unwrap(),
+        proof: vec![],
+        payload: None,
+    };
+
+    let associated_data = req.get_aux_data();
 
     let proof = art_prove(
         context.basis.clone(),
@@ -705,9 +707,10 @@ async fn make_blank(
 
     assert_eq!(verification_result, true);
 
-    let remove_user_changes_bytes = remove_user_changes.serialze().unwrap();
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
+
+    req.proof = proof_bytes;
 
     context
         .client
@@ -715,11 +718,7 @@ async fn make_blank(
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        .json(&GroupOperationRequest {
-            branch_changes: remove_user_changes_bytes,
-            proof: proof_bytes,
-            payload: None,
-        })
+        .json(&req)
         .send()
         .await
 }
