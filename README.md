@@ -14,15 +14,29 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 
 ## Build
 
-### Crate features
+### Node features
 
+* **default** - Enables verification feature. To run the node without default features, run the node with `--no-default-features` command line option.
+* **art_modifications** - Enable `api/art_modifications` feature
+* **verification** - Enable `verification` feature.
+
+### Api features
 * **api/art_modifications** - Enable art modification endpoints for use
-* **api/verification** - Enable Proof verification. (Automatically enables `art_modifications` feature.)  
+* **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
 * **api/integration-tests** - Enables integration tests.
 
+### Run 
+
+To run the node without features run it with `--no-default-features`.
+```shell
+cargo run -p zk-messenger-node --no-default-features --release -- run --config config.toml
+```
 
 ## Tests
 
+### Unit tests
+
+### Integration tests
 To test the node api, one should prepare the environment. Firstly raise the infrastructure in docker. Node can be run in docker or locally. Then one can run tests with feature `integration-tests` like the next:
 ```shell
 cargo test -p api --features integration-tests --release

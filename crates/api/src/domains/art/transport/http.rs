@@ -1,6 +1,6 @@
 use crate::container::Container;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
-use art::types::BranchChangesType;
+use art::types::{ARTNode, BranchChangesType, PublicART};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -10,6 +10,7 @@ use axum::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use mongodb::bson::doc;
 use std::sync::Arc;
+use cortado::CortadoAffine;
 use tracing::{debug, error, instrument};
 use types::{
     art_schemas::*,
@@ -20,28 +21,53 @@ use validator::Validate;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
+/// Create a new group
 #[utoipa::path(
     post,
     path = "/v1/group",
-    request_body = InitChatRequest,
+    request_body = InitGroupRequest,
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn init_chat(
     State(state): State<Arc<Container>>,
-    Json(payload): Json<InitChatRequest>,
+    Json(payload): Json<InitGroupRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
-    state
-        .art_service
-        .init_chat(
-            &payload.chat_id,
-            decode_art(&payload.art)?,
-            payload.is_private,
-        )
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+    match &payload.art {
+        Some(art) => {
+            state
+                .art_service
+                .init_chat(
+                    &payload.chat_id,
+                    decode_art(&art)?,
+                    payload.is_private,
+                )
+                .await
+                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+        }
+        None => {
+            #[cfg(not(feature = "art_modifications"))]{
+                debug!("Create group with empty art");
+                state
+                    .art_service
+                    .init_chat(
+                        &payload.chat_id,
+                        PublicART {
+                            root: Box::new(ARTNode::new_leaf(CortadoAffine::default())),
+                            generator: CortadoAffine::default(),
+                        },
+                        payload.is_private,
+                    ).await.map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+            }
+            #[cfg(feature = "art_modifications")]{
+                error!("ART as None is not supported");
+                return Err(ApiError::from(ARTServiceError::InvalidInput))
+            }
+        }
+    }
+
 
     debug!(
         "Successfully created new chat with id: {}",
@@ -51,10 +77,15 @@ pub async fn init_chat(
     Ok(StatusCode::CREATED)
 }
 
+/// Get ART structure
 #[utoipa::path(
     get,
     path = "/v1/group/{id}/{epoch}",
-    params(GetARTQuery),
+    params(
+        GetARTQuery,
+        ("id" = Uuid, Path, description = "Group id"),
+        ("epoch" = i64, Path, description = "Get art at provided epoch")
+    ),
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]
@@ -79,10 +110,14 @@ pub async fn get_art(
     Ok((StatusCode::OK, BASE64_STANDARD.encode(art_bytes)))
 }
 
+/// Send ART update (key update, add member, remove member)
 #[utoipa::path(
     put,
     path = "/v1/group/{id}",
-    params(GetARTQuery),
+    params(
+        GetARTQuery,
+        ("id" = Uuid, Path, description = "Group id")
+    ),
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]
@@ -122,10 +157,14 @@ pub async fn update_art(
     }
 }
 
+/// Get ART changes
 #[utoipa::path(
     get,
     path = "/v1/group/{id}",
-    params(GetChangesQuery),
+    params(
+        GetChangesQuery,
+        ("id" = Uuid, Path, description = "Group id")
+    ),
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]
@@ -137,7 +176,6 @@ pub async fn get_changes(
     payload.validate()?;
 
     let filter = doc! { "epoch": { "$gte": payload.epoch } };
-    // let filter = doc! {};
     let changes = state
         .art_service
         .list_changes(&chat_id, filter.clone(), payload.limit, payload.skip)
@@ -158,17 +196,21 @@ pub async fn get_changes(
     ))
 }
 
+/// Delete the group
 #[utoipa::path(
     delete,
     path = "/v1/group/{id}",
-    params(DeleteChatQuery),
+    params(
+        DeleteGroupQuery,
+        ("id" = Uuid, Path, description = "Group id")
+    ),
     tag = "Chat operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn delete_chat(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
-    Query(payload): Query<DeleteChatQuery>,
+    Query(payload): Query<DeleteGroupQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
@@ -185,7 +227,13 @@ pub async fn delete_chat(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(get, path = "/v1/group/{id}/challenge", tag = "Chat operations")]
+/// Get challenge from the server
+#[utoipa::path(
+    get,
+    path = "/v1/group/{id}/challenge",
+    params(("id" = Uuid, Path, description = "Group id")),
+    tag = "Chat operations"
+)]
 #[instrument(skip(state), err)]
 pub async fn get_challenge(
     State(state): State<Arc<Container>>,

@@ -33,6 +33,22 @@ pub trait DataStorage: Send + Sync {
         Ok(records)
     }
 
+    async fn count(
+        &self,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+    ) -> Result<u64, StorageError> {
+        Ok(self
+            .get_collection()
+            .await
+            .count_documents(filter)
+            // .find(filter)
+            .skip(skip as u64)
+            .limit(limit as u64)
+            .await?)
+    }
+
     async fn find_one(&self, filter: Document) -> Result<Option<Self::Data>, StorageError> {
         let cursor = self.get_collection().await.find_one(filter).await?;
 

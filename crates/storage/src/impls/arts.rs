@@ -216,10 +216,7 @@ impl ARTStorage for MongoARTStorage {
         Ok(())
     }
 
-    async fn get_latest_epoch(
-        &self,
-        chat_id: &Uuid,
-    ) -> Result<i64, mongodb::error::Error> {
+    async fn get_latest_epoch(&self, chat_id: &Uuid) -> Result<i64, mongodb::error::Error> {
         let cursor = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })

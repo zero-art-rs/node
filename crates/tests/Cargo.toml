@@ -1,0 +1,15 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.4"
+api = { path = "../api"}
+tokio = { workspace = true }
+axum-test = { workspace = true }
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
+
+[lints]
+workspace = true

@@ -47,10 +47,7 @@ pub trait ARTStorage: Send + Sync {
     async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;
 
     /// Get the sequence number of the art
-    async fn get_latest_epoch(
-        &self,
-        chat_id: &Uuid,
-    ) -> Result<i64, mongodb::error::Error>;
+    async fn get_latest_epoch(&self, chat_id: &Uuid) -> Result<i64, mongodb::error::Error>;
 
     async fn update_metadata(
         &self,

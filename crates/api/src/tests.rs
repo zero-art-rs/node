@@ -25,7 +25,7 @@ use serde_with::{base64::Base64, serde_as};
 use std::iter::Skip;
 use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::info;
-use types::ARTChangesRecord;
+use types::{ARTChangesRecord, Message};
 use types::art_schemas::*;
 use types::centrifugo_schemas::AuthRequest;
 use uuid::Uuid;
@@ -152,6 +152,9 @@ impl ARTTestContext {
         })
     }
 }
+
+use mongodb::bson::{DateTime, doc};
+use types::messenger_schemas::{GetMessageQuery, CountMessagesQuery};
 
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {

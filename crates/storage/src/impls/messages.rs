@@ -1,6 +1,11 @@
 use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
-use mongodb::{bson::doc, change_stream::{event::ChangeStreamEvent, ChangeStream}, options::IndexOptions, ClientSession, Collection, IndexModel};
+use mongodb::{
+    bson::doc,
+    change_stream::{event::ChangeStreamEvent, ChangeStream},
+    options::IndexOptions,
+    ClientSession, Collection, IndexModel,
+};
 use tracing::debug;
 use types::Message;
 use uuid::Uuid;
@@ -89,7 +94,12 @@ impl MessageStorage for MongoMessageStorage {
         Ok(())
     }
 
-    async fn store_message_in_session(&self, session: &mut ClientSession, content: Vec<u8>, epoch: i64) -> Result<(), mongodb::error::Error> {
+    async fn store_message_in_session(
+        &self,
+        session: &mut ClientSession,
+        content: Vec<u8>,
+        epoch: i64,
+    ) -> Result<(), mongodb::error::Error> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection

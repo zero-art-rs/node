@@ -9,22 +9,22 @@ use axum::middleware::Next;
 use axum_core::body::Body;
 use axum_core::extract::{FromRequestParts, Request};
 use axum_core::response::{IntoResponse, Response};
+use callbacks::callback;
 use cortado::CortadoAffine;
 use hyper::StatusCode;
+use proof_verifier::ProofVerifierSender;
+use proof_verifier::verifier_engine::*;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
-use types::art_schemas::{DeleteChatQuery, GetARTQuery, GetChangesQuery, GroupOperationRequest};
+use types::art_schemas::{DeleteGroupQuery, GetARTQuery, GetChangesQuery, GroupOperationRequest};
+use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
+use types::centrifugo_schemas::AuthRequest;
 use types::messenger_schemas::{GetMessageQuery, SendMessageRequest};
 use types::{
     RouteId, add_route_id,
     errors::{ApiError, VerificationError},
 };
 use uuid::Uuid;
-use proof_verifier::ProofVerifierSender;
-use proof_verifier::verifier_engine::*;
-use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
-use types::centrifugo_schemas::AuthRequest;
-use callbacks::callback;
 
 pub async fn verification_middleware(
     state: State<Arc<Container>>,
@@ -95,8 +95,7 @@ async fn verification_middleware_inner(
                 },
             }
         }
-        "list_messages" => {
-            debug!("list_messages");
+        "list_messages" | "count_messages" => {
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
             let Path(chat_id) =
@@ -264,7 +263,7 @@ async fn verification_middleware_inner(
 
             let Path(chat_id) =
                 Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
-            let payload = serde_urlencoded::from_bytes::<DeleteChatQuery>(query_bytes)?;
+            let payload = serde_urlencoded::from_bytes::<DeleteGroupQuery>(query_bytes)?;
 
             let art = state.art_service.get_art(&chat_id, None).await?.art;
 
@@ -298,9 +297,7 @@ async fn verification_middleware_inner(
         _ => return Err(VerificationError::UnknownEndpoint),
     };
 
-    
-    verify(verification_req.to_message()?, &state.proof_verifier_sender)
-        .await?;
+    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
 
     debug!("verification completed successfully");
     Ok(next

@@ -5,6 +5,7 @@ use tracing::debug;
 use types::centrifugo_schemas::{AuthRequest, AuthResponse};
 use types::errors::ApiError;
 
+/// Endpoint for receiving centrifugo subscription jvt token
 #[utoipa::path(
     post,
     path = "/centrifugo/auth",

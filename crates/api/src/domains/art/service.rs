@@ -4,7 +4,10 @@ use cortado::CortadoAffine as ARTGroup;
 use futures_util::FutureExt;
 use mongodb::ClientSession;
 use mongodb::bson::{Document, doc};
-use storage::{ARTChangesStorage, ARTStorage, DATABASE, DataStorage, MongoARTChangesStorage, MongoARTStorage, StorageError, MongoMessageStorage, MessageStorage};
+use storage::{
+    ARTChangesStorage, ARTStorage, DATABASE, DataStorage, MessageStorage, MongoARTChangesStorage,
+    MongoARTStorage, MongoMessageStorage, StorageError,
+};
 use tracing::{debug, error};
 use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
@@ -72,13 +75,9 @@ impl ARTService {
                     return Err(ARTServiceError::NotFound);
                 }
 
-                self.get_art_by_epoch(chat_id, epoch - 1)
-                    .await?
+                self.get_art_by_epoch(chat_id, epoch - 1).await?
             }
-            None => {
-                self.get_art_by_epoch(chat_id, previous_epoch - 1)
-                    .await?
-            }
+            None => self.get_art_by_epoch(chat_id, previous_epoch - 1).await?,
         };
 
         Ok(previous_art)
@@ -228,7 +227,7 @@ impl ARTService {
                 _ => return Err(ARTServiceError::InvalidChangeType),
             }
         }
-        
+
         let new_epoch = latest_art.epoch + 1;
 
         let mut session = DATABASE
@@ -244,8 +243,15 @@ impl ARTService {
                 (chat_id, changes, payload, proof, new_epoch),
                 |session, (chat_id, changes, payload, proof, epoch)| {
                     async move {
-                        self.update_art_callback(session, chat_id, changes, payload.clone(), proof, *epoch)
-                            .await
+                        self.update_art_callback(
+                            session,
+                            chat_id,
+                            changes,
+                            payload.clone(),
+                            proof,
+                            *epoch,
+                        )
+                        .await
                     }
                     .boxed()
                 },
@@ -293,7 +299,9 @@ impl ARTService {
             .await?;
 
         if let Some(payload) = payload {
-            message_storage.store_message_in_session(session, payload, epoch).await?;
+            message_storage
+                .store_message_in_session(session, payload, epoch)
+                .await?;
         }
 
         Ok(())

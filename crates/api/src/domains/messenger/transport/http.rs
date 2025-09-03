@@ -12,10 +12,11 @@ use std::sync::Arc;
 use tracing::{debug, error, instrument};
 use types::errors::ApiError;
 use types::errors::VerificationError;
-use types::messenger_schemas::{GetMessageQuery, SendMessageRequest};
+use types::messenger_schemas::{GetMessageQuery, CountMessagesQuery, SendMessageRequest};
 use uuid::Uuid;
 use validator::Validate;
 
+/// Endpoint for sending message to the group
 #[utoipa::path(
     post,
     path = "/v1/group/{id}/messages",
@@ -45,6 +46,7 @@ pub async fn send_message(
     Ok(StatusCode::ACCEPTED)
 }
 
+/// Endpoint for requesting messages from the group
 #[utoipa::path(
     get,
     path = "/v1/group/{id}/messages",
@@ -70,7 +72,11 @@ pub async fn list_messages(
     let mut filter = doc! {};
 
     if let Some(sequence_number) = payload.message_sequence_number {
-        filter.insert("sequence_number", sequence_number);
+        filter.insert("sequence_number", doc! { "$gte": sequence_number });
+    }
+
+    if let Some(epoch) = payload.epoch {
+        filter.insert("epoch", doc! { "$gte": epoch });
     }
 
     let messages = state
@@ -89,4 +95,40 @@ pub async fn list_messages(
     }
 
     Ok((StatusCode::OK, Json(messages)))
+}
+
+/// Endpoint counting messages
+#[utoipa::path(
+    get,
+    path = "/v1/group/{id}/messages/count",
+    params(
+        CountMessagesQuery,
+    ),
+    tag = "Messages"
+)]
+#[instrument(skip(state), err)]
+pub async fn count_messages(
+    State(state): State<Arc<Container>>,
+    Path(chat_id): Path<Uuid>,
+    Query(payload): Query<CountMessagesQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    payload.validate()?;
+
+    let mut filter = doc! {};
+
+    if let Some(sequence_number) = payload.message_sequence_number {
+        filter.insert("sequence_number", doc! { "$gte": sequence_number });
+    }
+
+    if let Some(epoch) = payload.epoch {
+        filter.insert("epoch", doc! { "$gte": epoch });
+    }
+
+    let count = state
+        .messenger_service
+        .count_messages(&chat_id, filter.clone(), payload.limit, payload.skip)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+
+    Ok((StatusCode::OK, Json(count)))
 }

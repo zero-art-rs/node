@@ -11,6 +11,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
+/// Check health
 #[utoipa::path(
     get,
     path = "/health",
@@ -73,6 +74,11 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .with_verification(container.clone())
         .with_route_id("list_messages");
 
+    let count_messages_route = OpenApiRouter::new()
+        .routes(routes![count_messages])
+        .with_verification(container.clone())
+        .with_route_id("count_messages");
+
     let send_message_route = OpenApiRouter::new()
         .routes(routes![send_message])
         .with_verification(container.clone())
@@ -112,6 +118,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(health_handler_route)
         .merge(list_messages_route)
+        .merge(count_messages_route)
         .merge(send_message_route)
         .merge(authenticate_route)
         .merge(init_chat_route)

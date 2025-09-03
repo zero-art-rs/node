@@ -49,6 +49,19 @@ impl MessengerService {
         Ok(message_record)
     }
 
+    pub async fn count_messages(
+        &self,
+        chat_id: &Uuid,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+    ) -> Result<u64, MessengerError> {
+        Ok(MongoMessageStorage::new(chat_id)
+            .await?
+            .count(filter, limit, skip)
+            .await?)
+    }
+
     pub async fn delete_messages(
         &self,
         chat_id: &Uuid,
