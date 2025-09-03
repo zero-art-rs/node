@@ -72,7 +72,7 @@ impl ARTStorage for MongoARTStorage {
             chat_id,
             art: art.clone(),
             is_private,
-            sequence_number: 0,
+            epoch: 0,
         };
 
         self.arts_collection
@@ -174,7 +174,6 @@ impl ARTStorage for MongoARTStorage {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
-        metadata: Option<Vec<u8>>,
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
@@ -184,16 +183,7 @@ impl ARTStorage for MongoARTStorage {
                 .art
                 .update_public_art(&changes)
                 .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?;
-            art_record.sequence_number += 1;
-
-            if let Some(metadata) = metadata {
-                debug!("Update user metadata");
-                art_record
-                    .art
-                    .get_mut_node(&changes.node_index)
-                    .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?
-                    .metadata = Some(metadata);
-            }
+            art_record.epoch += 1;
 
             self.arts_collection
                 .find_one_and_replace(filter, art_record)
@@ -226,7 +216,7 @@ impl ARTStorage for MongoARTStorage {
         Ok(())
     }
 
-    async fn get_latest_sequence_number(
+    async fn get_latest_epoch(
         &self,
         chat_id: &Uuid,
     ) -> Result<i64, mongodb::error::Error> {
@@ -235,11 +225,11 @@ impl ARTStorage for MongoARTStorage {
             .find_one(doc! { "chat_id": chat_id })
             .await?;
 
-        let sequence_number = cursor
+        let epoch = cursor
             .ok_or_else(|| mongodb::error::Error::from(std::io::Error::other("No records Found")))?
-            .sequence_number;
+            .epoch;
 
-        Ok(sequence_number)
+        Ok(epoch)
     }
 
     async fn update_metadata(

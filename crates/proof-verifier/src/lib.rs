@@ -77,10 +77,7 @@ impl ProofVerifier {
             }
         };
 
-        let eyre_result = match result {
-            Ok(proof_verifier_result) => Ok(proof_verifier_result),
-            Err(proof_verifier_err) => Err(eyre::eyre!("{}", proof_verifier_err)),
-        };
+        let eyre_result = result.map_err(|err| eyre::eyre!("{}", err));
 
         if callback.send(eyre_result).is_err() {
             error!("Failed to send response: receiver dropped");
@@ -134,12 +131,9 @@ impl ProofVerifier {
     }
 }
 
-fn get_pedersen_basis() -> PedersenBasis<cortado::cortado::CortadoAffine, Ed25519Affine> {
-    let g_1 = cortado::cortado::CortadoAffine::generator();
-    let h_1 = cortado::cortado::CortadoAffine::new_unchecked(
-        cortado::ALT_GENERATOR_X,
-        cortado::ALT_GENERATOR_Y,
-    );
+fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
+    let g_1 = CortadoAffine::generator();
+    let h_1 = CortadoAffine::new_unchecked(cortado::ALT_GENERATOR_X, cortado::ALT_GENERATOR_Y);
 
     let gens = PedersenGens::default();
     PedersenBasis::<CortadoAffine, Ed25519Affine>::new(
@@ -148,8 +142,4 @@ fn get_pedersen_basis() -> PedersenBasis<cortado::cortado::CortadoAffine, Ed2551
         ristretto255_to_ark(gens.B).unwrap(),
         ristretto255_to_ark(gens.B_blinding).unwrap(),
     )
-}
-
-fn get_bulletproof_gens() -> BulletproofGens {
-    BulletproofGens::new(2048, 1)
 }

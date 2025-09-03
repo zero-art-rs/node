@@ -3,7 +3,7 @@ use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
 use art::types::BranchChangesType;
 use axum::{
     Json,
-    extract::{Query, State, Path},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -89,7 +89,7 @@ pub async fn get_art(
 pub async fn update_art(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
-    Json(payload): Json<UpdateARTRequest>,
+    Json(payload): Json<GroupOperationRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
@@ -105,13 +105,7 @@ pub async fn update_art(
 
     if let Err(e) = state
         .art_service
-        .update_art(
-            &chat_id,
-            &branch_changes,
-            payload.metadata,
-            payload.payload,
-            &payload.proof,
-        )
+        .update_art(&chat_id, &branch_changes, payload.payload, &payload.proof)
         .await
     {
         state.stop_updating(chat_id).await;
@@ -142,13 +136,20 @@ pub async fn get_changes(
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
-    let filter = doc! {};
+    let filter = doc! { "epoch": { "$gte": payload.epoch } };
+    // let filter = doc! {};
     let changes = state
         .art_service
-        .list_changes(&chat_id, filter, payload.limit, payload.skip)
+        .list_changes(&chat_id, filter.clone(), payload.limit, payload.skip)
         .await?;
 
-    debug!("Found changes: {}", changes.len());
+    debug!(
+        "Found {} changes for filter: {}, skip: {} and limit: {}",
+        changes.len(),
+        filter,
+        payload.skip,
+        payload.limit
+    );
 
     Ok((
         StatusCode::OK,

@@ -29,9 +29,6 @@ pub struct SendMessageRequest {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
-    /// Message creation time
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-
     // Unique sequence number of the message
     pub message_sequence_number: Option<i64>,
 

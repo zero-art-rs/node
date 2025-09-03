@@ -1,8 +1,8 @@
+use crate::container::Container;
 use crate::domains::art::transport::http as art_transport;
 use crate::domains::centrifugo::transport::http as centrifugo_transport;
 use crate::domains::messenger::transport::http::*;
 use crate::verification_middleware::verification_middleware;
-use crate::container::Container;
 use axum::{Router, middleware};
 use std::sync::Arc;
 use types::add_route_id;
@@ -66,8 +66,7 @@ where
 
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     //Messages:
-    let health_handler_route = OpenApiRouter::new()
-        .routes(routes![get_health_handler]);
+    let health_handler_route = OpenApiRouter::new().routes(routes![get_health_handler]);
 
     let list_messages_route = OpenApiRouter::new()
         .routes(routes![list_messages])

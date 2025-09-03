@@ -57,20 +57,7 @@ pub struct AddMemberRequest {
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct RemoveMemberRequest {
-    /// Serialized BranchChanges:UpdateKeys structure.
-    #[serde_as(as = "Base64")]
-    pub branch_changes: Vec<u8>,
-
-    /// Serialized proof.
-    #[serde_as(as = "Base64")]
-    pub proof: Vec<u8>,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateKeyRequest {
+pub struct GroupOperationRequest {
     /// Serialized BranchChanges:UpdateKeys structure
     #[serde_as(as = "Base64")]
     pub branch_changes: Vec<u8>,
@@ -79,34 +66,12 @@ pub struct UpdateKeyRequest {
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 
-    /// Optional new user metadata
-    #[serde_as(as = "Option<Base64>")]
-    pub metadata: Option<Vec<u8>>,
-
     /// Additional data
     #[serde_as(as = "Option<Base64>")]
     pub payload: Option<Vec<u8>>,
-}
 
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateARTRequest {
-    /// Serialized BranchChanges:UpdateKeys structure
-    #[serde_as(as = "Base64")]
-    pub branch_changes: Vec<u8>,
-
-    /// Serialized proof
-    #[serde_as(as = "Base64")]
-    pub proof: Vec<u8>,
-
-    /// Optional new user metadata
-    #[serde_as(as = "Option<Base64>")]
-    pub metadata: Option<Vec<u8>>,
-
-    /// Additional data
-    #[serde_as(as = "Option<Base64>")]
-    pub payload: Option<Vec<u8>>,
+    // /// Epoch of the updated art. Currently, isn't used
+    // epoch: i64
 }
 
 #[serde_as]
@@ -126,6 +91,9 @@ pub struct GetChangesQuery {
     /// User provided nonce
     #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
+
+    /// The epoch of the first requested ART changes
+    pub epoch: i64,
 }
 
 #[serde_as]

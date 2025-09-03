@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use axum::{Json, extract::State};
-use tracing::debug;
 use crate::container::Container;
+use axum::{Json, extract::State};
+use std::sync::Arc;
+use tracing::debug;
 use types::centrifugo_schemas::{AuthRequest, AuthResponse};
 use types::errors::ApiError;
 

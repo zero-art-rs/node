@@ -1,11 +1,6 @@
 use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
-use mongodb::{
-    bson::doc,
-    change_stream::{event::ChangeStreamEvent, ChangeStream},
-    options::IndexOptions,
-    Collection, IndexModel,
-};
+use mongodb::{bson::doc, change_stream::{event::ChangeStreamEvent, ChangeStream}, options::IndexOptions, ClientSession, Collection, IndexModel};
 use tracing::debug;
 use types::Message;
 use uuid::Uuid;
@@ -92,6 +87,57 @@ impl MessageStorage for MongoMessageStorage {
         session.commit_transaction().await?;
 
         Ok(())
+    }
+
+    async fn store_message_in_session(&self, session: &mut ClientSession, content: Vec<u8>, epoch: i64) -> Result<(), mongodb::error::Error> {
+        let message_collection = &self.messages_collection;
+
+        let mut cursor = message_collection
+            .find(doc! {})
+            .sort(doc! { "sequence_number": -1 })
+            .limit(1)
+            .await?;
+
+        let next_sequence_number = match cursor.try_next().await? {
+            Some(result) => result.sequence_number + 1,
+            None => 0,
+        };
+        debug!(
+            "Store message with sequence number {}",
+            next_sequence_number
+        );
+
+        let mut message = Message::new(content, next_sequence_number, None, epoch);
+
+        message_collection
+            .insert_one(message.clone())
+            .session(&mut *session)
+            .await?;
+
+        // change message for outbox_collection
+        message.chat_id = Some(self.chat_id);
+
+        self.messages_outbox_collection
+            .insert_one(message)
+            .session(&mut *session)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn get_existing_collection(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
+        let db = DATABASE.get().ok_or_else(|| {
+            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
+
+        let messages_collection = db.collection(&format!("chat/{chat_id}"));
+        let messages_outbox_collection = db.collection(&"messages_outbox");
+
+        Ok(Self {
+            messages_collection,
+            messages_outbox_collection,
+            chat_id: *chat_id,
+        })
     }
 }
 

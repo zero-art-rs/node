@@ -12,7 +12,6 @@ use types::errors::VerificationError;
 use types::{art_schemas::*, centrifugo_schemas::AuthRequest, messenger_schemas::*};
 use uuid::Uuid;
 
-
 pub enum VerificationOpcode {
     KeyUpdate,
     AddMember,
@@ -32,7 +31,7 @@ pub enum PublicInputs {
     },
     Signature {
         public_keys: Vec<CortadoAffine>,
-    }
+    },
 }
 
 pub struct VerifierData {
@@ -52,9 +51,13 @@ impl VerificationRequest {
             VerificationOpcode::KeyUpdate
             | VerificationOpcode::AddMember
             | VerificationOpcode::MakeBlank => {
-                let PublicInputs::ArtUpdateInput {path, co_path, aux_public_keys} = &self.data.public_inputs
+                let PublicInputs::ArtUpdateInput {
+                    path,
+                    co_path,
+                    aux_public_keys,
+                } = &self.data.public_inputs
                 else {
-                    return Err(VerificationError::InvalidInput)
+                    return Err(VerificationError::InvalidInput);
                 };
 
                 Ok(ProofVerifierMessage::ArtUpdate {
@@ -64,10 +67,9 @@ impl VerificationRequest {
                     aux_public_keys: aux_public_keys.clone(),
                     path: path.clone(),
                 })
-            },
+            }
             _ => {
-                let PublicInputs::Signature { public_keys } = &self.data.public_inputs
-                else {
+                let PublicInputs::Signature { public_keys } = &self.data.public_inputs else {
                     return Err(VerificationError::InvalidInput);
                 };
 
@@ -82,21 +84,21 @@ impl VerificationRequest {
 
     pub async fn verify(
         &self,
-        proof_verifier_sender: &ProofVerifierSender
+        proof_verifier_sender: &ProofVerifierSender,
     ) -> Result<(), VerificationError> {
         let message = self.create_message()?;
 
         let verdict = match message {
-            ProofVerifierMessage::ArtUpdate {..} => {
+            ProofVerifierMessage::ArtUpdate { .. } => {
                 match callback(proof_verifier_sender, message).await? {
                     ProofVerifierResult::ArtUpdate { verdict } => verdict,
-                    _ => return Err(VerificationError::InvalidResultMessage)
+                    _ => return Err(VerificationError::InvalidResultMessage),
                 }
-            },
-            ProofVerifierMessage::SchnorrSignature {..} => {
+            }
+            ProofVerifierMessage::SchnorrSignature { .. } => {
                 match callback(proof_verifier_sender, message).await? {
                     ProofVerifierResult::SchnorrSignature { verdict } => verdict,
-                    _ => return Err(VerificationError::InvalidResultMessage)
+                    _ => return Err(VerificationError::InvalidResultMessage),
                 }
             }
         };

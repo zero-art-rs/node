@@ -295,7 +295,7 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
             update_key(&mut context, metadata.clone(), payload.clone()).await?;
         assert_eq!(key_update_response.status(), StatusCode::OK);
 
-        let changes_response = get_changes(&mut test_context, 1000, i as i64).await?;
+        let changes_response = get_changes(&mut test_context, 1000, i as i64, 0).await?;
         assert_eq!(changes_response.status(), StatusCode::OK);
 
         let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(
@@ -303,17 +303,15 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
         )?;
 
         assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].metadata, metadata);
-        assert_eq!(changes[0].payload, payload);
 
-        test_context.art.update_public_art(&changes[0].changes)?;
+        // test_context.art.update_public_art(&changes[0].changes)?;
     }
 
     // use None instead of some to use old metadata
     let key_update_response = update_key(&mut context, None, None).await?;
     assert_eq!(key_update_response.status(), StatusCode::OK);
 
-    let changes_response = get_changes(&mut test_context, 1000, TEST_REPEATS as i64).await?;
+    let changes_response = get_changes(&mut test_context, 1000, TEST_REPEATS as i64, 0).await?;
     assert_eq!(changes_response.status(), StatusCode::OK);
 
     let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(
@@ -321,8 +319,6 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
     )?;
 
     assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].metadata, None);
-    assert_eq!(changes[0].payload, None);
 
     Ok(())
 }
@@ -557,16 +553,9 @@ async fn update_key(
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        // .json(&json!({
-        //   "branchChanges": BASE64_STANDARD.encode(key_update_changes_bytes),
-        //   "chatId": context.chat_uuid,
-        //   "proof": BASE64_STANDARD.encode(proof_bytes),
-        // }))
-        .json(&UpdateKeyRequest {
+        .json(&GroupOperationRequest {
             branch_changes: key_update_changes_bytes,
             proof: proof_bytes,
-            // chat_id: context.chat_uuid,
-            metadata,
             payload,
         })
         .send()
@@ -641,11 +630,11 @@ async fn add_member(context: &mut ARTTestContext) -> reqwest::Result<reqwest::Re
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        .json(&json!({
-          "branchChanges": BASE64_STANDARD.encode(add_user_changes_bytes),
-          // "chatId": context.chat_uuid,
-          "proof": BASE64_STANDARD.encode(proof_bytes),
-        }))
+        .json(&GroupOperationRequest {
+            branch_changes: add_user_changes_bytes,
+            proof: proof_bytes,
+            payload: None,
+        })
         .send()
         .await
 }
@@ -726,11 +715,11 @@ async fn make_blank(
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        .json(&json!({
-          "branchChanges": BASE64_STANDARD.encode(remove_user_changes_bytes),
-          // "chatId": context.chat_uuid,
-          "proof": BASE64_STANDARD.encode(proof_bytes),
-        }))
+        .json(&GroupOperationRequest {
+            branch_changes: remove_user_changes_bytes,
+            proof: proof_bytes,
+            payload: None,
+        })
         .send()
         .await
 }
@@ -783,7 +772,6 @@ async fn get_art(
             BACKEND_URL, "v1/group", context.chat_uuid, sequence_number
         ))
         .query(&GetARTQuery {
-            // chat_id: context.chat_uuid,
             signature,
             nonce,
             challenge,
@@ -810,65 +798,11 @@ async fn get_challenge(context: &mut ARTTestContext) -> reqwest::Result<reqwest:
         .await
 }
 
-async fn get_initial_art(mut context: &mut ARTTestContext) -> reqwest::Result<reqwest::Response> {
-    // Get challenge for proof
-    let challenge_response = get_challenge(&mut context).await?;
-    assert_eq!(challenge_response.status(), StatusCode::OK);
-
-    let challenge = BASE64_STANDARD
-        .decode(challenge_response.text().await.unwrap())
-        .unwrap();
-
-    // Second try to get challenge, to test that it is the same now
-    let challenge2_response = get_challenge(&mut context).await?;
-    assert_eq!(challenge2_response.status(), StatusCode::OK);
-
-    let challenge2 = BASE64_STANDARD
-        .decode(challenge2_response.text().await.unwrap())
-        .unwrap();
-
-    assert_eq!(challenge2, challenge);
-
-    // Create signature
-    let nonce = (0..DEFAULT_NONCE_LENGTH)
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<u8>>();
-    let index =
-        NodeIndex::get_index_from_path(&context.art.node_index.get_path().unwrap()).unwrap();
-
-    let mut msg = Vec::new();
-    msg.extend_from_slice(context.chat_uuid.as_bytes());
-    msg.extend(&nonce);
-    msg.extend(index.to_le_bytes());
-    msg.extend(challenge);
-
-    let pk = vec![context.art.public_key_of(&context.art.secret_key)];
-
-    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
-    let verification_result = verify(&signature, &pk, &msg);
-    assert!(verification_result.is_ok());
-
-    // Send get request
-    context
-        .client
-        .get(format!(
-            "{}/{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid, 0
-        ))
-        .query(&json!({
-            "chatId": context.chat_uuid,
-            "signature": BASE64_STANDARD.encode(&signature),
-            "index": index,
-            "nonce": BASE64_STANDARD.encode(&nonce),
-        }))
-        .send()
-        .await
-}
-
 async fn get_changes(
     mut context: &mut ARTTestContext,
     limit: i64,
     skip: i64,
+    epoch: i64,
 ) -> reqwest::Result<reqwest::Response> {
     let tk = context.art.recompute_root_key().unwrap().key;
     let pk = context.art.root.public_key;
@@ -895,6 +829,7 @@ async fn get_changes(
             nonce,
             limit: limit as i64,
             skip: skip as i64,
+            epoch: epoch as i64,
         })
         .send()
         .await

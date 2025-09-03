@@ -41,14 +41,13 @@ pub trait ARTStorage: Send + Sync {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
-        metadata: Option<Vec<u8>>,
     ) -> Result<(), mongodb::error::Error>;
 
     /// Drop initial_arts_collection and/or arts_collection if empty
     async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;
 
     /// Get the sequence number of the art
-    async fn get_latest_sequence_number(
+    async fn get_latest_epoch(
         &self,
         chat_id: &Uuid,
     ) -> Result<i64, mongodb::error::Error>;

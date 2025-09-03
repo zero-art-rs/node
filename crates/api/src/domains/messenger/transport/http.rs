@@ -69,13 +69,6 @@ pub async fn list_messages(
 
     let mut filter = doc! {};
 
-    if let Some(creation_time) = payload.created_at {
-        filter.insert(
-            "created_at",
-            DateTime::from_millis(creation_time.timestamp_millis()),
-        );
-    }
-
     if let Some(sequence_number) = payload.message_sequence_number {
         filter.insert("sequence_number", sequence_number);
     }
@@ -87,9 +80,9 @@ pub async fn list_messages(
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
     if messages.is_empty() {
-        debug!("No messages found for filter {}", filter);
+        debug!("No messages found for filter {}", &filter);
     } else {
-        debug!("Found next messages for the filter {}", filter);
+        debug!("Found next messages for the filter {}", &filter);
         for message in &messages {
             debug!("Found message: {}", message);
         }

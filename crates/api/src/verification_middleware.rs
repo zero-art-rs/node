@@ -1,4 +1,7 @@
 use crate::Container;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use art::traits::{ARTPublicAPI, ARTPublicView};
+use art::types::{BranchChanges, BranchChangesType, Direction, LeafIterWithPath, NodeIndex};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::Method;
@@ -6,17 +9,11 @@ use axum::middleware::Next;
 use axum_core::body::Body;
 use axum_core::extract::{FromRequestParts, Request};
 use axum_core::response::{IntoResponse, Response};
+use cortado::CortadoAffine;
 use hyper::StatusCode;
 use std::sync::Arc;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::{BranchChanges, BranchChangesType, Direction, LeafIterWithPath, NodeIndex};
-use cortado::CortadoAffine;
 use tracing::{debug, error, warn};
-use types::art_schemas::{
-    AddMemberRequest, DeleteChatQuery, GetARTQuery, GetChangesQuery, RemoveMemberRequest,
-    UpdateARTRequest, UpdateKeyRequest,
-};
+use types::art_schemas::{DeleteChatQuery, GetARTQuery, GetChangesQuery, GroupOperationRequest};
 use types::messenger_schemas::{GetMessageQuery, SendMessageRequest};
 use types::{
     RouteId, add_route_id,
@@ -53,7 +50,6 @@ async fn verification_middleware_inner(
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
-
     let route_id = request
         .extensions()
         .get::<RouteId>()
@@ -75,13 +71,13 @@ async fn verification_middleware_inner(
         "authenticate" => {
             let Json(payload) = Json::<AuthRequest>::from_bytes(&bytes)?;
 
+            if payload.chat_ids.len() != payload.epochs.len() {
+                return Err(VerificationError::InvalidInput);
+            }
+
             let mut root_keys = Vec::new();
             for (chat_id, epoch) in payload.chat_ids.iter().zip(payload.epochs.iter()) {
-                let art = state
-                    .art_service
-                    .get_art(&chat_id, Some(*epoch))
-                    .await?
-                    .art;
+                let art = state.art_service.get_art(&chat_id, Some(*epoch)).await?.art;
 
                 root_keys.push(art.get_root().public_key);
             }
@@ -96,7 +92,7 @@ async fn verification_middleware_inner(
                     context: payload.challenge,
                 },
             }
-        },
+        }
         "list_messages" => {
             debug!("list_messages");
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
@@ -120,7 +116,7 @@ async fn verification_middleware_inner(
                 data: VerifierData {
                     proof: payload.signature.clone(),
                     public_inputs: PublicInputs::Signature {
-                        public_keys: vec![art.root.public_key]
+                        public_keys: vec![art.root.public_key],
                     },
                     context: msg,
                 },
@@ -131,11 +127,7 @@ async fn verification_middleware_inner(
                 Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
             let Json(payload) = Json::<SendMessageRequest>::from_bytes(&bytes)?;
 
-            let art = state
-                .art_service
-                .get_art(&chat_id, None)
-                .await?
-                .art;
+            let art = state.art_service.get_art(&chat_id, None).await?.art;
 
             let mut msg = Vec::new();
             msg.extend_from_slice(chat_id.as_bytes());
@@ -146,7 +138,7 @@ async fn verification_middleware_inner(
                 data: VerifierData {
                     proof: payload.signature.clone(),
                     public_inputs: PublicInputs::Signature {
-                        public_keys: vec![art.root.public_key]
+                        public_keys: vec![art.root.public_key],
                     },
                     context: msg,
                 },
@@ -159,11 +151,7 @@ async fn verification_middleware_inner(
                 Path::<(Uuid, i64)>::from_request_parts(&mut parts.clone(), &state).await?;
             let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
-            let art = state
-                .art_service
-                .get_art(&chat_id, Some(epoch))
-                .await?
-                .art;
+            let art = state.art_service.get_art(&chat_id, Some(epoch)).await?.art;
 
             let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)
                 .unwrap_or_else(|_| {
@@ -194,7 +182,7 @@ async fn verification_middleware_inner(
                 data: VerifierData {
                     proof: payload.signature.clone(),
                     public_inputs: PublicInputs::Signature {
-                        public_keys: vec![public_key]
+                        public_keys: vec![public_key],
                     },
                     context: msg,
                 },
@@ -209,7 +197,7 @@ async fn verification_middleware_inner(
 
             let art = state
                 .art_service
-                .get_art(&chat_id, Some(payload.skip))
+                .get_art(&chat_id, Some(payload.epoch))
                 .await?
                 .art;
 
@@ -222,7 +210,7 @@ async fn verification_middleware_inner(
                 data: VerifierData {
                     proof: payload.signature,
                     public_inputs: PublicInputs::Signature {
-                        public_keys: vec![art.root.public_key]
+                        public_keys: vec![art.root.public_key],
                     },
                     context: msg,
                 },
@@ -232,25 +220,33 @@ async fn verification_middleware_inner(
             warn!("update art");
             let Path(chat_id) =
                 Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
-            let Json(payload) = Json::<UpdateARTRequest>::from_bytes(&bytes)?;
+            let Json(payload) = Json::<GroupOperationRequest>::from_bytes(&bytes)?;
 
-            let branch_changes = BranchChanges::<CortadoAffine>::deserialize(payload.branch_changes.as_slice())?;
+            let branch_changes =
+                BranchChanges::<CortadoAffine>::deserialize(payload.branch_changes.as_slice())?;
             let art = state.art_service.get_art(&chat_id, None).await?.art;
             let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
             let mut associated_data = Vec::new();
-            art.root.public_key.serialize_uncompressed(&mut associated_data)?;
+            art.root
+                .public_key
+                .serialize_uncompressed(&mut associated_data)?;
 
             debug!("Check aux keys correctness..");
             let (opcode, aux_public_keys) = match branch_changes.change_type {
-                BranchChangesType::UpdateKey => {
-                    (VerificationOpcode::KeyUpdate, vec![art.get_node(&branch_changes.node_index)?.public_key])
+                BranchChangesType::UpdateKey => (
+                    VerificationOpcode::KeyUpdate,
+                    vec![art.get_node(&branch_changes.node_index)?.public_key],
+                ),
+                BranchChangesType::AppendNode => {
+                    (VerificationOpcode::AddMember, vec![art.root.public_key])
                 }
-                BranchChangesType::AppendNode => (VerificationOpcode::AddMember, vec![art.root.public_key]),
-                BranchChangesType::MakeBlank => (VerificationOpcode::MakeBlank, vec![art.root.public_key]),
+                BranchChangesType::MakeBlank => {
+                    (VerificationOpcode::MakeBlank, vec![art.root.public_key])
+                }
                 _ => return Err(VerificationError::UnsupportedOperation),
             };
 
-            VerificationRequest{
+            VerificationRequest {
                 opcode,
                 data: VerifierData {
                     proof: payload.proof,
@@ -260,7 +256,7 @@ async fn verification_middleware_inner(
                         co_path: verification_artefacts.co_path,
                     },
                     context: associated_data,
-                }
+                },
             }
         }
         "delete_chat" => {
@@ -302,7 +298,9 @@ async fn verification_middleware_inner(
         _ => return Err(VerificationError::UnknownEndpoint),
     };
 
-    verification_req.verify(&state.proof_verifier_sender).await?;
+    verification_req
+        .verify(&state.proof_verifier_sender)
+        .await?;
 
     debug!("verification completed successfully");
     Ok(next
@@ -312,4 +310,3 @@ async fn verification_middleware_inner(
         ))
         .await)
 }
-

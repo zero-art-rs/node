@@ -17,11 +17,8 @@ where
     pub changes: BranchChanges<G>, //BranchChanges<G>,
     pub created_at: DateTime<Utc>,
     pub sequence_number: i64,
+    pub epoch: i64,
     pub chat_id: Uuid,
-    #[serde_as(as = "Option<Base64>")]
-    pub metadata: Option<Vec<u8>>,
-    #[serde_as(as = "Option<Base64>")]
-    pub payload: Option<Vec<u8>>,
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 }
@@ -33,11 +30,8 @@ pub struct ARTChangesOutboxRecord {
     pub data: Vec<u8>,
     pub created_at: DateTime<Utc>,
     pub sequence_number: i64,
+    pub epoch: i64,
     pub chat_id: Uuid,
-    #[serde_as(as = "Option<Base64>")]
-    pub metadata: Option<Vec<u8>>,
-    #[serde_as(as = "Option<Base64>")]
-    pub payload: Option<Vec<u8>>,
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 }
@@ -49,18 +43,16 @@ where
     pub fn new(
         data: BranchChanges<G>,
         sequence_number: i64,
+        epoch: i64,
         chat_id: Uuid,
-        metadata: Option<Vec<u8>>,
-        payload: Option<Vec<u8>>,
         proof: Vec<u8>,
     ) -> Self {
         Self {
             changes: data,
             created_at: Utc::now(),
             sequence_number,
+            epoch,
             chat_id,
-            metadata,
-            payload,
             proof,
         }
     }
@@ -70,18 +62,16 @@ impl ARTChangesOutboxRecord {
     pub fn new(
         data: Vec<u8>,
         sequence_number: i64,
+        epoch: i64,
         chat_id: Uuid,
-        metadata: Option<Vec<u8>>,
-        payload: Option<Vec<u8>>,
         proof: Vec<u8>,
     ) -> Self {
         Self {
             data,
             created_at: Utc::now(),
             sequence_number,
+            epoch,
             chat_id,
-            metadata,
-            payload,
             proof,
         }
     }

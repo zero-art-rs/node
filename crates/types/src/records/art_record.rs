@@ -18,7 +18,7 @@ where
     pub chat_id: Uuid,
     pub art: PublicART<G>,
     pub is_private: bool,
-    pub sequence_number: i64,
+    pub epoch: i64,
 }
 
 impl<G> fmt::Display for ARTRecord<G>
@@ -30,7 +30,7 @@ where
         write!(
             f,
             "[sequence_number: {}, chat_id: {}, root public key: {}]",
-            self.sequence_number, self.chat_id, self.art.root.public_key
+            self.epoch, self.chat_id, self.art.root.public_key
         )
     }
 }

@@ -101,8 +101,6 @@ impl ARTChangesStorage for MongoARTChangesStorage {
         session: &mut ClientSession,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
-        metadata: Option<Vec<u8>>,
-        payload: Option<Vec<u8>>,
         proof: Vec<u8>,
     ) -> Result<(), mongodb::error::Error> {
         let sequence_number = match self.get_recent_record(session).await?.next(session).await {
@@ -116,9 +114,8 @@ impl ARTChangesStorage for MongoARTChangesStorage {
                     mongodb::error::Error::from(std::io::Error::other(e.to_string()))
                 })?,
                 sequence_number,
+                sequence_number,
                 chat_id,
-                metadata.clone(),
-                payload.clone(),
                 proof.clone(),
             ))
             .session(&mut *session)
@@ -128,9 +125,8 @@ impl ARTChangesStorage for MongoARTChangesStorage {
             .insert_one(ARTChangesRecord::<ARTGroup>::new(
                 changes,
                 sequence_number,
+                sequence_number,
                 chat_id,
-                metadata,
-                payload,
                 proof,
             ))
             .session(&mut *session)
