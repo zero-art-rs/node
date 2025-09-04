@@ -3757,7 +3757,6 @@ dependencies = [
  "tracing",
  "types",
  "uuid",
- "zk",
 ]
 
 [[package]]

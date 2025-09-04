@@ -2,6 +2,17 @@
 
 Node for zkMessenger protocol
 
+## Project structure:
+- `apps`
+    - `node` - zk-messenger-node which takes a role of a server
+- `crates`
+    - `api` - main logic of a server
+    - `callback` - small helper crate for defining structures for communication between api and proof-verifier.
+    - `proof-verifier` - separate proof verifier
+    - `storage` - mongo db storage
+    - `tests` - unit tests for a project
+    - `types` - library with types used in the project. It contains errors, mongodb records, requests, responses, queries, etc.
+
 ## Docker Build
 
 To build the Docker image with access to private GitHub repositories:
@@ -14,16 +25,15 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 
 ## Build
 
-### Node features
+* `node` features
+  * **default** - Enables verification feature. To run the node without default features, run the node with `--no-default-features` command line option.
+  * **art_modifications** - Enable `api/art_modifications` feature
+  * **verification** - Enable `api/verification` feature.
 
-* **default** - Enables verification feature. To run the node without default features, run the node with `--no-default-features` command line option.
-* **art_modifications** - Enable `api/art_modifications` feature
-* **verification** - Enable `verification` feature.
-
-### Api features
-* **api/art_modifications** - Enable art modification endpoints for use
-* **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
-* **api/integration-tests** - Enables integration tests.
+* `api` features
+  * **api/art_modifications** - Enable art modification endpoints for use
+  * **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
+  * **api/integration-tests** - Enables integration tests.
 
 ### Run 
 

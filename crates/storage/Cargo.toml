@@ -11,7 +11,6 @@ serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 futures-util = { workspace = true }
 art = { workspace = true }
-zk = { workspace = true }
 cortado = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
 bson = { workspace = true, features = ["uuid-1"] }

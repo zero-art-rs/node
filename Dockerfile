@@ -14,7 +14,7 @@ COPY crates crates/
 COPY apps apps/
 
 # Build main application with SSH mount for git authentication
-RUN --mount=type=ssh cargo build --release -p zk-messenger-node --features api/verification \
+RUN --mount=type=ssh cargo build --release -p zk-messenger-node \
 	&& mkdir out \
 	&& cp target/release/zk-messenger-node out/ \
 	&& strip out/zk-messenger-node

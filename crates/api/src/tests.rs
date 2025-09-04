@@ -25,7 +25,7 @@ use serde_with::{base64::Base64, serde_as};
 use std::iter::Skip;
 use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::info;
-use types::{ARTChangesRecord, Message};
+use types::{ARTChangesOutboxRecord, ARTChangesRecord, Message};
 use types::art_schemas::*;
 use types::centrifugo_schemas::AuthRequest;
 use uuid::Uuid;
@@ -165,9 +165,7 @@ async fn test_send_message() -> eyre::Result<()> {
     let challenge_response = get_challenge(&mut context).await?;
     assert_eq!(challenge_response.status(), StatusCode::OK);
 
-    let challenge = BASE64_STANDARD
-        .decode(challenge_response.text().await.unwrap())
-        .unwrap();
+    let challenge = challenge_response.json::<ChallengeResponse>().await?.challenge;
 
     let nonce = (0..DEFAULT_NONCE_LENGTH)
         .map(|_| rand::random::<u8>())
@@ -301,9 +299,13 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
         let changes_response = get_changes(&mut test_context, 1000, i as i64, 0).await?;
         assert_eq!(changes_response.status(), StatusCode::OK);
 
-        let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(
-            &changes_response.bytes().await?,
-        )?;
+        let outbox_records = changes_response
+            .json::<Vec<ARTChangesOutboxRecord>>()
+            .await?;
+        let mut changes = Vec::with_capacity(outbox_records.len());
+        for record in outbox_records {
+            changes.push(ARTChangesRecord::<CortadoAffine>::try_from(record)?.changes)
+        }
 
         assert_eq!(changes.len(), 1);
 
@@ -317,9 +319,13 @@ async fn test_key_and_metadata_update() -> eyre::Result<()> {
     let changes_response = get_changes(&mut test_context, 1000, TEST_REPEATS as i64, 0).await?;
     assert_eq!(changes_response.status(), StatusCode::OK);
 
-    let changes = postcard::from_bytes::<Vec<ARTChangesRecord<CortadoAffine>>>(
-        &changes_response.bytes().await?,
-    )?;
+    let outbox_records = changes_response
+        .json::<Vec<ARTChangesOutboxRecord>>()
+        .await?;
+    let mut changes = Vec::with_capacity(outbox_records.len());
+    for record in outbox_records {
+        changes.push(ARTChangesRecord::<CortadoAffine>::try_from(record)?.changes)
+    }
 
     assert_eq!(changes.len(), 1);
 
@@ -367,10 +373,9 @@ async fn test_remove_member() -> eyre::Result<()> {
         assert_eq!(new_art_response.status(), StatusCode::OK);
 
         let received_art = PublicART::<ARTGroup>::deserialize(
-            &BASE64_STANDARD
-                .decode(new_art_response.text().await.unwrap())
-                .unwrap(),
+            &new_art_response.json::<GetARTResponse>().await?.art,
         )?;
+
         assert_eq!(
             received_art.root.weight,
             retrieval_context.art.root.weight - 1
@@ -403,9 +408,7 @@ async fn test_get_art() -> eyre::Result<()> {
         assert_eq!(art_response.status(), StatusCode::OK);
 
         let received_art = PublicART::<ARTGroup>::deserialize(
-            &BASE64_STANDARD
-                .decode(art_response.text().await.unwrap())
-                .unwrap(),
+            &art_response.json::<GetARTResponse>().await?.art
         )?;
 
         assert_eq!(received_art.root.public_key, art_roots[(i) as usize]);
@@ -734,17 +737,13 @@ async fn get_art(
     let challenge_response = get_challenge(context).await?;
     assert_eq!(challenge_response.status(), StatusCode::OK);
 
-    let challenge = BASE64_STANDARD
-        .decode(challenge_response.text().await.unwrap())
-        .unwrap();
+    let challenge = challenge_response.json::<ChallengeResponse>().await?.challenge;
 
     // Second try to get challenge, to test that it is different
     let challenge2_response = get_challenge(context).await?;
     assert_eq!(challenge2_response.status(), StatusCode::OK);
 
-    let challenge2 = BASE64_STANDARD
-        .decode(challenge2_response.text().await.unwrap())
-        .unwrap();
+    let challenge2 = challenge2_response.json::<ChallengeResponse>().await?.challenge;
 
     assert_ne!(challenge2, challenge);
 
@@ -826,13 +825,20 @@ async fn get_changes(
             "{}/{}/{}",
             BACKEND_URL, "v1/group", context.chat_uuid
         ))
-        .query(&GetChangesQuery {
-            signature,
-            nonce,
-            limit: limit as i64,
-            skip: skip as i64,
-            epoch: epoch as i64,
-        })
+        // .query(&GetChangesQuery {
+        //     signature,
+        //     nonce,
+        //     limit: limit as i64,
+        //     skip: skip as i64,
+        //     epoch: Some(epoch as i64),
+        // })
+        .query(&json!({
+            "signature": BASE64_STANDARD.encode(&signature),
+            "nonce": BASE64_STANDARD.encode(&nonce),
+            // "limit": limit as i64,
+            "skip": skip as i64,
+            "epoch": epoch as i64
+        }))
         .send()
         .await
 }

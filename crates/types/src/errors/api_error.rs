@@ -2,7 +2,7 @@ use art::errors::ARTError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 
-use crate::errors::ARTServiceError;
+use crate::errors::{ARTServiceError, MessengerError};
 use crate::errors::ApiError::Unauthorized;
 use serde_json::json;
 use utoipa::ToSchema;
@@ -41,6 +41,15 @@ impl From<ARTServiceError> for ApiError {
             | ARTServiceError::GroupChatOnly => Self::BadRequest(value.to_string()),
             ARTServiceError::NotFound => Self::NotFound(value.to_string()),
             _ => Self::InternalServerError(value.to_string()),
+        }
+    }
+}
+
+impl From<MessengerError> for ApiError {
+    fn from(value: MessengerError) -> Self {
+        match value {
+            MessengerError::Storage(err) => ApiError::InternalServerError(err.to_string()),
+            MessengerError::GroupNotExists => ApiError::BadRequest(value.to_string()),
         }
     }
 }

@@ -189,7 +189,7 @@ async fn verification_middleware_inner(
                 },
             }
         }
-        "get_changes" => {
+        "get_changes" | "count_changes" => {
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
             let Path(chat_id) =
@@ -198,7 +198,7 @@ async fn verification_middleware_inner(
 
             let art = state
                 .art_service
-                .get_art(&chat_id, Some(payload.epoch))
+                .get_art(&chat_id, payload.epoch)
                 .await?
                 .art;
 

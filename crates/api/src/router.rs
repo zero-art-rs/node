@@ -103,6 +103,11 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .with_verification(container.clone())
         .with_route_id("get_changes");
 
+    let count_changes_route = OpenApiRouter::new()
+        .routes(routes![art_transport::count_changes])
+        .with_verification(container.clone())
+        .with_route_id("count_changes");
+
     let update_art_route = OpenApiRouter::new()
         .routes(routes![art_transport::update_art])
         .with_verification(container.clone())
@@ -124,6 +129,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .merge(init_chat_route)
         .merge(get_art_route)
         .merge(get_changes_route)
+        .merge(count_changes_route)
         .merge(update_art_route)
         .merge(get_challenge_route)
         .merge(delete_chat_route)

@@ -12,7 +12,7 @@ use tracing::{debug, error};
 use types::{ARTChangesRecord, ARTRecord};
 use uuid::Uuid;
 
-use types::errors::ARTServiceError;
+use types::errors::{ARTServiceError, MessengerError};
 
 pub struct ARTService {}
 
@@ -179,6 +179,19 @@ impl ARTService {
             .list(filter, limit, skip)
             .await?;
         Ok(record)
+    }
+
+    pub async fn count_changes(
+        &self,
+        chat_id: &Uuid,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+    ) -> Result<u64, ARTServiceError> {
+        Ok(MongoARTChangesStorage::new(chat_id)
+            .await?
+            .count(filter, limit, skip)
+            .await?)
     }
 
     pub async fn init_chat(

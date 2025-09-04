@@ -1,23 +1,24 @@
 use crate::container::Container;
 use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
-use art::types::{ARTNode, BranchChangesType, PublicART};
+use art::types::{BranchChangesType};
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use mongodb::bson::doc;
 use std::sync::Arc;
-use cortado::CortadoAffine;
 use tracing::{debug, error, instrument};
-use types::{
-    art_schemas::*,
-    errors::{ARTServiceError, ApiError},
-};
+use types::{art_schemas::*, errors::{ARTServiceError, ApiError}, ARTChangesOutboxRecord};
 use uuid::Uuid;
 use validator::Validate;
+
+#[cfg(not(feature = "art_modifications"))]
+use cortado::CortadoAffine;
+#[cfg(not(feature = "art_modifications"))]
+use art::types::{ARTNode, PublicART};
+
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
@@ -26,47 +27,48 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
     post,
     path = "/v1/group",
     request_body = InitGroupRequest,
-    tag = "Chat operations"
+    responses(
+        (status = 200, description = "Authentication successful"),
+        (status = 400, description = "Bad request", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError),
+    ),
+    tag = "Group operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn init_chat(
     State(state): State<Arc<Container>>,
     Json(payload): Json<InitGroupRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
-    match &payload.art {
+    let art = match &payload.art {
         Some(art) => {
-            state
-                .art_service
-                .init_chat(
-                    &payload.chat_id,
-                    decode_art(&art)?,
-                    payload.is_private,
-                )
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+            decode_art(&art)?
         }
         None => {
             #[cfg(not(feature = "art_modifications"))]{
-                debug!("Create group with empty art");
-                state
-                    .art_service
-                    .init_chat(
-                        &payload.chat_id,
-                        PublicART {
-                            root: Box::new(ARTNode::new_leaf(CortadoAffine::default())),
-                            generator: CortadoAffine::default(),
-                        },
-                        payload.is_private,
-                    ).await.map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+                debug!("Create group with default art");
+                PublicART {
+                    root: Box::new(ARTNode::new_leaf(CortadoAffine::default())),
+                    generator: CortadoAffine::default(),
+                }
             }
             #[cfg(feature = "art_modifications")]{
                 error!("ART as None is not supported");
                 return Err(ApiError::from(ARTServiceError::InvalidInput))
             }
         }
-    }
+    };
+
+    state
+        .art_service
+        .init_chat(
+            &payload.chat_id,
+            art,
+            payload.is_private,
+        )
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
 
     debug!(
@@ -86,14 +88,19 @@ pub async fn init_chat(
         ("id" = Uuid, Path, description = "Group id"),
         ("epoch" = i64, Path, description = "Get art at provided epoch")
     ),
-    tag = "Chat operations"
+    responses(
+        (status = 200, description = "ART retrieved successfully", body = GetARTResponse),
+        (status = 400, description = "Bad request", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError),
+    ),
+    tag = "Group operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
     Path((chat_id, epoch)): Path<(Uuid, i64)>,
     Query(payload): Query<GetARTQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Json<GetARTResponse>, ApiError> {
     payload.validate()?;
 
     let art_record = state
@@ -102,12 +109,7 @@ pub async fn get_art(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    let art_bytes = art_record
-        .art
-        .serialize()
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    Ok((StatusCode::OK, BASE64_STANDARD.encode(art_bytes)))
+    Ok(Json(GetARTResponse::try_from(art_record)?))
 }
 
 /// Send ART update (key update, add member, remove member)
@@ -118,14 +120,14 @@ pub async fn get_art(
         GetARTQuery,
         ("id" = Uuid, Path, description = "Group id")
     ),
-    tag = "Chat operations"
+    tag = "Group operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn update_art(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Json(payload): Json<GroupOperationRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
     state.start_updating(chat_id).await?;
@@ -165,36 +167,75 @@ pub async fn update_art(
         GetChangesQuery,
         ("id" = Uuid, Path, description = "Group id")
     ),
-    tag = "Chat operations"
+    responses(
+        (status = 200, description = "Changes retrieved successfully", body = Vec<ARTChangesOutboxRecord>),
+    ),
+    tag = "Group operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn get_changes(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Query(payload): Query<GetChangesQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Json<Vec<ARTChangesOutboxRecord>>, ApiError> {
     payload.validate()?;
 
     let filter = doc! { "epoch": { "$gte": payload.epoch } };
-    let changes = state
+    let records = state
         .art_service
         .list_changes(&chat_id, filter.clone(), payload.limit, payload.skip)
         .await?;
 
     debug!(
         "Found {} changes for filter: {}, skip: {} and limit: {}",
-        changes.len(),
+        records.len(),
         filter,
         payload.skip,
         payload.limit
     );
 
-    Ok((
-        StatusCode::OK,
-        postcard::to_allocvec(&changes)
-            .map_err(|e| ApiError::InternalServerError(e.to_string()))?,
-    ))
+    let mut outbox_records = Vec::with_capacity(records.len());
+    for record in records {
+        outbox_records.push(ARTChangesOutboxRecord::try_from(record)?);
+    }
+
+    Ok(Json(outbox_records))
 }
+
+/// Endpoint to count ART changes
+#[utoipa::path(
+    get,
+    path = "/v1/group/{id}/count",
+    params(
+        CountChangesQuery,
+    ),
+    responses(
+        (status = 200, description = "Successfully counted messages.", body = u64),
+    ),
+    tag = "Group operations"
+)]
+#[instrument(skip(state), err)]
+pub async fn count_changes(
+    State(state): State<Arc<Container>>,
+    Path(chat_id): Path<Uuid>,
+    Query(payload): Query<CountChangesQuery>,
+) -> Result<Json<u64>, ApiError> {
+    payload.validate()?;
+
+    let mut filter = doc! {};
+
+    if let Some(epoch) = payload.epoch {
+        filter.insert("epoch", doc! { "$gte": epoch });
+    }
+
+    let count = state
+        .art_service
+        .count_changes(&chat_id, filter.clone(), payload.limit, payload.skip)
+        .await?;
+
+    Ok(Json(count))
+}
+
 
 /// Delete the group
 #[utoipa::path(
@@ -204,14 +245,17 @@ pub async fn get_changes(
         DeleteGroupQuery,
         ("id" = Uuid, Path, description = "Group id")
     ),
-    tag = "Chat operations"
+    responses(
+        (status = 204, description = "Successfully deleted group"),
+    ),
+    tag = "Group operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn delete_chat(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Query(payload): Query<DeleteGroupQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<StatusCode, ApiError> {
     payload.validate()?;
 
     debug!("Delete chat: {}", chat_id);
@@ -227,17 +271,20 @@ pub async fn delete_chat(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Get challenge from the server
+/// Get a challenge from the server
 #[utoipa::path(
     get,
     path = "/v1/group/{id}/challenge",
     params(("id" = Uuid, Path, description = "Group id")),
-    tag = "Chat operations"
+    responses(
+        (status = 200, description = "Challenge Sent.", body = ChallengeResponse),
+    ),
+    tag = "Group operations"
 )]
 #[instrument(skip(state), err)]
 pub async fn get_challenge(
     State(state): State<Arc<Container>>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Json<ChallengeResponse>, ApiError> {
     debug!("Create a write lock on challenges");
     let mut lock = state.challenges.write().await;
     debug!("Create new challenge");
@@ -246,5 +293,5 @@ pub async fn get_challenge(
         .collect::<Vec<u8>>();
     lock.insert(challenge.clone());
 
-    Ok((StatusCode::OK, BASE64_STANDARD.encode(challenge)))
+    Ok(Json(ChallengeResponse{ challenge }))
 }

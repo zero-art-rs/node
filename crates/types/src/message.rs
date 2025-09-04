@@ -20,14 +20,19 @@ pub struct Subscription {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Message {
     /// The message content as binary data
+    #[schema(value_type = Option<String>, content_encoding = "base64")]
     #[serde_as(as = "Base64")]
-    pub content: Vec<u8>, // binary string, Vec<u8>
+    pub content: Vec<u8>,
+
     /// When the message was created
     pub created_at: DateTime<Utc>,
+
     /// Sequential number of this message in the chat
     pub sequence_number: i64,
+
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Option<Uuid>,
+
     /// Sequential number of epoch during which the message was sent
     pub epoch: i64,
 }

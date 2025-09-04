@@ -2,19 +2,15 @@ use crate::container::Container;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::middleware::Next;
 use axum::response::IntoResponse;
-use axum_core::body::Body;
-use axum_core::extract::{FromRequest, FromRequestParts, Request};
-use axum_core::response::Response;
-use mongodb::bson::{DateTime, doc};
+use mongodb::bson::{doc};
 use std::sync::Arc;
-use tracing::{debug, error, instrument};
-use types::errors::ApiError;
-use types::errors::VerificationError;
+use tracing::{debug, instrument};
+use types::errors::{ApiError, MessengerError};
 use types::messenger_schemas::{GetMessageQuery, CountMessagesQuery, SendMessageRequest};
 use uuid::Uuid;
 use validator::Validate;
+use types::Message;
 
 /// Endpoint for sending message to the group
 #[utoipa::path(
@@ -32,14 +28,18 @@ use validator::Validate;
 #[instrument(skip(state), err)]
 pub async fn send_message(
     State(state): State<Arc<Container>>,
-    Path(path): Path<Uuid>,
+    Path(chat_id): Path<Uuid>,
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     payload.validate()?;
 
+    state.art_service.get_initial_art(&chat_id)
+        .await
+        .map_err(|_| MessengerError::GroupNotExists)?;
+
     state
         .messenger_service
-        .send_message(payload.message, &path, payload.epoch)
+        .send_message(payload.message, &chat_id, payload.epoch)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
@@ -54,7 +54,7 @@ pub async fn send_message(
         GetMessageQuery,
     ),
     responses(
-        (status = 202, description = "Message sent."),
+        (status = 202, description = "Successfully retrieved messages.", body = Vec<Message>),
         (status = 400, description = "Bad request", body = ApiError),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
@@ -66,7 +66,7 @@ pub async fn list_messages(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Query(payload): Query<GetMessageQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Json<Vec<Message>>, ApiError> {
     payload.validate()?;
 
     let mut filter = doc! {};
@@ -94,7 +94,7 @@ pub async fn list_messages(
         }
     }
 
-    Ok((StatusCode::OK, Json(messages)))
+    Ok(Json(messages))
 }
 
 /// Endpoint counting messages
@@ -104,6 +104,9 @@ pub async fn list_messages(
     params(
         CountMessagesQuery,
     ),
+    responses(
+        (status = 200, description = "Successfully counted messages.", body = u64),
+    ),
     tag = "Messages"
 )]
 #[instrument(skip(state), err)]
@@ -111,7 +114,7 @@ pub async fn count_messages(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Query(payload): Query<CountMessagesQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Json<u64>, ApiError> {
     payload.validate()?;
 
     let mut filter = doc! {};
@@ -127,8 +130,7 @@ pub async fn count_messages(
     let count = state
         .messenger_service
         .count_messages(&chat_id, filter.clone(), payload.limit, payload.skip)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+        .await?;
 
-    Ok((StatusCode::OK, Json(count)))
+    Ok(Json(count))
 }

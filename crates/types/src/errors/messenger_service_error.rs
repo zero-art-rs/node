@@ -4,4 +4,7 @@ use crate::errors::StorageError;
 pub enum MessengerError {
     #[error("Storage error: {0}")]
     Storage(#[from] StorageError),
+    
+    #[error("Group isn't exists yet")]
+    GroupNotExists,
 }

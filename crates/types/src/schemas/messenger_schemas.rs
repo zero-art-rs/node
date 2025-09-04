@@ -2,8 +2,8 @@ use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use utoipa::{IntoParams, ToSchema};
-use uuid::Uuid;
 use validator::Validate;
+use crate::{default_limit, default_skip};
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
@@ -14,7 +14,7 @@ pub struct SendMessageRequest {
     #[serde_as(as = "Base64")]
     pub message: Vec<u8>,
 
-    /// Sequential number of epoch during which the message was sent
+    /// Sequential number of epochs during which the message was sent
     pub epoch: i64,
 
     /// Serialized proof.
@@ -36,9 +36,13 @@ pub struct GetMessageQuery {
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
+    #[param(default = default_limit)]
+    #[serde(default = "default_limit")]
     pub limit: i64,
 
     /// The amount or results to skip
+    #[param(default = default_skip)]
+    #[serde(default = "default_skip")]
     pub skip: i64,
 
     /// Serialized signature.
@@ -63,9 +67,13 @@ pub struct CountMessagesQuery {
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
+    #[param(default = default_limit)]
+    #[serde(default = "default_limit")]
     pub limit: i64,
 
     /// The amount or results to skip
+    #[param(default = default_skip)]
+    #[serde(default = "default_skip")]
     pub skip: i64,
 
     /// Serialized signature.
