@@ -1,32 +1,46 @@
-use axum::{extract::MatchedPath, http::Request, response::Response};
+use crate::router::build_router;
+use axum::{
+    extract::{MatchedPath, Request},
+    response::Response,
+};
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tower_http::{classify::ServerErrorsFailureClass, cors::CorsLayer, trace::TraceLayer};
-use tracing::{Span, info, info_span};
-
-use crate::router::build_router;
+use tracing::{Span, info, info_span, warn};
 
 mod container;
 pub(crate) mod domains;
-mod errors;
 mod router;
+mod verification_middleware;
+// pub use verification_middleware::verification_middleware;
+
+#[cfg(all(test, feature = "integration-tests"))]
+mod tests;
 
 pub use container::Container;
 pub use domains::art::service::ARTService;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
 
+pub use domains::art::transport::http as art_transport;
+pub use domains::centrifugo::transport::http as centrifugo_transport;
+pub use domains::messenger::transport::http as messenger_transport;
+
 pub async fn run_server(
     address: String,
     container: Arc<Container>,
     cancellation: CancellationToken,
 ) -> eyre::Result<()> {
+    #[cfg(not(feature = "verification"))]
+    {
+        warn!("Verification middleware is disabled.");
+    }
     info!("Starting API server on {}", address);
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     axum::serve(
         listener,
-        build_router()
+        build_router(container.clone())
             .layer(CorsLayer::permissive())
             .layer(
             TraceLayer::new_for_http()

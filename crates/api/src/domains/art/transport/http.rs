@@ -1,404 +1,297 @@
-use crate::domains::art::service::ARTServiceError;
-use crate::domains::art::transport::utils::{as_base64, decode_art, decode_branch_changes};
-use crate::{container::Container, errors::ApiError};
-use art::{traits::ARTPublicAPI, types::BranchChangesType};
+use crate::container::Container;
+use crate::domains::art::transport::utils::{decode_art, decode_branch_changes};
+use art::types::{BranchChangesType};
 use axum::{
     Json,
-    extract::{Query, State},
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    extract::{Path, Query, State},
+    http::StatusCode,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use mongodb::bson::doc;
-use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, serde_as};
 use std::sync::Arc;
-use tracing::{info, instrument};
-use utoipa::{IntoParams, ToSchema};
+use tracing::{debug, error, instrument};
+use types::{art_schemas::*, errors::{ARTServiceError, ApiError}, ARTChangesOutboxRecord};
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct InitChatRequest {
-    /// Serialised art structure for new chat.
-    #[schema(
-        example = "QHVOIsS7aF9klJHKUrxekAPKV+33NbmB4J5NK/mh6IQEGL8+nmZHd7rRwbWDOGRq0g9woVvX+rkmxu0tUHNIPYwBQMw5OnIemJkFNHnm8HCsN+99ekIxBgYotCVAYwdDPZAP5HTFQe45VuD23SI2mxW8D8j3KknDPepDEmg8n0j+1AIBQOuX8YX/e0i16YbSJ2lpURvM+0QcuToiM9UyBPvadnEDbZNGFdiQL3ULmmOtRtL2+BP9DTmBeNxx3fhYGU95FAIBQH/P/s7p2KJZctpWuukfHNEAK/oQrZfQ0j5hs+Qm6ecEaiBYdyjJ1FggyqqDkbfDEsjtebcPuZhp5u/cEQtd2wEAAAABAAFAahDbRHi2H9n/6hkYlFvT+EykOrS3Hd9fe9/yhehPeAx458pBSNKYPFXt+zjMTnrm4EMBYPy1boslBDoZBC+cAAAAAAEAAAIAAUCRRwLnU975oL83p+ZFh/zi6+8IfyqHlX9mZ3f6rVU6As4ao2I5tVFmfuuqhkQBjIZRxMfm/rSOIA4yrF5/53mMAUC9TfgZxLFEsOVYQsrnA59gb2Vr6qYW2PaMXfM/aTclAdcCotgt00eyxNt+EgWJ8JrjVVxZIt6RMzmvnmz0NwSPAAAAAQABQPVlwjO+3CsDj5QABAm2nwGO5ZEkZ8SCnzQK1m0tG/INK8L/ZBea3aK0weGxV2aWDtZul1Zf72mO+udih9HdP44AAAABAAACAAAEAAFA0DtiBydl146UurHWfv/bO6YSBkVWLxG3Cpxykz7ZJwJu6sGgmhc5gBRTs5Wq6+fZZh4+iplHCO+PY71NIrXOBwFASx7wVwl1/xvn4u0LYvN0XqsJxtgKehRInq7TO1UEyQ6UHnYb/1oa1sIlHrOs2GoMS5RdFCr8TybWxZDobwTRAwFAyiSMcuKbWNbI1809Y7g3neYpF4+BnhLWmU9Ea3oWOgoIeNPNQKQJ9TQ9eXOzmmCfXw81UGtrE6z39p/fyG+LAwAAAAEAAUBr5E3m12kSS8uDciloIUALp+VvI77c+54dtMdwaT/jDruUOc20HJ2CIbUs3b7cDA8Gae1bHVcGDDXOxB8HHaOPAAAAAQAAAgABQE2+Ilu7OJj6fMBlJLUmYmHU/rQO0U4nRwKyRH7CH6wNzxvjyz3rYSXq1rm72pt8hwJ4vKZtIEv23rVnuZ86p4sBQOZJ/qh4RDUjWBl9010Pa+YP2Kq781NS23Gk6/h6BxYNmT2emqCBuimYo+xrTLDFslQdpWuOQSYaZz+d0u9264wAAAABAAFAjE/8rW2OG9VVZ4vmzKuE0bFnjgMzSnNtkxgh1752lwxFI56bmXf95h4ZE9RRrup+AAE/qU7lpBJBsuqJwllAjgAAAAEAAAIAAAQAAAgAQBb0nJfwNLo+g8mUCYwoe7xHMdoOH8lBUPbSxGO4ZU4L5MbvfV1rfEC5ESVj2skQDLeEMMWdQeH9uM2NQl/Vbos="
-    )]
-    #[serde(with = "as_base64")]
-    art: Vec<u8>,
+#[cfg(not(feature = "art_modifications"))]
+use cortado::CortadoAffine;
+#[cfg(not(feature = "art_modifications"))]
+use art::types::{ARTNode, PublicART};
 
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
 
-    /// Indicates whether the chat is private (one to one).
-    #[schema(example = false)]
-    pub is_private: bool,
-}
+const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
+/// Create a new group
 #[utoipa::path(
     post,
-    path = "/v1/messenger/init-chat",
-    request_body = InitChatRequest,
-    tag = "Chat operations"
+    path = "/v1/group",
+    request_body = InitGroupRequest,
+    responses(
+        (status = 200, description = "Authentication successful"),
+        (status = 400, description = "Bad request", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError),
+    ),
+    tag = "Group operations"
 )]
-#[instrument(skip(state, _headers), err)]
+#[instrument(skip(state), err)]
 pub async fn init_chat(
     State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
-    Json(payload): Json<InitChatRequest>,
+    Json(payload): Json<InitGroupRequest>,
 ) -> Result<StatusCode, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    payload.validate()?;
 
-    let art = decode_art(&payload.art)?;
+    let art = match &payload.art {
+        Some(art) => {
+            decode_art(&art)?
+        }
+        None => {
+            #[cfg(not(feature = "art_modifications"))]{
+                debug!("Create group with default art");
+                PublicART {
+                    root: Box::new(ARTNode::new_leaf(CortadoAffine::default())),
+                    generator: CortadoAffine::default(),
+                }
+            }
+            #[cfg(feature = "art_modifications")]{
+                error!("ART as None is not supported");
+                return Err(ApiError::from(ARTServiceError::InvalidInput))
+            }
+        }
+    };
 
     state
         .art_service
-        .init_chat(&payload.chat_id, art, payload.is_private)
+        .init_chat(
+            &payload.chat_id,
+            art,
+            payload.is_private,
+        )
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+
+
+    debug!(
+        "Successfully created new chat with id: {}",
+        &payload.chat_id
+    );
 
     Ok(StatusCode::CREATED)
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetARTQuery {
-    /// Unique identifier of the chat to send the message to.
-    #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
-
-    /// Sequence number of the requested art. If not set, return the latest.
-    #[param(example = 1)]
-    pub sequence_number: Option<i64>,
-}
-
+/// Get ART structure
 #[utoipa::path(
     get,
-    path = "/v1/messenger/art",
-    params(GetARTQuery,),
-    tag = "Chat operations"
+    path = "/v1/group/{id}/{epoch}",
+    params(
+        GetARTQuery,
+        ("id" = Uuid, Path, description = "Group id"),
+        ("epoch" = i64, Path, description = "Get art at provided epoch")
+    ),
+    responses(
+        (status = 200, description = "ART retrieved successfully", body = GetARTResponse),
+        (status = 400, description = "Bad request", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError),
+    ),
+    tag = "Group operations"
 )]
-#[instrument(skip(state, _headers), err)]
+#[instrument(skip(state), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
+    Path((chat_id, epoch)): Path<(Uuid, i64)>,
     Query(payload): Query<GetARTQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+) -> Result<Json<GetARTResponse>, ApiError> {
+    payload.validate()?;
 
-    let art = match &payload.sequence_number {
-        Some(sequence_number) => {
-            let mut initial_art = state
-                .art_service
-                .get_initial_art(&payload.chat_id)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?
-                .art;
+    let art_record = state
+        .art_service
+        .get_art(&chat_id, Some(epoch))
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-            let filter = doc! { "sequence_number": { "$lt": sequence_number } };
-            let mut changes = state
-                .art_service
-                .list_changes(&payload.chat_id, filter, *sequence_number, 0)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+    Ok(Json(GetARTResponse::try_from(art_record)?))
+}
 
-            if changes.len() < *sequence_number as usize {
-                return Err(ApiError::InternalServerError(
-                    ARTServiceError::NotFound.to_string(),
-                ));
-            }
+/// Send ART update (key update, add member, remove member)
+#[utoipa::path(
+    put,
+    path = "/v1/group/{id}",
+    params(
+        GetARTQuery,
+        ("id" = Uuid, Path, description = "Group id")
+    ),
+    tag = "Group operations"
+)]
+#[instrument(skip(state), err)]
+pub async fn update_art(
+    State(state): State<Arc<Container>>,
+    Path(chat_id): Path<Uuid>,
+    Json(payload): Json<GroupOperationRequest>,
+) -> Result<StatusCode, ApiError> {
+    payload.validate()?;
 
-            changes.sort_by(|a, b| a.sequence_number.cmp(&b.sequence_number));
+    state.start_updating(chat_id).await?;
 
-            for change in &changes {
-                initial_art
-                    .update_public_art(&change.changes)
-                    .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-            }
-
-            initial_art
-        }
-        None => {
-            state
-                .art_service
-                .get_art(&payload.chat_id)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?
-                .art
+    let branch_changes = match decode_branch_changes(&payload.branch_changes) {
+        Ok(branch_changes) => branch_changes,
+        Err(e) => {
+            state.stop_updating(chat_id).await;
+            return Err(e);
         }
     };
 
-    let art_bytes = art
-        .serialize()
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-
-    let encoded_art = BASE64_STANDARD.encode(art_bytes);
-
-    Ok((StatusCode::OK, encoded_art))
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AddMemberRequest {
-    /// Serialised BranchChanges:AppendNode structure.
-    #[schema(
-        example = "AUB0urTTqwXgQt9FnyA0DzPCkHbfZPx5Tnbtu4ApwNNAAt3A68AFXBv6RU+dOJ2uft6tRml2W6HSPktlP3PS66iNAAAAAQDIAgUAAAAAAAAA2vrTKjDNUuMjI/9/VQBjWMsycwz55AGdDgml5yXHKwkxwmm+Fb+26mRv7d/Wfhi9wpscXZHFXBQZXwgqod8Kioqy60ZImTb3xVNlt74eTzEOmAXKK5uQ2cHzPr6cITcHKmzAqUY8f5s2mRWBDHOsl1/BrUVmH4aKzhBZCGyoBgIRdfOd/IRv0iwex8PFx/V+DaFVTLxhnRcGWk0qaA4bDlwJy0+22eqpdO8xxgc4hsBgz9ImAlz9h7ZjhqbJ10eOJzYF1QxsgHS6g7wsHjJPZqxxkq4mN8vLatzsfnP58QNHfTNlqUMIhXD5IcgR+UELutN9AIxqt0sKTGJCAj8aAHS6tNOrBeBC30WfIDQPM8KQdt9k/HlOdu27gCnA00AC3cDrwAVcG/pFT504na5+3q1GaXZbodI+S2U/c9LrqI0ACA=="
-    )]
-    #[serde(with = "as_base64")]
-    branch_changes: Vec<u8>,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/messenger/add-member",
-    request_body = AddMemberRequest,
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, _headers), err)]
-pub async fn add_member(
-    State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
-    Json(payload): Json<AddMemberRequest>,
-) -> Result<StatusCode, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let branch_changes = decode_branch_changes(&payload.branch_changes)?;
-
-    match branch_changes.change_type {
-        BranchChangesType::AppendNode(_) => {
-            state
-                .art_service
-                .update_art(payload.chat_id, &branch_changes, None, None)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-        }
-        _ => {
-            return Err(ApiError::BadRequest(
-                "Invalid change type. Expected new member addition".to_owned(),
-            ));
-        }
+    if let Err(e) = state
+        .art_service
+        .update_art(&chat_id, &branch_changes, payload.payload, &payload.proof)
+        .await
+    {
+        state.stop_updating(chat_id).await;
+        return Err(e.into());
     }
 
-    Ok(StatusCode::OK)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoveMember {
-    /// Serialised BranchChanges:UpdateKeys structure.
-    #[schema(
-        example = r#"AEBqENtEeLYf2f/qGRiUW9P4TKQ6tLcd31973/KF6E94DHjnykFI0pg8Ve37OMxOeubgQwFg/LVuiyUEOhkEL5wAIDef4VDfd4IpU5zytQEbb07HasgN+7uh8Nuy+Z9sKqAHiAIEAAAAAAAAAOe9K4Vv22xfOUmaL9Lw+/zDisVnTsJcitnAXAiCz38ESx1h3sa/HXUURlpHmKnzwkeSGL0gbTnUNzbjhkSIIohNxl5CFfLAQ2DfRt+Z+egwjgAGY9H22ly4R8I0ekkHC33f34mqKtdccZfRbfnTvzqE/inTg2IAO2BqPQz+lKGP3lpeFTKKD5neWN8xOjEJgJhVZuntoYoWXFmCuZeB6wCXbogsc8vcPKNGte/jiAb7VWfyvgF/vja9v7eusCcziuj2vYhZaT9ROhTy+jhbZDeKcdT2dzo1SvqL3VhbLyMHJkRBbh1WKWhshFlWRLrDN8OohOIxfyIfKTnuNJKhgYwACQ=="#
-    )]
-    #[serde(with = "as_base64")]
-    branch_changes: Vec<u8>,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/messenger/remove-member",
-    request_body = RemoveMember,
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, _headers), err)]
-pub async fn remove_member(
-    State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
-    Json(payload): Json<RemoveMember>,
-) -> Result<StatusCode, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let branch_changes = decode_branch_changes(&payload.branch_changes)?;
+    state.stop_updating(chat_id).await;
 
     match branch_changes.change_type {
-        BranchChangesType::MakeBlank(_, _) => {
-            state
-                .art_service
-                .update_art(payload.chat_id, &branch_changes, None, None)
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-        }
-        _ => {
-            return Err(ApiError::BadRequest(
-                "Invalid change type. Expected RemoveNode".to_owned(),
-            ));
-        }
+        BranchChangesType::UpdateKey => Ok(StatusCode::OK),
+        BranchChangesType::AppendNode => Ok(StatusCode::OK),
+        BranchChangesType::MakeBlank => Ok(StatusCode::NO_CONTENT),
+        _ => Ok(StatusCode::NOT_IMPLEMENTED),
     }
-
-    Ok(StatusCode::OK)
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateMetadataRequest {}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateKey {
-    /// Serialised BranchChanges:UpdateKeys structure
-    #[schema(
-        example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
-    )]
-    #[serde_as(as = "Base64")]
-    branch_changes: Vec<u8>,
-
-    /// Unique identifier of the chat to send the message to.
-    #[schema(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
-
-    /// Optional new user metadata
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<Base64>")]
-    #[schema(
-        example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
-    )]
-    metadata: Option<Vec<u8>>,
-
-    /// Additional data
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<Base64>")]
-    #[schema(
-        example = r#"AogCBAAAAAAAAAD55GV+qsCIdq7XQocrftP67C2v+IzRh/2bCusqV/vTBT5mt6GohPQVTqKwwq8XbmK+q4SK5t+lblT6+aLF52+J9UoPL4SNMEtSwwBTv0ogZ7RDvzc1qlgapuQuwcBZrw1R9f9B3pf/4T2gp1eWz09JTmw2eoSGwMCsmlofQj9/BXMQjS0HYKiqp7A54v7YXC+ptl7n5A1xLmF3vb8tFDQNPDR0TIypJKk0y5UoKK8OMt9MDapD3Q9DCnfewAOhb4tkJ4WKL6MWoGmIjuDwV0+LXrw5T/5thbW+/pDQb+35DaWE+LtAKNjKamPHU50SJYTKe8QLu+kXQLElBFPM9dIBAAo="#
-    )]
-    payload: Option<Vec<u8>>,
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/messenger/update-key",
-    request_body = UpdateKey,
-    tag = "Chat operations"
-)]
-#[instrument(skip(state, _headers), err)]
-pub async fn update_key(
-    State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
-    Json(payload): Json<UpdateKey>,
-) -> Result<StatusCode, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    let branch_changes = decode_branch_changes(&payload.branch_changes)?;
-
-    match branch_changes.change_type {
-        BranchChangesType::UpdateKey => {
-            state
-                .art_service
-                .update_art(
-                    payload.chat_id,
-                    &branch_changes,
-                    payload.metadata,
-                    payload.payload,
-                )
-                .await
-                .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
-        }
-        _ => {
-            return Err(ApiError::BadRequest(
-                "Invalid change type. Expected UpdateKeys.".to_owned(),
-            ));
-        }
-    }
-
-    Ok(StatusCode::OK)
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetChangesQuery {
-    /// Unique identifier of the chat to send the message to.
-    #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
-
-    /// Number of results to be returned.
-    #[param(example = 10)]
-    pub limit: i64,
-
-    /// The amount or results to skip at first.
-    #[param(example = 0)]
-    pub skip: i64,
-}
-
+/// Get ART changes
 #[utoipa::path(
     get,
-    path = "/v1/messenger/changes",
-    params(GetChangesQuery),
-    tag = "Chat operations"
+    path = "/v1/group/{id}",
+    params(
+        GetChangesQuery,
+        ("id" = Uuid, Path, description = "Group id")
+    ),
+    responses(
+        (status = 200, description = "Changes retrieved successfully", body = Vec<ARTChangesOutboxRecord>),
+    ),
+    tag = "Group operations"
 )]
-#[instrument(skip(state, _headers), err)]
+#[instrument(skip(state), err)]
 pub async fn get_changes(
     State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
+    Path(chat_id): Path<Uuid>,
     Query(payload): Query<GetChangesQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+) -> Result<Json<Vec<ARTChangesOutboxRecord>>, ApiError> {
+    payload.validate()?;
 
-    let filter = doc! {};
-    let changes = state
+    let filter = doc! { "epoch": { "$gte": payload.epoch } };
+    let records = state
         .art_service
-        .list_changes(&payload.chat_id, filter, payload.limit, payload.skip)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+        .list_changes(&chat_id, filter.clone(), payload.limit, payload.skip)
+        .await?;
 
-    info!("Found changes: {}", changes.len());
+    debug!(
+        "Found {} changes for filter: {}, skip: {} and limit: {}",
+        records.len(),
+        filter,
+        payload.skip,
+        payload.limit
+    );
 
-    Ok((
-        StatusCode::OK,
-        postcard::to_allocvec(&changes)
-            .map_err(|e| ApiError::InternalServerError(e.to_string()))?,
-    ))
+    let mut outbox_records = Vec::with_capacity(records.len());
+    for record in records {
+        outbox_records.push(ARTChangesOutboxRecord::try_from(record)?);
+    }
+
+    Ok(Json(outbox_records))
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteChatQuery {
-    /// Unique identifier of the chat to send the message to.
-    #[param(example = r#"3fa85f64-5717-4562-b3fc-2c963f66afa6"#)]
-    pub chat_id: Uuid,
+/// Endpoint to count ART changes
+#[utoipa::path(
+    get,
+    path = "/v1/group/{id}/count",
+    params(
+        CountChangesQuery,
+    ),
+    responses(
+        (status = 200, description = "Successfully counted messages.", body = u64),
+    ),
+    tag = "Group operations"
+)]
+#[instrument(skip(state), err)]
+pub async fn count_changes(
+    State(state): State<Arc<Container>>,
+    Path(chat_id): Path<Uuid>,
+    Query(payload): Query<CountChangesQuery>,
+) -> Result<Json<u64>, ApiError> {
+    payload.validate()?;
+
+    let mut filter = doc! {};
+
+    if let Some(epoch) = payload.epoch {
+        filter.insert("epoch", doc! { "$gte": epoch });
+    }
+
+    let count = state
+        .art_service
+        .count_changes(&chat_id, filter.clone(), payload.limit, payload.skip)
+        .await?;
+
+    Ok(Json(count))
 }
 
+
+/// Delete the group
 #[utoipa::path(
     delete,
-    path = "/v1/messenger/chat",
-    params(DeleteChatQuery,),
-    tag = "Chat operations"
+    path = "/v1/group/{id}",
+    params(
+        DeleteGroupQuery,
+        ("id" = Uuid, Path, description = "Group id")
+    ),
+    responses(
+        (status = 204, description = "Successfully deleted group"),
+    ),
+    tag = "Group operations"
 )]
-#[instrument(skip(state, _headers), err)]
+#[instrument(skip(state), err)]
 pub async fn delete_chat(
     State(state): State<Arc<Container>>,
-    _headers: HeaderMap,
-    Query(payload): Query<DeleteChatQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    payload
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Path(chat_id): Path<Uuid>,
+    Query(payload): Query<DeleteGroupQuery>,
+) -> Result<StatusCode, ApiError> {
+    payload.validate()?;
 
+    debug!("Delete chat: {}", chat_id);
     state
         .art_service
-        .delete_chat(&payload.chat_id)
+        .delete_chat(&chat_id)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    Ok(StatusCode::OK)
+    state.art_is_updating.write().await.remove(&chat_id);
+    debug!("Deletion is successful");
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Get a challenge from the server
+#[utoipa::path(
+    get,
+    path = "/v1/group/{id}/challenge",
+    params(("id" = Uuid, Path, description = "Group id")),
+    responses(
+        (status = 200, description = "Challenge Sent.", body = ChallengeResponse),
+    ),
+    tag = "Group operations"
+)]
+#[instrument(skip(state), err)]
+pub async fn get_challenge(
+    State(state): State<Arc<Container>>,
+) -> Result<Json<ChallengeResponse>, ApiError> {
+    debug!("Create a write lock on challenges");
+    let mut lock = state.challenges.write().await;
+    debug!("Create new challenge");
+    let challenge = (0..DEFAULT_CHALLENGE_LENGTH)
+        .map(|_| rand::random::<u8>())
+        .collect::<Vec<u8>>();
+    lock.insert(challenge.clone());
+
+    Ok(Json(ChallengeResponse{ challenge }))
 }

@@ -1,13 +1,9 @@
 use mongodb::bson::Document;
-use storage::{DataStorage, MessageStorage, MongoMessageStorage, StorageError};
+use storage::{DataStorage, MessageStorage, MongoMessageStorage};
+use tracing::debug;
 use types::Message;
+use types::errors::MessengerError;
 use uuid::Uuid;
-
-#[derive(Debug, thiserror::Error)]
-pub enum MessengerError {
-    #[error("Storage error: {0}")]
-    Storage(#[from] StorageError),
-}
 
 pub struct MessengerService {}
 
@@ -26,14 +22,16 @@ impl Default for MessengerService {
 impl MessengerService {
     pub async fn send_message(
         &self,
-        message: String,
+        message: Vec<u8>,
         chat_id: &Uuid,
-        epoch: u32,
+        epoch: i64,
     ) -> Result<(), MessengerError> {
+        debug!("Store and send new message");
         MongoMessageStorage::new(chat_id)
             .await?
-            .store_message(message.into_bytes(), epoch)
+            .store_message(message, epoch)
             .await?;
+        debug!("Message sent");
         Ok(())
     }
 
@@ -49,6 +47,19 @@ impl MessengerService {
             .list(filter, limit, skip)
             .await?;
         Ok(message_record)
+    }
+
+    pub async fn count_messages(
+        &self,
+        chat_id: &Uuid,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+    ) -> Result<u64, MessengerError> {
+        Ok(MongoMessageStorage::new(chat_id)
+            .await?
+            .count(filter, limit, skip)
+            .await?)
     }
 
     pub async fn delete_messages(

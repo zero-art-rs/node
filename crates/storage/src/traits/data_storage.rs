@@ -1,10 +1,9 @@
 use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
-use mongodb::bson::Document;
-use mongodb::{ClientSession, Collection};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use mongodb::{bson::Document, ClientSession, Collection};
+use serde::{de::DeserializeOwned, Serialize};
+use tracing::debug;
 
 #[async_trait::async_trait]
 pub trait DataStorage: Send + Sync {
@@ -23,7 +22,7 @@ pub trait DataStorage: Send + Sync {
             .await
             .find(filter)
             .skip(skip as u64)
-            .limit(limit)
+            .limit(limit as i64)
             .await?;
 
         let mut records = Vec::new();
@@ -32,6 +31,22 @@ pub trait DataStorage: Send + Sync {
         }
 
         Ok(records)
+    }
+
+    async fn count(
+        &self,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+    ) -> Result<u64, StorageError> {
+        Ok(self
+            .get_collection()
+            .await
+            .count_documents(filter)
+            // .find(filter)
+            .skip(skip as u64)
+            .limit(limit as u64)
+            .await?)
     }
 
     async fn find_one(&self, filter: Document) -> Result<Option<Self::Data>, StorageError> {
@@ -67,11 +82,14 @@ pub trait DataStorage: Send + Sync {
     }
 
     async fn clear(&self, session: &mut ClientSession) -> Result<(), mongodb::error::Error> {
+        debug!("Clear message collection ...");
         self.get_collection()
             .await
             .delete_many(doc! {})
             .session(session)
             .await?;
+
+        debug!("Message collection cleared successfully");
         Ok(())
     }
 

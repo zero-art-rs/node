@@ -8,10 +8,9 @@ types = { path = "../types" }
 mongodb = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-log = "0.4.27"
+tracing = { workspace = true }
 futures-util = { workspace = true }
 art = { workspace = true }
-zk = { workspace = true }
 cortado = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
 bson = { workspace = true, features = ["uuid-1"] }

@@ -1,25 +1,11 @@
-use std::sync::Arc;
-
-use crate::{container::Container, errors::ApiError};
+use crate::container::Container;
 use axum::{Json, extract::State};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use std::sync::Arc;
+use tracing::debug;
+use types::centrifugo_schemas::{AuthRequest, AuthResponse};
+use types::errors::ApiError;
 
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct AuthRequest {
-    #[schema(example = r#"[1]"#)]
-    pub public_key: Vec<u8>,
-    #[schema(example = r#"[1]"#)]
-    pub proof: Vec<u8>,
-    #[schema(example = r#"["3fa85f64-5717-4562-b3fc-2c963f66afa6"]"#)]
-    pub chat_ids: Vec<Uuid>,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct AuthResponse {
-    pub token: String,
-}
-
+/// Endpoint for receiving centrifugo subscription jvt token
 #[utoipa::path(
     post,
     path = "/centrifugo/auth",
@@ -36,9 +22,12 @@ pub async fn authenticate(
     State(container): State<Arc<Container>>,
     Json(request): Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
+    debug!("Centrifugo auth request received");
     let centrifugo_service = &container.centrifugo_service;
 
+    debug!("Generate new token..");
     let token = centrifugo_service.generate_token(&request).await?;
+    debug!("Token generated successfully");
 
     let response = AuthResponse { token };
 

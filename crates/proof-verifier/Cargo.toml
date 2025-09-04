@@ -1,0 +1,23 @@
+[package]
+name = "proof-verifier"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+types = { path = "../types" }
+tracing = { workspace = true }
+eyre = { workspace = true }
+ark-ed25519 = { workspace = true }
+ark-serialize = { workspace = true }
+bulletproofs = { workspace = true }
+cortado = { workspace = true }
+zk = { workspace = true }
+zkp = { workspace = true }
+crypto = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+serde = { workspace = true }
+art = { workspace = true }
+validator = { workspace = true }
+utoipa = { workspace = true }
