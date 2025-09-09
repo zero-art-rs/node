@@ -76,10 +76,7 @@ impl Node {
         let centrifugo_service = CentrifugoService::new(
             self.config.centrifugo.hmac_secret.clone(),
             self.config.centrifugo.ttl,
-            vec![
-                self.config.nats.messages_namespace.clone(),
-                self.config.nats.art_changes_namespace.clone(),
-            ],
+            vec![self.config.nats.messages_namespace.clone()],
         );
         let art_service = ARTService::new();
 

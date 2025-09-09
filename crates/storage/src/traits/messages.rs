@@ -3,14 +3,14 @@ use bson::doc;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;
 use tracing::debug;
-use types::Message;
+use types::MessageRecord;
 use uuid::Uuid;
 
 #[async_trait::async_trait]
 pub trait MessageStorage: Send + Sync + Sized {
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<Message>>, StorageError>;
+    ) -> Result<ChangeStream<ChangeStreamEvent<MessageRecord>>, StorageError>;
     async fn store_message(&self, content: Vec<u8>, epoch: i64) -> Result<(), StorageError>;
     async fn store_message_in_session(
         &self,

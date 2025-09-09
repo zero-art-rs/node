@@ -40,10 +40,13 @@ hex = { workspace = true }
 base64 = { workspace = true }
 postcard = { workspace = true }
 hyper = { workspace = true }
-axum-core = {  workspace = true }
+axum-core = {  workspace = true}
 serde_urlencoded = {workspace = true}
 serde_with = { workspace = true }
 callbacks = { path = "../callback" }
+axum-extra = { workspace = true, version = "1.0.0", features = ["protobuf"] }
+prost = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 reqwest = { version = "0.12.22", features = ["json", "stream"] }
@@ -55,3 +58,4 @@ bulletproofs = { workspace = true }
 curve25519-dalek = { workspace = true }
 ark-ed25519 = { workspace = true }
 crypto = { workspace = true }
+tracing-subscriber = { workspace = true }

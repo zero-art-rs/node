@@ -11,6 +11,7 @@ use types::errors::VerificationError;
 use types::{art_schemas::*, centrifugo_schemas::AuthRequest, messenger_schemas::*};
 use uuid::Uuid;
 
+#[derive(Clone, Debug)]
 pub enum VerificationOpcode {
     KeyUpdate,
     AddMember,
@@ -22,6 +23,7 @@ pub enum VerificationOpcode {
     DeleteChat,
 }
 
+#[derive(Clone, Debug)]
 pub enum PublicInputs {
     ArtUpdateInput {
         aux_public_keys: Vec<CortadoAffine>,
@@ -33,12 +35,14 @@ pub enum PublicInputs {
     },
 }
 
+#[derive(Clone, Debug)]
 pub struct VerifierData {
     pub proof: Vec<u8>,
     pub public_inputs: PublicInputs,
     pub context: Vec<u8>,
 }
 
+#[derive(Clone, Debug)]
 pub struct VerificationRequest {
     pub opcode: VerificationOpcode,
     pub data: VerifierData,
