@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use crate::{ARTRecord, default_limit, default_skip};
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
@@ -8,6 +9,14 @@ use serde_with::{base64::Base64, serde_as};
 use sha3::{Digest, Sha3_256};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
+
+pub const USE_ROOT_KEY: &str = "use_root_key";
+pub const USE_LEAF_KEY: &str = "use_leaf_key";
+
+pub enum ProofMode {
+    UseRootKey,
+    UseLeafKey,
+}
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
@@ -28,7 +37,10 @@ pub struct GetARTQuery {
     #[serde_as(as = "Base64")]
     pub challenge: Vec<u8>,
 
-    /// Users leaf or root public key. Indicates which key to use for verification
+    /// Indicates which key to use for verification
+    pub proof_mode: String,
+
+    /// Users leaf or root public key
     #[param(value_type = String)]
     #[serde_as(as = "Base64")]
     pub public_key: Vec<u8>,
@@ -122,5 +134,27 @@ where
             art: record.art.serialize()?,
             is_private: record.is_private,
         })
+    }
+}
+
+impl Display for ProofMode {
+    fn fmt(&self, f1: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            ProofMode::UseRootKey => USE_ROOT_KEY,
+            ProofMode::UseLeafKey => USE_LEAF_KEY,
+        };
+        write!(f1, "{}", str)
+    }
+}
+
+impl TryFrom<&str> for ProofMode {
+    type Error = crate::errors::VerificationError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            USE_ROOT_KEY => Ok(ProofMode::UseRootKey),
+            USE_LEAF_KEY => Ok(ProofMode::UseLeafKey),
+            _ => Err(crate::errors::VerificationError::InvalidInput),
+        }
     }
 }

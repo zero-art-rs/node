@@ -16,7 +16,7 @@ use proof_verifier::verifier_engine::*;
 use prost::Message;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
-use types::art_schemas::{GetARTQuery, GetChangesQuery};
+use types::art_schemas::{GetARTQuery, GetChangesQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
 use types::errors::ARTServiceError;
@@ -141,23 +141,30 @@ async fn verification_middleware_inner(
                     CortadoAffine::default()
                 });
 
-            debug!("Check if provided public key is correct");
-            if art.get_root().public_key != public_key {
-                // The provided key isn't a root public key, check if it is a leaf
-                let mut public_key_is_wrong = true;
-                for (node, _) in LeafIterWithPath::new(art.get_root()) {
-                    if node.public_key.eq(&public_key) {
-                        public_key_is_wrong = false;
+            match ProofMode::try_from(payload.proof_mode.as_str())? {
+                ProofMode::UseLeafKey => {
+                    let mut public_key_is_wrong = true;
+                    for (node, _) in LeafIterWithPath::new(art.get_root()) {
+                        if node.public_key.eq(&public_key) {
+                            public_key_is_wrong = false;
+                        }
                     }
-                }
 
-                if public_key_is_wrong {
-                    error!(
+                    if public_key_is_wrong {
+                        error!(
                         "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
                     );
-                    return Err(VerificationError::InvalidInput);
+                        return Err(VerificationError::InvalidInput);
+                    }
+                }
+                ProofMode::UseRootKey => {
+                    if art.get_root().public_key != public_key {
+                        return Err(VerificationError::InvalidInput);
+                    }
                 }
             }
+
+            debug!("Check if provided public key is correct");
 
             // Context for verification
             let mut msg = Vec::new();
