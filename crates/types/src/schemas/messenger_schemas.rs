@@ -32,7 +32,7 @@ pub struct SendMessageRequest {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
-    // Unique sequence number of the message. Default is 0.
+    // Unique sequence number of the first message. Default is 0.
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
@@ -55,7 +55,7 @@ pub struct GetMessageQuery {
     #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
 
-    /// Sequence number of the art used in proof. Default is 0.
+    /// Sequence number of the art used in proof and the . Default is 0.
     pub epoch: Option<i64>,
 }
 

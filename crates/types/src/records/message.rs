@@ -29,7 +29,7 @@ pub struct MessageRecord {
     pub created_at: DateTime<Utc>,
 
     /// Sequential number of this message in the chat
-    pub sequence_number: i64,
+    pub sequence_number: u64,
 
     /// Unique identifier of the chat to send the message to.
     pub chat_id: Option<Uuid>,
@@ -39,7 +39,7 @@ pub struct MessageRecord {
 }
 
 impl MessageRecord {
-    pub fn new(content: Vec<u8>, sequence_number: i64, chat_id: Option<Uuid>, epoch: i64) -> Self {
+    pub fn new(content: Vec<u8>, sequence_number: u64, chat_id: Option<Uuid>, epoch: i64) -> Self {
         Self {
             content,
             created_at: Utc::now(),

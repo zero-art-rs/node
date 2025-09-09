@@ -3,12 +3,16 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use bytes::BytesMut;
+use chrono::Timelike;
 use mongodb::bson::doc;
+use prost::Message;
 use std::sync::Arc;
 use tracing::{debug, instrument};
 use types::MessageRecord;
 use types::errors::{ApiError, MessageServiceError};
 use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery, SendMessageRequest};
+use types::protos::{Frame, SpFrame, SpFrames};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -20,7 +24,7 @@ use validator::Validate;
         GetMessageQuery,
     ),
     responses(
-        (status = 202, description = "Successfully retrieved messages.", body = Vec<MessageRecord>),
+        (status = 202, description = "Successfully retrieved messages.", body = SpFrames, content_type = "application/protobuf"),
         (status = 400, description = "Bad request", body = ApiError),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 500, description = "Internal server error", body = ApiError)
@@ -32,7 +36,7 @@ pub async fn list_messages(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Query(payload): Query<GetMessageQuery>,
-) -> Result<Json<Vec<MessageRecord>>, ApiError> {
+) -> Result<(StatusCode, BytesMut), ApiError> {
     payload.validate()?;
 
     let mut filter = doc! {};
@@ -51,16 +55,7 @@ pub async fn list_messages(
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
-    if messages.is_empty() {
-        debug!("No messages found for filter {}", &filter);
-    } else {
-        debug!("Found next messages for the filter {}", &filter);
-        for message in &messages {
-            debug!("Found message: {}", message);
-        }
-    }
-
-    Ok(Json(messages))
+    Ok((StatusCode::ACCEPTED, messages))
 }
 
 /// Endpoint counting messages
@@ -71,7 +66,7 @@ pub async fn list_messages(
         CountMessagesQuery,
     ),
     responses(
-        (status = 200, description = "Successfully counted messages.", body = u64),
+        (status = 202, description = "Successfully counted messages.", body = u64),
     ),
     tag = "Messages"
 )]
@@ -80,7 +75,7 @@ pub async fn count_messages(
     State(state): State<Arc<Container>>,
     Path(chat_id): Path<Uuid>,
     Query(payload): Query<CountMessagesQuery>,
-) -> Result<Json<u64>, ApiError> {
+) -> Result<(StatusCode, Json<u64>), ApiError> {
     payload.validate()?;
 
     let mut filter = doc! {};
@@ -98,5 +93,5 @@ pub async fn count_messages(
         .count_messages(&chat_id, filter.clone(), payload.limit, payload.skip)
         .await?;
 
-    Ok(Json(count))
+    Ok((StatusCode::ACCEPTED, Json(count)))
 }

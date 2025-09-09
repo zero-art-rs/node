@@ -7,4 +7,10 @@ pub enum MessageServiceError {
 
     #[error("Group isn't exists yet")]
     GroupNotExists,
+
+    #[error("Failed to decode payload: {0}")]
+    DecodeError(#[from] prost::DecodeError),
+
+    #[error("Failed to encode payload: {0}")]
+    EncodeError(#[from] prost::EncodeError),
 }

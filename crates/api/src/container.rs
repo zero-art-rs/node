@@ -49,9 +49,9 @@ impl Container {
     }
 
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
-        let frame = Frame::decode(body)?;
-        let mut buf = BytesMut::new();
-        frame.encode(&mut buf).unwrap();
+        let frame = Frame::decode(body.clone())?;
+        // let mut buf = BytesMut::new();
+        // frame.encode(&mut buf).unwrap();
 
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
 
@@ -88,7 +88,7 @@ impl Container {
         };
 
         self.messenger_service
-            .send_message(buf.to_vec(), &id, tbs_frame.epoch as i64)
+            .send_message(body.to_vec(), &id, tbs_frame.epoch as i64)
             .await?;
 
         Ok(response)

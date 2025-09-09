@@ -3,7 +3,6 @@ use crate::domains::art::transport::http as art_transport;
 use crate::domains::centrifugo::transport::http as centrifugo_transport;
 use crate::domains::messenger::transport::http::*;
 use crate::verification_middleware::verification_middleware;
-use axum::routing::post;
 use axum::{Router, middleware};
 use std::sync::Arc;
 use types::add_route_id;

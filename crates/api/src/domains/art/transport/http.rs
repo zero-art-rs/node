@@ -18,7 +18,12 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 #[utoipa::path(
     post,
     path = "/v1/group/{id}/frame",
-    request_body = Frame,
+    // request_body = Frame,
+    request_body(
+        content = Frame,
+        content_type = "application/protobuf",
+        description = "Frame encoded with protobuf"
+    ),
     params(
         ("id" = Uuid, Path, description = "Group id"),
     ),

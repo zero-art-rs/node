@@ -107,7 +107,7 @@ async fn verification_middleware_inner(
 
             let art = state
                 .art_service
-                .get_art(&chat_id, payload.epoch.clone())
+                .get_art(&chat_id, Some(payload.epoch.unwrap_or(0)))
                 .await?
                 .art;
 
@@ -142,22 +142,29 @@ async fn verification_middleware_inner(
                 });
 
             debug!("Check if provided public key is correct");
-            let mut public_key_is_wrong = true;
-            for (node, _) in LeafIterWithPath::new(art.get_root()) {
-                if node.public_key.eq(&public_key) {
-                    public_key_is_wrong = false;
+            if art.get_root().public_key != public_key {
+                // The provided key isn't a root public key, check if it is a leaf
+                let mut public_key_is_wrong = true;
+                for (node, _) in LeafIterWithPath::new(art.get_root()) {
+                    if node.public_key.eq(&public_key) {
+                        public_key_is_wrong = false;
+                    }
+                }
+
+                if public_key_is_wrong {
+                    error!(
+                        "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
+                    );
+                    return Err(VerificationError::InvalidInput);
                 }
             }
 
-            if public_key_is_wrong {
-                error!("Provided public key isn't correct, or the corresponding node isn't leaf");
-                return Err(VerificationError::InvalidProof);
-            }
-
+            // Context for verification
             let mut msg = Vec::new();
             msg.extend_from_slice(chat_id.as_bytes());
             msg.extend(&payload.nonce);
             msg.extend(payload.challenge);
+            msg.extend(epoch.to_be_bytes());
 
             Some(VerificationRequest {
                 opcode: VerificationOpcode::GetMessages,
@@ -176,6 +183,11 @@ async fn verification_middleware_inner(
 
             let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
 
+            if tbs_frame.group_id != id.to_string() {
+                error!("Group ID mismatch");
+                return Err(VerificationError::InvalidInput);
+            }
+
             let mut buf = BytesMut::new();
             tbs_frame.encode(&mut buf).unwrap();
             let associated_data = buf.to_vec();
@@ -186,7 +198,7 @@ async fn verification_middleware_inner(
             };
 
             let operation_data = match &operation {
-                None => Some(handle_send_message(state.clone(), id).await?),
+                None => Some(get_opcode_and_input_for_send_message(state.clone(), id).await?),
                 Some(Operation::Init(_)) => {
                     return Ok(next
                         .run(Request::from_parts(parts.clone(), Body::from(bytes)))
@@ -195,11 +207,11 @@ async fn verification_middleware_inner(
                 Some(Operation::AddMember(branch_changes_bytes))
                 | Some(Operation::RemoveMember(branch_changes_bytes))
                 | Some(Operation::KeyUpdate(branch_changes_bytes)) => Some(
-                    opcode_and_input_for_art_update(state.clone(), id, branch_changes_bytes)
+                    get_opcode_and_input_for_art_update(state.clone(), id, branch_changes_bytes)
                         .await?,
                 ),
                 Some(Operation::DropGroup(_)) => {
-                    Some(opcode_and_input_for_drop_group(state.clone(), id).await?)
+                    Some(get_opcode_and_input_for_drop_group(state.clone(), id).await?)
                 }
             };
 
@@ -212,7 +224,6 @@ async fn verification_middleware_inner(
                         context: associated_data,
                     },
                 }),
-
                 None => None,
             }
         }
@@ -233,7 +244,7 @@ async fn verification_middleware_inner(
         .await)
 }
 
-pub async fn opcode_and_input_for_art_update(
+pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
     chat_id: Uuid,
     branch_changes_bytes: &Vec<u8>,
@@ -265,7 +276,7 @@ pub async fn opcode_and_input_for_art_update(
     ))
 }
 
-pub async fn opcode_and_input_for_drop_group(
+pub async fn get_opcode_and_input_for_drop_group(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
@@ -291,7 +302,7 @@ pub async fn opcode_and_input_for_drop_group(
     ))
 }
 
-pub async fn handle_send_message(
+pub async fn get_opcode_and_input_for_send_message(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {

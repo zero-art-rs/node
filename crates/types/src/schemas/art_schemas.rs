@@ -28,7 +28,7 @@ pub struct GetARTQuery {
     #[serde_as(as = "Base64")]
     pub challenge: Vec<u8>,
 
-    /// Users invite_public_key
+    /// Users leaf or root public key. Indicates which key to use for verification
     #[param(value_type = String)]
     #[serde_as(as = "Base64")]
     pub public_key: Vec<u8>,

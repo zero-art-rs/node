@@ -61,8 +61,10 @@ impl From<ARTServiceError> for ApiError {
 impl From<MessageServiceError> for ApiError {
     fn from(value: MessageServiceError) -> Self {
         match value {
-            MessageServiceError::Storage(err) => ApiError::InternalServerError(err.to_string()),
             MessageServiceError::GroupNotExists => ApiError::BadRequest(value.to_string()),
+            MessageServiceError::Storage(err) => ApiError::InternalServerError(err.to_string()),
+            MessageServiceError::DecodeError(err) => ApiError::InternalServerError(err.to_string()),
+            MessageServiceError::EncodeError(err) => ApiError::InternalServerError(err.to_string()),
         }
     }
 }

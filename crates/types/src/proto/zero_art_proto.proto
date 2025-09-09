@@ -82,16 +82,17 @@ message GroupOperation {
 }
 
 message FrameTBS {
-	uint64 epoch = 1; // epoch number
+	string group_id = 1; // group identifier
+	uint64 epoch = 2; // epoch number
 	bytes nonce = 3; // random 16b nonce for replay attack protection
-	GroupOperation group_operation = 5; // group operation
-	bytes protected_payload = 6; // encrypted ProtectedPayload message
+  GroupOperation group_operation = 5; // group operation
+  bytes protected_payload = 6; // encrypted ProtectedPayload message
 }
 
 // main transport layer frame [client] -> [SP]
 message Frame {
   FrameTBS frame = 1; // frame data included in proof transcript
-  bytes proof = 9; // proof of group_operation with included context of all prev. fields
+  bytes proof = 9; // proof of group_operation with included context of frame
 }
 
 // transport layer frame [SP] -> [client]
@@ -101,11 +102,16 @@ message SPFrame {
 	Frame frame = 5;
 }
 
+// vector of SPFrames for SP
+message SPFrames {
+	repeated SPFrame sp_frames = 1;
+}
+
 message ProtectedPayloadTBS {
 	uint64 seq_num = 1; // internal sequence number of message (might not be equal to SPFrame.seq_num)
   oneof sender {
-	  bytes user_id = 2; // user identifier (User.id)
-	  bytes leaf_id = 3; // leaf identifier (masking user real identity)
+	  string user_id = 2; // user identifier (User.id)
+	  string leaf_id = 3; // leaf identifier (masking user real identity)
 	  // null if user wants to post in anonymous mode
   }
   google.protobuf.Timestamp created = 4;
@@ -115,5 +121,35 @@ message ProtectedPayloadTBS {
 // protected application layer message(decrypted Frame.protected_payload)
 message ProtectedPayload {
 	ProtectedPayloadTBS payload = 1;
-  bytes signature = 9; // signature of the above data using method defined in ProtectedPayloadTBS.sender field
+  bytes signature = 9; // signature of payload using method defined in ProtectedPayloadTBS.sender field
+}
+
+// auxiliary protected invite data
+message ProtectedInviteData {
+	string group_id = 1;
+	uint64 epoch = 2;
+}
+
+// Invite for some identified user (Q_id, Q_spk)
+message IdentifiedInvite {
+	bytes identity_public_key = 1; // public key of invitor
+	bytes ephemeral_public_key = 2; // one-time ephemeral public key of invitor
+	bytes spk_public_key = 3; // spk public key of invitee
+	bytes protected_invite_data = 9; // encrypted on shared secret ProtectedInviteData
+}
+
+// Invite for unidentified user
+message UnidentifiedInvite {
+	bytes identity_public_key = 1; // public key of invitor
+	bytes ephemeral_public_key = 2; // one-time ephemeral public key of invitor
+	bytes private_key = 3; // private key of invitee
+	bytes protected_invite_data = 9; // encrypted on shared secret ProtectedInviteData
+}
+
+message Invite {
+	oneof invite {
+		IdentifiedInvite identified_invite = 1;
+		UnidentifiedInvite unidentified_invite = 2;
+	}
+	bytes signature = 5; // Sign(identity_public_key, invite.serialize())
 }

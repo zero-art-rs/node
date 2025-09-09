@@ -17,7 +17,7 @@ use types::protos::group_operation::Operation;
 use types::utils::{decode_art, decode_branch_changes};
 
 #[cfg(not(feature = "art_modifications"))]
-use art::types::{ARTNode};
+use art::types::ARTNode;
 
 pub const DEFAULT_LIMIT_SIZE: i64 = 10;
 
@@ -42,8 +42,8 @@ impl ARTService {
         epoch: Option<i64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
-        let record = match &epoch {
-            Some(epoch) => self.get_art_by_epoch(chat_id, *epoch).await?,
+        let record = match epoch {
+            Some(epoch) => self.get_art_by_epoch(chat_id, epoch).await?,
             None => arts_storage
                 .get_art(*chat_id)
                 .await
@@ -120,7 +120,6 @@ impl ARTService {
                     skip,
                 )
                 .await?;
-            debug!("Gathered {} messages", messages.len());
             skip += DEFAULT_LIMIT_SIZE;
 
             if messages.len() == 0 {
@@ -218,7 +217,9 @@ impl ARTService {
         session.start_transaction().await?;
 
         arts_storage.delete_art(&mut session, *chat_id).await?;
-        arts_storage.delete_initial_art(&mut session, *chat_id).await?;
+        arts_storage
+            .delete_initial_art(&mut session, *chat_id)
+            .await?;
 
         session.commit_transaction().await?;
 

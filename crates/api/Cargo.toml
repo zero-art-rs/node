@@ -46,6 +46,7 @@ serde_with = { workspace = true }
 callbacks = { path = "../callback" }
 prost = { workspace = true }
 bytes = { workspace = true }
+prost-types = { workspace = true }
 
 [dev-dependencies]
 reqwest = { version = "0.12.22", features = ["json", "stream"] }
