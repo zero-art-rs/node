@@ -67,9 +67,9 @@ where
 }
 
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
-    //Messages:
     let health_handler_route = OpenApiRouter::new().routes(routes![get_health_handler]);
 
+    //Messages:
     let list_messages_route = OpenApiRouter::new()
         .routes(routes![list_messages])
         .with_verification(container.clone())
@@ -87,7 +87,6 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .with_route_id("authenticate");
 
     // Group management:
-
     let send_frame_route = OpenApiRouter::new()
         .routes(routes![art_transport::send_frame])
         .with_verification(container.clone())
@@ -98,18 +97,9 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .with_verification(container.clone())
         .with_route_id("get_art");
 
-    // let get_changes_route = OpenApiRouter::new()
-    //     .routes(routes![art_transport::get_changes])
-    //     .with_verification(container.clone())
-    //     .with_route_id("get_changes");
-
-    // let count_changes_route = OpenApiRouter::new()
-    //     .routes(routes![art_transport::count_changes])
-    //     .with_verification(container.clone())
-    //     .with_route_id("count_changes");
-
     let get_challenge_route = OpenApiRouter::new().routes(routes![art_transport::get_challenge]);
 
+    // Combine routers in one OpenApiRouter
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(health_handler_route)
         // Messages
@@ -123,6 +113,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .merge(get_challenge_route)
         .split_for_parts();
 
+    // Add public swagger for node
     let public_swagger = SwaggerUi::new("/swagger").url("/spec.json", public_api.clone());
     router.merge(public_swagger)
 }

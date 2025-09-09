@@ -129,7 +129,6 @@ impl ARTStorage for MongoARTStorage {
             .await?;
 
         art.ok_or_else(|| {
-            error!("No art found for chat: {chat_id}");
             StorageError::NotFound
         })
     }

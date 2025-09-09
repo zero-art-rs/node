@@ -44,7 +44,6 @@ axum-core = {  workspace = true}
 serde_urlencoded = {workspace = true}
 serde_with = { workspace = true }
 callbacks = { path = "../callback" }
-axum-extra = { workspace = true, version = "1.0.0", features = ["protobuf"] }
 prost = { workspace = true }
 bytes = { workspace = true }
 

@@ -18,5 +18,5 @@ pub trait MessageStorage: Send + Sync + Sized {
         content: Vec<u8>,
         epoch: i64,
     ) -> Result<(), mongodb::error::Error>;
-    async fn get_existing_collection(chat_id: &Uuid) -> Result<Self, mongodb::error::Error>;
+    async fn get_existing_collection(chat_id: Uuid) -> Result<Self, mongodb::error::Error>;
 }

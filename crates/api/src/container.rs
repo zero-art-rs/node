@@ -64,7 +64,7 @@ impl Container {
         let response = match operation {
             Some(Operation::Init(public_art)) => self
                 .art_service
-                .init_chat(id, public_art, false)
+                .init_group(id, public_art, false)
                 .await
                 .map(|_| StatusCode::CREATED)?,
             Some(Operation::AddMember(changes)) => {
@@ -106,7 +106,7 @@ impl Container {
             decode_branch_changes(&branch_changes_bytes).map_err(ARTServiceError::from)?;
         if let Err(e) = self
             .art_service
-            .update_art(&chat_id, &branch_changes, payload.to_vec())
+            .update_art(chat_id, &branch_changes, payload.to_vec())
             .await
         {
             self.stop_updating(chat_id).await;

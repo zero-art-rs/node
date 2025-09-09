@@ -122,8 +122,6 @@ impl ARTTestContext {
         .await
         .unwrap();
 
-        debug!("Created new group: {}, for testing.", chat_uuid);
-
         (Self {
             client: reqwest::Client::new(),
             art,
@@ -256,15 +254,18 @@ async fn test_send_message() -> eyre::Result<()> {
                     match centrifugo_event {
                         CentrifugoEvent::Connect(_connect_msg) => {
                             // Connection established, continue waiting for messages
+                            debug!("send_message: Connection established, continue waiting for messages");
+                            // debug!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
                         }
                         CentrifugoEvent::ChannelMessage(channel_msg) => {
                             let content_string = channel_msg.publication.data.content;
 
-                            // assert_eq!(content_string, init_message);
-                            // assert_eq!(content_string, test_message);
-                            assert!(
-                                content_string.eq(&init_message) || content_string.eq(&test_message)
-                            );
+                            if content_string.eq(&init_message) {
+                                // skip accidental init group message
+                                continue;
+                            }
+
+                            assert_eq!(content_string, test_message);
                             break;
                         }
                     }

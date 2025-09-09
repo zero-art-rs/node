@@ -8,7 +8,7 @@ use axum::{
 use mongodb::bson::doc;
 use std::sync::Arc;
 use tracing::{debug, instrument};
-use types::{art_schemas::*, errors::ApiError};
+use types::{art_schemas::*, errors::ApiError, protos::Frame};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -18,7 +18,7 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 #[utoipa::path(
     post,
     path = "/v1/group/{id}/frame",
-    request_body = String,
+    request_body = Frame,
     params(
         ("id" = Uuid, Path, description = "Group id"),
     ),
@@ -32,7 +32,6 @@ pub async fn send_frame(
     State(state): State<Arc<Container>>,
     Path(id): Path<Uuid>,
     body: Bytes,
-    // Protobuf(payload): Protobuf<Frame>,
 ) -> Result<StatusCode, ApiError> {
     state.send_frame(id, body).await.map_err(ApiError::from)
 }

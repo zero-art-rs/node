@@ -135,18 +135,18 @@ impl MessageStorage for MongoMessageStorage {
         Ok(())
     }
 
-    async fn get_existing_collection(chat_id: &Uuid) -> Result<Self, mongodb::error::Error> {
+    async fn get_existing_collection(chat_id: Uuid) -> Result<Self, mongodb::error::Error> {
         let db = DATABASE.get().ok_or_else(|| {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let messages_collection = db.collection(&format!("chat/{chat_id}"));
+        let messages_collection = db.collection(&format!("chat/{}", &chat_id));
         let messages_outbox_collection = db.collection(&"messages_outbox");
 
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
-            chat_id: *chat_id,
+            chat_id,
         })
     }
 }
