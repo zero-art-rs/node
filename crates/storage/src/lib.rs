@@ -4,12 +4,9 @@ use std::sync::OnceLock;
 mod impls;
 mod traits;
 
-pub use impls::MongoARTStorage;
-pub use impls::MongoMessageStorage;
+pub use impls::*;
 pub use mongodb::error::Error;
-pub use traits::ARTStorage;
-pub use traits::DataStorage;
-pub use traits::MessageStorage;
+pub use traits::*;
 
 pub use types::errors::StorageError;
 

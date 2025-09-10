@@ -1,7 +1,7 @@
 use bytes::{BufMut, BytesMut};
 use mongodb::bson::Document;
 use prost::Message;
-use storage::{DataStorage, MessageStorage, MongoMessageStorage};
+use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
 use types::FrameRecord;
 use types::errors::MessageServiceError;
@@ -28,11 +28,12 @@ impl MessengerService {
         message: Vec<u8>,
         chat_id: &Uuid,
         epoch: i64,
+        outbox_only: bool,
     ) -> Result<(), MessageServiceError> {
         debug!("Store and send new message");
-        MongoMessageStorage::new(chat_id)
+        MongoFramesStorage::new(chat_id)
             .await?
-            .store_message(message, epoch)
+            .store_message(message, epoch, outbox_only)
             .await?;
         debug!("Message sent");
         Ok(())
@@ -45,7 +46,7 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        let messages = MongoMessageStorage::new(chat_id)
+        let messages = MongoFramesStorage::new(chat_id)
             .await?
             .list(filter.clone(), None, limit, skip)
             .await?;
@@ -88,7 +89,7 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<u64, MessageServiceError> {
-        Ok(MongoMessageStorage::new(chat_id)
+        Ok(MongoFramesStorage::new(chat_id)
             .await?
             .count(filter, limit, skip)
             .await?)
@@ -99,7 +100,7 @@ impl MessengerService {
         chat_id: &Uuid,
         filter: Document,
     ) -> Result<Vec<FrameRecord>, MessageServiceError> {
-        let result = MongoMessageStorage::new(chat_id)
+        let result = MongoFramesStorage::new(chat_id)
             .await?
             .delete(filter)
             .await?;

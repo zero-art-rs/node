@@ -1,6 +1,6 @@
 use crate::container::Container;
-use crate::{art_transport, centrifugo_transport, messenger_transport};
 use crate::verification_middleware::verification_middleware;
+use crate::{art_transport, centrifugo_transport, messenger_transport};
 use axum::{Router, middleware};
 use std::sync::Arc;
 use types::add_route_id;

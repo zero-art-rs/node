@@ -1,15 +1,14 @@
+use ark_ec::AffineRepr;
+use ark_serialize::CanonicalDeserialize;
 use art::traits::ARTPublicAPI;
 use art::types::{BranchChanges, BranchChangesType, PublicART};
 use bytes::{BufMut, BytesMut};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::{Document, doc};
 use prost::Message;
-use storage::{
-    ARTStorage, DATABASE, DataStorage, MessageStorage, MongoARTStorage, MongoMessageStorage,
-    StorageError,
-};
+use storage::{ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage, StorageError, MongoKeysStorage};
 use tracing::{debug, error};
-use types::{ARTRecord, FrameRecord, protos};
+use types::{ARTRecord, FrameRecord, protos, KeyRecord};
 use uuid::Uuid;
 
 use types::errors::{ARTServiceError, MessageServiceError};
@@ -18,6 +17,8 @@ use types::utils::{decode_art, decode_branch_changes};
 
 #[cfg(not(feature = "art_modifications"))]
 use art::types::ARTNode;
+use base64::prelude::BASE64_STANDARD;
+use tracing::field::debug;
 
 pub const DEFAULT_LIMIT_SIZE: i64 = 10;
 
@@ -95,7 +96,7 @@ impl ARTService {
         chat_id: &Uuid,
         epoch: i64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let message_storage = MongoMessageStorage::new(chat_id).await?;
+        let message_storage = MongoFramesStorage::new(chat_id).await?;
 
         let art_record = self.get_initial_art(chat_id).await?;
         let mut initial_art = art_record.art;
@@ -201,6 +202,8 @@ impl ARTService {
     pub async fn delete_chat(&self, chat_id: &Uuid) -> Result<(), ARTServiceError> {
         debug!("Delete chat: {}", chat_id);
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
+        let keys_storage = MongoKeysStorage::new().await?;
+        let frame_storage = MongoFramesStorage::new(chat_id).await?;
 
         if arts_storage.get_art(*chat_id).await.is_err() {
             error!("No art found for chat: {chat_id}");
@@ -220,11 +223,12 @@ impl ARTService {
         arts_storage
             .delete_initial_art(&mut session, *chat_id)
             .await?;
+        keys_storage.keys_collection.delete_one(doc! {"chat_id": chat_id}).session(&mut session).await?;
 
         session.commit_transaction().await?;
 
-        let arts_storage = MongoARTStorage::get_existing_storage().await?;
         arts_storage.drop_collection_if_empty().await?;
+        frame_storage.messages_collection.drop().await?;
 
         debug!("Deletion is successful");
 
@@ -236,9 +240,12 @@ impl ARTService {
         id: Uuid,
         art: Vec<u8>,
         is_private: bool,
+        owner_id_pub_key: Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         let art = match art.is_empty() {
-            false => decode_art(&art)?,
+            false => {
+                decode_art(&art)?
+            },
             true => {
                 #[cfg(not(feature = "art_modifications"))]
                 {
@@ -257,6 +264,10 @@ impl ARTService {
         };
 
         let arts_storage = MongoARTStorage::new().await?;
+        MongoKeysStorage::new().await?.insert_one(KeyRecord {
+            owner_public_key: owner_id_pub_key,
+            chat_id: id,
+        }).await?;
 
         debug!("Check if ART for group {} already exists...", id);
         if arts_storage.get_art(id).await.is_ok() {
@@ -289,7 +300,7 @@ impl ARTService {
         payload: Vec<u8>,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
-        let message_storage = MongoMessageStorage::get_existing_collection(chat_id).await?;
+        let message_storage = MongoFramesStorage::get_existing_collection(chat_id).await?;
 
         let latest_art = arts_storage.get_art(chat_id).await?;
         if latest_art.is_private {
