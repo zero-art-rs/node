@@ -1,7 +1,5 @@
 use crate::container::Container;
-use crate::domains::art::transport::http as art_transport;
-use crate::domains::centrifugo::transport::http as centrifugo_transport;
-use crate::domains::messenger::transport::http::*;
+use crate::{art_transport, centrifugo_transport, messenger_transport};
 use crate::verification_middleware::verification_middleware;
 use axum::{Router, middleware};
 use std::sync::Arc;
@@ -66,23 +64,18 @@ where
 }
 
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
-    //Messages:
     let health_handler_route = OpenApiRouter::new().routes(routes![get_health_handler]);
 
+    //Messages:
     let list_messages_route = OpenApiRouter::new()
-        .routes(routes![list_messages])
+        .routes(routes![messenger_transport::list_messages])
         .with_verification(container.clone())
         .with_route_id("list_messages");
 
     let count_messages_route = OpenApiRouter::new()
-        .routes(routes![count_messages])
+        .routes(routes![messenger_transport::count_messages])
         .with_verification(container.clone())
         .with_route_id("count_messages");
-
-    let send_message_route = OpenApiRouter::new()
-        .routes(routes![send_message])
-        .with_verification(container.clone())
-        .with_route_id("send_message");
 
     // Centrifugo:
     let authenticate_route = OpenApiRouter::new()
@@ -91,50 +84,33 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .with_route_id("authenticate");
 
     // Group management:
-    let init_chat_route = OpenApiRouter::new().routes(routes![art_transport::init_chat]);
+    let send_frame_route = OpenApiRouter::new()
+        .routes(routes![messenger_transport::send_frame])
+        .with_verification(container.clone())
+        .with_route_id("send_frame");
 
     let get_art_route = OpenApiRouter::new()
         .routes(routes![art_transport::get_art])
         .with_verification(container.clone())
         .with_route_id("get_art");
 
-    let get_changes_route = OpenApiRouter::new()
-        .routes(routes![art_transport::get_changes])
-        .with_verification(container.clone())
-        .with_route_id("get_changes");
-
-    let count_changes_route = OpenApiRouter::new()
-        .routes(routes![art_transport::count_changes])
-        .with_verification(container.clone())
-        .with_route_id("count_changes");
-
-    let update_art_route = OpenApiRouter::new()
-        .routes(routes![art_transport::update_art])
-        .with_verification(container.clone())
-        .with_route_id("update_art");
-
     let get_challenge_route = OpenApiRouter::new().routes(routes![art_transport::get_challenge]);
 
-    let delete_chat_route = OpenApiRouter::new()
-        .routes(routes![art_transport::delete_chat])
-        .with_verification(container.clone())
-        .with_route_id("delete_chat");
-
+    // Combine routers in one OpenApiRouter
     let (router, public_api) = OpenApiRouter::with_openapi(PublicApiDoc::openapi())
         .merge(health_handler_route)
+        // Messages
         .merge(list_messages_route)
         .merge(count_messages_route)
-        .merge(send_message_route)
+        // Centrifugo
         .merge(authenticate_route)
-        .merge(init_chat_route)
+        // Group operations
+        .merge(send_frame_route)
         .merge(get_art_route)
-        .merge(get_changes_route)
-        .merge(count_changes_route)
-        .merge(update_art_route)
         .merge(get_challenge_route)
-        .merge(delete_chat_route)
         .split_for_parts();
 
+    // Add public swagger for node
     let public_swagger = SwaggerUi::new("/swagger").url("/spec.json", public_api.clone());
     router.merge(public_swagger)
 }

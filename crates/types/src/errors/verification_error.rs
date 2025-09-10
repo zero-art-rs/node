@@ -35,6 +35,8 @@ pub enum VerificationError {
     PathRejection(#[from] PathRejection),
     #[error("Failed to retrieve json body: {0}")]
     JsonRejection(#[from] JsonRejection),
+    #[error("Failed to decode request: {0}")]
+    DecodeError(#[from] prost::DecodeError),
 }
 
 impl From<serde_json::Error> for VerificationError {

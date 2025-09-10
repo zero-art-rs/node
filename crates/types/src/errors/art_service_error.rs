@@ -29,4 +29,6 @@ pub enum ARTServiceError {
     ArtError(#[from] ARTError),
     #[error("No previous record found")]
     NoPreviousRecord,
+    #[error("Failed to decode payload: {0}")]
+    DecodeError(#[from] prost::DecodeError),
 }

@@ -1,2 +1,2 @@
 pub(crate) mod service;
-pub(crate) mod transport;
+pub mod http;

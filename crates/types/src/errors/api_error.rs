@@ -2,8 +2,7 @@ use art::errors::ARTError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 
-use crate::errors::{ARTServiceError, MessengerError};
-use crate::errors::ApiError::Unauthorized;
+use crate::errors::{ARTServiceError, MessageServiceError, ServiceError};
 use serde_json::json;
 use utoipa::ToSchema;
 
@@ -18,6 +17,20 @@ pub enum ApiError {
     InternalServerError(String),
     /// Resource not found
     NotFound(String),
+}
+
+pub fn invalid_request() -> ApiError {
+    ApiError::BadRequest(String::from("Invalid request"))
+}
+
+impl From<ServiceError> for ApiError {
+    fn from(value: ServiceError) -> Self {
+        match value {
+            ServiceError::ARTServiceError(art_err) => Self::from(art_err),
+            ServiceError::MessageServiceError(msg_err) => Self::from(msg_err),
+            ServiceError::DecodeError(_) => invalid_request(),
+        }
+    }
 }
 
 impl From<ark_serialize::SerializationError> for ApiError {
@@ -45,11 +58,13 @@ impl From<ARTServiceError> for ApiError {
     }
 }
 
-impl From<MessengerError> for ApiError {
-    fn from(value: MessengerError) -> Self {
+impl From<MessageServiceError> for ApiError {
+    fn from(value: MessageServiceError) -> Self {
         match value {
-            MessengerError::Storage(err) => ApiError::InternalServerError(err.to_string()),
-            MessengerError::GroupNotExists => ApiError::BadRequest(value.to_string()),
+            MessageServiceError::GroupNotExists => ApiError::BadRequest(value.to_string()),
+            MessageServiceError::Storage(err) => ApiError::InternalServerError(err.to_string()),
+            MessageServiceError::DecodeError(err) => ApiError::InternalServerError(err.to_string()),
+            MessageServiceError::EncodeError(err) => ApiError::InternalServerError(err.to_string()),
         }
     }
 }

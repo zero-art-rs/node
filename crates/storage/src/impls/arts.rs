@@ -128,10 +128,7 @@ impl ARTStorage for MongoARTStorage {
             .find_one(doc! {"chat_id": chat_id})
             .await?;
 
-        art.ok_or_else(|| {
-            error!("No art found for chat: {chat_id}");
-            StorageError::NotFound
-        })
+        art.ok_or_else(|| StorageError::NotFound)
     }
 
     /// Return the first art state in the chat

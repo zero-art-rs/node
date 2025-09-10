@@ -1,7 +1,5 @@
-mod art_changes_record;
 mod art_record;
-mod record;
+mod frame_record;
 
-pub use art_changes_record::{ARTChangesOutboxRecord, ARTChangesRecord};
 pub use art_record::ARTRecord;
-pub use record::Record;
+pub use frame_record::{FrameRecord, Subscription};
