@@ -22,9 +22,9 @@ pub use domains::art::service::ARTService;
 pub use domains::centrifugo::service::CentrifugoService;
 pub use domains::messenger::service::MessengerService;
 
-pub use domains::art::transport::http as art_transport;
-pub use domains::centrifugo::transport::http as centrifugo_transport;
-pub use domains::messenger::transport::http as messenger_transport;
+pub use domains::art::http as art_transport;
+pub use domains::centrifugo::http as centrifugo_transport;
+pub use domains::messenger::http as messenger_transport;
 
 pub async fn run_server(
     address: String,

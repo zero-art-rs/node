@@ -18,11 +18,12 @@ pub enum ProofMode {
     UseLeafKey,
 }
 
+///
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetARTQuery {
-    /// Serialized proof.
+    /// Schnorr signature of the message: (chat_id.as_bytes() || nonce || challenge || epoch.to_be_bytes()).
     #[param(value_type = String)]
     #[serde_as(as = "Base64")]
     pub signature: Vec<u8>,
@@ -37,10 +38,10 @@ pub struct GetARTQuery {
     #[serde_as(as = "Base64")]
     pub challenge: Vec<u8>,
 
-    /// Indicates which key to use for verification
+    /// Indicates which key to use for verification. It can be eather "use_root_key" or "use_leaf_key" mode.
     pub proof_mode: String,
 
-    /// Users leaf or root public key
+    /// Users leaf or root public key corresponding to the proof_mode
     #[param(value_type = String)]
     #[serde_as(as = "Base64")]
     pub public_key: Vec<u8>,
@@ -57,62 +58,6 @@ pub struct GetARTResponse {
 
     /// Defines whether the group is private or not
     pub is_private: bool,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct GetChangesQuery {
-    /// Number of results to be returned.
-    #[param(default = default_limit)]
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-
-    /// The amount or results to skip at first.
-    #[param(default = default_skip)]
-    #[serde(default = "default_skip")]
-    pub skip: i64,
-
-    /// Serialized proof.
-    #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
-    pub nonce: Vec<u8>,
-
-    /// The epoch of the first requested ART changes
-    pub epoch: Option<i64>,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct CountChangesQuery {
-    /// Number of results to be returned.
-    #[param(default = default_limit)]
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-
-    /// The amount or results to skip at first.
-    #[param(default = default_skip)]
-    #[serde(default = "default_skip")]
-    pub skip: i64,
-
-    /// Serialized proof.
-    #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
-    pub nonce: Vec<u8>,
-
-    /// The epoch of the first requested ART changes
-    pub epoch: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema, Deserialize)]

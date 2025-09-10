@@ -5,28 +5,6 @@ use serde_with::{base64::Base64, serde_as};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SendMessageRequest {
-    /// Message content
-    #[schema(value_type = String, content_encoding = "base64")]
-    #[serde_as(as = "Base64")]
-    pub message: Vec<u8>,
-
-    /// Sequential number of epochs during which the message was sent
-    pub epoch: i64,
-
-    /// Serialized proof.
-    #[schema(value_type = String, content_encoding = "base64")]
-    #[serde_as(as = "Base64")]
-    pub signature: Vec<u8>,
-
-    /// User provided nonce
-    #[schema(value_type = String, content_encoding = "base64")]
-    #[serde_as(as = "Base64")]
-    pub nonce: Vec<u8>,
-}
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]

@@ -13,13 +13,13 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub struct Subscription {
     pub chat_id: String,
-    pub change_stream: ChangeStream<ChangeStreamEvent<MessageRecord>>,
-    pub sender: mpsc::Sender<MessageRecord>,
+    pub change_stream: ChangeStream<ChangeStreamEvent<FrameRecord>>,
+    pub sender: mpsc::Sender<FrameRecord>,
 }
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct MessageRecord {
+pub struct FrameRecord {
     /// The message content as binary data
     #[schema(value_type = Option<String>, content_encoding = "base64")]
     #[serde_as(as = "Base64")]
@@ -38,7 +38,7 @@ pub struct MessageRecord {
     pub epoch: i64,
 }
 
-impl MessageRecord {
+impl FrameRecord {
     pub fn new(content: Vec<u8>, sequence_number: u64, chat_id: Option<Uuid>, epoch: i64) -> Self {
         Self {
             content,
@@ -50,7 +50,7 @@ impl MessageRecord {
     }
 }
 
-impl fmt::Display for MessageRecord {
+impl fmt::Display for FrameRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let content_str = match std::str::from_utf8(self.content.as_slice()) {
             Ok(text) => text.to_string(),

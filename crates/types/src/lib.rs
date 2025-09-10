@@ -7,7 +7,7 @@ pub mod utils;
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::Response;
-pub use records::{ARTRecord, MessageRecord, Subscription};
+pub use records::{ARTRecord, FrameRecord, Subscription};
 pub use schemas::{art_schemas, centrifugo_schemas, messenger_schemas};
 pub mod protos {
     include!(concat!(env!("OUT_DIR"), "/zero_art_proto.rs"));

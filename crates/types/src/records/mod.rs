@@ -1,5 +1,5 @@
 mod art_record;
-mod message;
+mod frame_record;
 
 pub use art_record::ARTRecord;
-pub use message::{MessageRecord, Subscription};
+pub use frame_record::{FrameRecord, Subscription};

@@ -16,11 +16,11 @@ use proof_verifier::verifier_engine::*;
 use prost::Message;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
-use types::art_schemas::{GetARTQuery, GetChangesQuery, ProofMode};
+use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
 use types::errors::ARTServiceError;
-use types::messenger_schemas::{GetMessageQuery, SendMessageRequest};
+use types::messenger_schemas::{GetMessageQuery};
 use types::protos::group_operation::Operation;
 use types::protos::{Frame, GroupOperation};
 use types::{

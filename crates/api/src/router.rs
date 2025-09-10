@@ -1,7 +1,5 @@
 use crate::container::Container;
-use crate::domains::art::transport::http as art_transport;
-use crate::domains::centrifugo::transport::http as centrifugo_transport;
-use crate::domains::messenger::transport::http::*;
+use crate::{art_transport, centrifugo_transport, messenger_transport};
 use crate::verification_middleware::verification_middleware;
 use axum::{Router, middleware};
 use std::sync::Arc;
@@ -70,12 +68,12 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
 
     //Messages:
     let list_messages_route = OpenApiRouter::new()
-        .routes(routes![list_messages])
+        .routes(routes![messenger_transport::list_messages])
         .with_verification(container.clone())
         .with_route_id("list_messages");
 
     let count_messages_route = OpenApiRouter::new()
-        .routes(routes![count_messages])
+        .routes(routes![messenger_transport::count_messages])
         .with_verification(container.clone())
         .with_route_id("count_messages");
 
@@ -87,7 +85,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
 
     // Group management:
     let send_frame_route = OpenApiRouter::new()
-        .routes(routes![art_transport::send_frame])
+        .routes(routes![messenger_transport::send_frame])
         .with_verification(container.clone())
         .with_route_id("send_frame");
 

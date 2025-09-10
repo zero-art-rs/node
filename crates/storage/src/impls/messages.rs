@@ -7,12 +7,12 @@ use mongodb::{
     ClientSession, Collection, IndexModel,
 };
 use tracing::debug;
-use types::MessageRecord;
+use types::FrameRecord;
 use uuid::Uuid;
 
 pub struct MongoMessageStorage {
-    messages_collection: Collection<MessageRecord>,
-    messages_outbox_collection: Collection<MessageRecord>,
+    messages_collection: Collection<FrameRecord>,
+    messages_outbox_collection: Collection<FrameRecord>,
     chat_id: Uuid,
 }
 
@@ -48,7 +48,7 @@ impl MongoMessageStorage {
 impl MessageStorage for MongoMessageStorage {
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<MessageRecord>>, StorageError> {
+    ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, StorageError> {
         let change_stream = self.messages_collection.watch().await?;
 
         Ok(change_stream)
@@ -72,7 +72,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number
         );
 
-        let mut message = MessageRecord::new(content, next_sequence_number, None, epoch);
+        let mut message = FrameRecord::new(content, next_sequence_number, None, epoch);
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 
@@ -117,7 +117,7 @@ impl MessageStorage for MongoMessageStorage {
             next_sequence_number
         );
 
-        let mut message = MessageRecord::new(content, next_sequence_number, None, epoch);
+        let mut message = FrameRecord::new(content, next_sequence_number, None, epoch);
 
         message_collection
             .insert_one(message.clone())
@@ -153,7 +153,7 @@ impl MessageStorage for MongoMessageStorage {
 
 #[async_trait::async_trait]
 impl DataStorage for MongoMessageStorage {
-    type Data = MessageRecord;
+    type Data = FrameRecord;
 
     async fn get_collection(&self) -> &Collection<Self::Data> {
         &self.messages_collection

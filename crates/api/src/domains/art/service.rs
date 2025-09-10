@@ -9,7 +9,7 @@ use storage::{
     StorageError,
 };
 use tracing::{debug, error};
-use types::{ARTRecord, MessageRecord, protos};
+use types::{ARTRecord, FrameRecord, protos};
 use uuid::Uuid;
 
 use types::errors::{ARTServiceError, MessageServiceError};
@@ -157,7 +157,7 @@ impl ARTService {
     }
 
     pub fn extract_branch_changes(
-        messages: &MessageRecord,
+        messages: &FrameRecord,
     ) -> Result<Option<BranchChanges<CortadoAffine>>, ARTServiceError> {
         let mut buf = BytesMut::new();
         buf.put(messages.content.as_slice());

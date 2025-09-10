@@ -3,25 +3,52 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use chrono::Timelike;
 use mongodb::bson::doc;
 use prost::Message;
 use std::sync::Arc;
 use tracing::{debug, instrument};
-use types::MessageRecord;
+use types::FrameRecord;
 use types::errors::{ApiError, MessageServiceError};
-use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery, SendMessageRequest};
+use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery};
 use types::protos::{Frame, SpFrame, SpFrames};
 use uuid::Uuid;
 use validator::Validate;
 
+/// Send Frame to the group
+#[utoipa::path(
+    post,
+    path = "/v1/group/{id}/frames",
+    request_body(
+        content = Frame,
+        content_type = "application/protobuf",
+        description = "Frame encoded with protobuf"
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Group id"),
+    ),
+    responses(
+        (status = 200, description = "Authentication successful"),
+    ),
+    tag = "Messages"
+)]
+#[instrument(skip(state), err)]
+pub async fn send_frame(
+    State(state): State<Arc<Container>>,
+    Path(id): Path<Uuid>,
+    body: Bytes,
+) -> Result<StatusCode, ApiError> {
+    state.send_frame(id, body).await.map_err(ApiError::from)
+}
+
 /// Endpoint for requesting messages from the group
 #[utoipa::path(
     get,
-    path = "/v1/group/{id}",
+    path = "/v1/group/{id}/frames",
     params(
         GetMessageQuery,
+        ("id" = Uuid, Path, description = "Group id"),
     ),
     responses(
         (status = 202, description = "Successfully retrieved messages.", body = SpFrames, content_type = "application/protobuf"),
@@ -34,7 +61,7 @@ use validator::Validate;
 #[instrument(skip(state), err)]
 pub async fn list_messages(
     State(state): State<Arc<Container>>,
-    Path(chat_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
     Query(payload): Query<GetMessageQuery>,
 ) -> Result<(StatusCode, BytesMut), ApiError> {
     payload.validate()?;
@@ -51,7 +78,7 @@ pub async fn list_messages(
 
     let messages = state
         .messenger_service
-        .list_messages(&chat_id, filter.clone(), payload.limit, payload.skip)
+        .list_messages(&id, filter.clone(), payload.limit, payload.skip)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
@@ -61,9 +88,10 @@ pub async fn list_messages(
 /// Endpoint counting messages
 #[utoipa::path(
     get,
-    path = "/v1/group/{id}/count",
+    path = "/v1/group/{id}/frames/count",
     params(
         CountMessagesQuery,
+        ("id" = Uuid, Path, description = "Group id"),
     ),
     responses(
         (status = 202, description = "Successfully counted messages.", body = u64),
@@ -73,7 +101,7 @@ pub async fn list_messages(
 #[instrument(skip(state), err)]
 pub async fn count_messages(
     State(state): State<Arc<Container>>,
-    Path(chat_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
     Query(payload): Query<CountMessagesQuery>,
 ) -> Result<(StatusCode, Json<u64>), ApiError> {
     payload.validate()?;
@@ -90,7 +118,7 @@ pub async fn count_messages(
 
     let count = state
         .messenger_service
-        .count_messages(&chat_id, filter.clone(), payload.limit, payload.skip)
+        .count_messages(&id, filter.clone(), payload.limit, payload.skip)
         .await?;
 
     Ok((StatusCode::ACCEPTED, Json(count)))

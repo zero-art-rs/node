@@ -121,7 +121,7 @@ impl ARTTestContext {
             PrivateART::new_art_from_secrets(&secrets, &CortadoAffine::generator()).unwrap();
 
         // Create new_group for testing
-        let (chat_uuid, init_message) = crate_new_chat(
+        let (chat_uuid, init_message) = create_new_chat(
             PublicART::new_art_from_secrets(&secrets, &CortadoAffine::generator())
                 .unwrap()
                 .0,
@@ -289,7 +289,7 @@ async fn test_send_message() -> eyre::Result<()> {
         .client
         .post(format!(
             "{}/{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid, "frame"
+            BACKEND_URL, "v1/group", context.chat_uuid, "frames"
         ))
         .body(Bytes::from(req_buf))
         .send()
@@ -488,7 +488,7 @@ async fn test_delete_chat() -> eyre::Result<()> {
         .client
         .post(format!(
             "{}/{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid, "frame"
+            BACKEND_URL, "v1/group", context.chat_uuid, "frames"
         ))
         .body(Bytes::from(buf))
         .send()
@@ -499,7 +499,7 @@ async fn test_delete_chat() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn crate_new_chat(art: PublicART<CortadoAffine>) -> eyre::Result<(Uuid, BytesMut)> {
+async fn create_new_chat(art: PublicART<CortadoAffine>) -> eyre::Result<(Uuid, BytesMut)> {
     let chat_id = Uuid::now_v7();
     let client = reqwest::Client::new();
 
@@ -523,7 +523,7 @@ async fn crate_new_chat(art: PublicART<CortadoAffine>) -> eyre::Result<(Uuid, By
     let init_response = client
         .post(format!(
             "{}/{}/{}/{}",
-            BACKEND_URL, "v1/group", chat_id, "frame"
+            BACKEND_URL, "v1/group", chat_id, "frames"
         ))
         .body(Bytes::from(buf))
         .send()
@@ -626,7 +626,7 @@ async fn update_key(
         .client
         .post(format!(
             "{}/{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid, "frame"
+            BACKEND_URL, "v1/group", context.chat_uuid, "frames"
         ))
         .body(Bytes::from(buf))
         .send()
@@ -717,7 +717,7 @@ async fn add_member(
             .client
             .post(format!(
                 "{}/{}/{}/{}",
-                BACKEND_URL, "v1/group", context.chat_uuid, "frame"
+                BACKEND_URL, "v1/group", context.chat_uuid, "frames"
             ))
             .body(Bytes::from(buf.clone()))
             .send()
@@ -747,8 +747,8 @@ async fn get_messages(
     context
         .client
         .get(format!(
-            "{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid
+            "{}/{}/{}/{}",
+            BACKEND_URL, "v1/group", context.chat_uuid, "frames"
         ))
         .query(&GetMessageQuery {
             message_sequence_number: None,
@@ -852,7 +852,7 @@ async fn make_blank(
         .client
         .post(format!(
             "{}/{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid, "frame"
+            BACKEND_URL, "v1/group", context.chat_uuid, "frames"
         ))
         .body(Bytes::from(buf))
         .send()
@@ -968,8 +968,8 @@ async fn get_changes(
     let changes_response = context
         .client
         .get(format!(
-            "{}/{}/{}",
-            BACKEND_URL, "v1/group", context.chat_uuid
+            "{}/{}/{}/{}",
+            BACKEND_URL, "v1/group", context.chat_uuid, "frames"
         ))
         .query(&json!({
             "signature": BASE64_STANDARD.encode(&signature),
@@ -983,7 +983,7 @@ async fn get_changes(
 
     assert_eq!(changes_response.status(), StatusCode::OK);
 
-    let records = changes_response.json::<Vec<types::MessageRecord>>().await?;
+    let records = changes_response.json::<Vec<types::FrameRecord>>().await?;
     let mut changes = Vec::with_capacity(records.len());
     for record in records {
         let mut buf = BytesMut::new();

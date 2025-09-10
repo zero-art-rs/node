@@ -1,9 +1,7 @@
 use crate::container::Container;
-use axum::body::Bytes;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
 };
 use mongodb::bson::doc;
 use std::sync::Arc;
@@ -13,33 +11,6 @@ use uuid::Uuid;
 use validator::Validate;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
-
-/// Send Frame to the group
-#[utoipa::path(
-    post,
-    path = "/v1/group/{id}/frame",
-    // request_body = Frame,
-    request_body(
-        content = Frame,
-        content_type = "application/protobuf",
-        description = "Frame encoded with protobuf"
-    ),
-    params(
-        ("id" = Uuid, Path, description = "Group id"),
-    ),
-    responses(
-        (status = 200, description = "Authentication successful"),
-    ),
-    tag = "Group operations"
-)]
-#[instrument(skip(state), err)]
-pub async fn send_frame(
-    State(state): State<Arc<Container>>,
-    Path(id): Path<Uuid>,
-    body: Bytes,
-) -> Result<StatusCode, ApiError> {
-    state.send_frame(id, body).await.map_err(ApiError::from)
-}
 
 /// Get ART structure
 #[utoipa::path(

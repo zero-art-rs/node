@@ -3,7 +3,7 @@ use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, MessageStorage, MongoMessageStorage};
 use tracing::debug;
-use types::MessageRecord;
+use types::FrameRecord;
 use types::errors::MessageServiceError;
 use types::protos::{Frame, SpFrame, SpFrames};
 use uuid::Uuid;
@@ -98,7 +98,7 @@ impl MessengerService {
         &self,
         chat_id: &Uuid,
         filter: Document,
-    ) -> Result<Vec<MessageRecord>, MessageServiceError> {
+    ) -> Result<Vec<FrameRecord>, MessageServiceError> {
         let result = MongoMessageStorage::new(chat_id)
             .await?
             .delete(filter)
