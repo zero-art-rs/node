@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use crate::{ARTRecord, default_limit, default_skip};
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
@@ -7,6 +6,7 @@ use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use sha3::{Digest, Sha3_256};
+use std::fmt::Display;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 

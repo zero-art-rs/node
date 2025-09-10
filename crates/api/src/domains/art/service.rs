@@ -199,8 +199,9 @@ impl ARTService {
     }
 
     pub async fn delete_chat(&self, chat_id: &Uuid) -> Result<(), ARTServiceError> {
-        debug!("Delete chat: {}", chat_id);
+        debug!("Deleting chat: {}...", chat_id);
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
+        let message_storage = MongoMessageStorage::new(chat_id).await?;
 
         if arts_storage.get_art(*chat_id).await.is_err() {
             error!("No art found for chat: {chat_id}");
@@ -220,11 +221,10 @@ impl ARTService {
         arts_storage
             .delete_initial_art(&mut session, *chat_id)
             .await?;
-
         session.commit_transaction().await?;
 
-        let arts_storage = MongoARTStorage::get_existing_storage().await?;
-        arts_storage.drop_collection_if_empty().await?;
+        // drop storage outside the transaction to avoid error
+        message_storage.drop_in_session(&mut session).await?;
 
         debug!("Deletion is successful");
 

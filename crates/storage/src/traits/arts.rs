@@ -53,7 +53,7 @@ pub trait ARTStorage: Send + Sync {
         &self,
         chat_id: Uuid,
         new_metadata: Vec<u8>,
-        node_index: i64,
+        node_index: u64,
     ) -> Result<(), StorageError>;
 
     async fn replace_art(

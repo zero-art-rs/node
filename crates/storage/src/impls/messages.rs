@@ -10,6 +10,9 @@ use tracing::debug;
 use types::FrameRecord;
 use uuid::Uuid;
 
+pub const GROUP_COLLECTION_NAME: &str = "group";
+pub const OUTBOX_COLLECTION_NAME: &str = "frame_outbox";
+
 pub struct MongoMessageStorage {
     messages_collection: Collection<FrameRecord>,
     messages_outbox_collection: Collection<FrameRecord>,
@@ -22,11 +25,10 @@ impl MongoMessageStorage {
             .get()
             .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
-        let messages_collection_name = format!("chat/{chat_id}");
+        let messages_collection_name = format!("{GROUP_COLLECTION_NAME}/{chat_id}");
         let messages_collection = db.collection(&messages_collection_name);
 
-        let messages_outbox_collection_name = "messages_outbox";
-        let messages_outbox_collection = db.collection(messages_outbox_collection_name);
+        let messages_outbox_collection = db.collection(OUTBOX_COLLECTION_NAME);
 
         let messages_index_model = IndexModel::builder()
             .keys(doc! { "sequence_number": -1})
@@ -140,14 +142,20 @@ impl MessageStorage for MongoMessageStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let messages_collection = db.collection(&format!("chat/{}", &chat_id));
-        let messages_outbox_collection = db.collection(&"messages_outbox");
+        let messages_collection = db.collection(&format!("{GROUP_COLLECTION_NAME}/{}", &chat_id));
+        let messages_outbox_collection = db.collection(OUTBOX_COLLECTION_NAME);
 
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
             chat_id,
         })
+    }
+
+    async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), StorageError> {
+        self.messages_collection.drop().session(&mut *session).await?;
+
+        Ok(())
     }
 }
 

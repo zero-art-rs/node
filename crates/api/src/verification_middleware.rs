@@ -20,7 +20,7 @@ use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
 use types::errors::ARTServiceError;
-use types::messenger_schemas::{GetMessageQuery};
+use types::messenger_schemas::GetMessageQuery;
 use types::protos::group_operation::Operation;
 use types::protos::{Frame, GroupOperation};
 use types::{
@@ -152,8 +152,8 @@ async fn verification_middleware_inner(
 
                     if public_key_is_wrong {
                         error!(
-                        "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
-                    );
+                            "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
+                        );
                         return Err(VerificationError::InvalidInput);
                     }
                 }

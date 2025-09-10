@@ -1,7 +1,8 @@
 //! Crate for testing the node
 
-mod test_api;
-mod user_test_model;
+pub(crate) mod integration_tests;
+pub(crate) mod test_api;
+pub(crate) mod user_test_model;
 
 #[cfg(test)]
 mod tests {

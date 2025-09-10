@@ -19,4 +19,5 @@ pub trait MessageStorage: Send + Sync + Sized {
         epoch: i64,
     ) -> Result<(), mongodb::error::Error>;
     async fn get_existing_collection(chat_id: Uuid) -> Result<Self, mongodb::error::Error>;
+    async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), StorageError>;
 }

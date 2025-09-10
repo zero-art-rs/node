@@ -11,6 +11,9 @@ use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
 
+pub const ARTS_COLLECTION_NAME: &str = "arts";
+pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";
+
 pub struct MongoARTStorage {
     /// Collection for the initial art state for every chat.
     pub initial_arts_collection: Collection<ARTRecord<ARTGroup>>,
@@ -25,8 +28,8 @@ impl MongoARTStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let arts_collection = db.collection("chats".as_ref());
-        let initial_arts_collection = db.collection("initial_chats".as_ref());
+        let arts_collection = db.collection(ARTS_COLLECTION_NAME);
+        let initial_arts_collection = db.collection(INITIAL_ARTS_COLLECTION_NAME);
 
         let index_model = IndexModel::builder()
             .keys(doc! { "chat_id": -1})
@@ -49,8 +52,8 @@ impl MongoARTStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let arts_collection = db.collection("chats".as_ref());
-        let initial_arts_collection = db.collection("initial_chats".as_ref());
+        let arts_collection = db.collection(ARTS_COLLECTION_NAME);
+        let initial_arts_collection = db.collection(INITIAL_ARTS_COLLECTION_NAME);
 
         Ok(Self {
             arts_collection,
@@ -230,11 +233,11 @@ impl ARTStorage for MongoARTStorage {
         &self,
         chat_id: Uuid,
         new_metadata: Vec<u8>,
-        node_index: i64,
+        node_index: u64,
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
         art.art
-            .get_mut_node(&NodeIndex::Index(node_index as u32))?
+            .get_mut_node(&NodeIndex::Index(node_index))?
             .metadata = Some(new_metadata);
         self.replace_art(chat_id, art).await?;
 

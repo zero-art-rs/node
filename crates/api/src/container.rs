@@ -50,9 +50,6 @@ impl Container {
 
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
-        // let mut buf = BytesMut::new();
-        // frame.encode(&mut buf).unwrap();
-
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
 
         let operation = match tbs_frame.group_operation {
@@ -79,11 +76,11 @@ impl Container {
                 self.update_art(id, tbs_frame.protected_payload, changes)
                     .await?
             }
-            Some(Operation::DropGroup(_)) => self
+            Some(Operation::DropGroup(_)) => return Ok(self
                 .art_service
                 .delete_chat(&id)
                 .await
-                .map(|_| StatusCode::NO_CONTENT)?,
+                .map(|_| StatusCode::NO_CONTENT)?),
             None => StatusCode::OK,
         };
 

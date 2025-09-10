@@ -376,7 +376,13 @@ async fn test_remove_member() -> eyre::Result<()> {
         let remove_user_response = make_blank(&mut context, i).await?;
         assert_eq!(remove_user_response.status(), StatusCode::NO_CONTENT);
 
-        let new_art_response = get_art(&mut retrieval_context, i as i64, None, ProofMode::UseLeafKey.to_string()).await?;
+        let new_art_response = get_art(
+            &mut retrieval_context,
+            i as i64,
+            None,
+            ProofMode::UseLeafKey.to_string(),
+        )
+        .await?;
         assert_eq!(new_art_response.status(), StatusCode::OK);
 
         let received_art = PublicART::<CortadoAffine>::deserialize(
@@ -391,8 +397,13 @@ async fn test_remove_member() -> eyre::Result<()> {
         retrieval_context.art = PrivateART::from_public_art(received_art, context.art.secret_key)?;
 
         let sk_to_use = retrieval_context.art.recompute_root_key()?.key;
-        let new_art_check_response =
-            get_art(&mut retrieval_context, i as i64, Some(sk_to_use), ProofMode::UseRootKey.to_string()).await?;
+        let new_art_check_response = get_art(
+            &mut retrieval_context,
+            i as i64,
+            Some(sk_to_use),
+            ProofMode::UseRootKey.to_string(),
+        )
+        .await?;
         assert_eq!(new_art_check_response.status(), StatusCode::OK);
         let received_art_check = PublicART::<CortadoAffine>::deserialize(
             &new_art_check_response.json::<GetARTResponse>().await?.art,
@@ -421,7 +432,13 @@ async fn test_get_art() -> eyre::Result<()> {
 
     // Test if retrieval is correct
     for i in 0..TEST_REPEATS {
-        let art_response = get_art(&mut retrieval_context, i as i64, None, ProofMode::UseLeafKey.to_string()).await?;
+        let art_response = get_art(
+            &mut retrieval_context,
+            i as i64,
+            None,
+            ProofMode::UseLeafKey.to_string(),
+        )
+        .await?;
 
         assert_eq!(art_response.status(), StatusCode::OK);
 

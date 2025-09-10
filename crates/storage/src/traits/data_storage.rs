@@ -96,6 +96,11 @@ pub trait DataStorage: Send + Sync {
         Ok(())
     }
 
+    async fn drop_collection_in_session(&self, sesion: &mut ClientSession) -> Result<(), mongodb::error::Error> {
+        self.get_collection().await.drop().session(sesion).await?;
+        Ok(())
+    }
+
     async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error> {
         let collection = self.get_collection().await;
         if collection.find_one(doc! {}).await?.is_none() {
