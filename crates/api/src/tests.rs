@@ -32,7 +32,7 @@ use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::debug;
 use tracing::field::debug;
 use types::messenger_schemas::GetMessageQuery;
-use types::protos::{Frame, SpFrames, group_operation::Operation};
+use types::protos::{GroupOperation, Frame, FrameTbs, SpFrames, group_operation::Operation};
 use types::{art_schemas::*, centrifugo_schemas::*, messenger_schemas::*, protos};
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
@@ -110,6 +110,7 @@ struct ARTTestContext {
     pub rng: StdRng,
     pub chat_uuid: Uuid,
     pub basis: PedersenBasis<CortadoAffine, Ed25519Affine>,
+    pub owner_id_key: Option<Fr>,
 }
 
 impl ARTTestContext {
@@ -117,6 +118,7 @@ impl ARTTestContext {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect();
+        let owner_id_key = Fr::rand(&mut rng);
         let (art, _) =
             PrivateART::new_art_from_secrets(&secrets, &CortadoAffine::generator()).unwrap();
 
@@ -125,6 +127,7 @@ impl ARTTestContext {
             PublicART::new_art_from_secrets(&secrets, &CortadoAffine::generator())
                 .unwrap()
                 .0,
+            owner_id_key
         )
         .await
         .unwrap();
@@ -137,6 +140,7 @@ impl ARTTestContext {
                 rng,
                 chat_uuid,
                 basis: get_pedersen_basis(),
+                owner_id_key: Some(owner_id_key),
             },
             init_message,
         )
@@ -155,6 +159,7 @@ impl ARTTestContext {
             rng: self.rng.clone(),
             chat_uuid: self.chat_uuid,
             basis: get_pedersen_basis(),
+            owner_id_key: None,
         })
     }
 }
@@ -173,14 +178,12 @@ async fn test_send_message() -> eyre::Result<()> {
         .await?
         .challenge;
 
-    let nonce = (0..DEFAULT_NONCE_LENGTH)
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<u8>>();
+    let nonce = new_nonce();
 
-    let tk = context.art.recompute_root_key().unwrap().key;
+    let tk = context.art.recompute_root_key()?.key;
     let pk = context.art.get_root().public_key;
 
-    let signature = sign(&vec![tk], &vec![pk], &challenge).unwrap();
+    let signature = sign(&vec![tk], &vec![pk], &challenge)?;
 
     // Get Centrifugo auth token
     let centrifugo_token_response = context
@@ -224,7 +227,7 @@ async fn test_send_message() -> eyre::Result<()> {
             Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send>),
         });
 
-    let tbs_frame = protos::FrameTbs {
+    let tbs_frame = FrameTbs {
         group_id: context.chat_uuid.to_string(),
         epoch: 0,
         nonce: (0..DEFAULT_NONCE_LENGTH)
@@ -243,7 +246,7 @@ async fn test_send_message() -> eyre::Result<()> {
     let verification_result = verify(&signature, &pk, &buf);
     assert!(verification_result.is_ok());
 
-    let req = protos::Frame {
+    let req = Frame {
         frame: Some(tbs_frame),
         proof: signature,
     };
@@ -259,10 +262,6 @@ async fn test_send_message() -> eyre::Result<()> {
                     match centrifugo_event {
                         CentrifugoEvent::Connect(_connect_msg) => {
                             // Connection established, continue waiting for messages
-                            debug!(
-                                "send_message: Connection established, continue waiting for messages"
-                            );
-                            // debug!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
                         }
                         CentrifugoEvent::ChannelMessage(channel_msg) => {
                             let content_string = channel_msg.publication.data.content;
@@ -308,11 +307,10 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let (mut context, init_message) = ARTTestContext::new(DEFAULT_GROUP_SIZE).await;
+    let (mut context, _) = ARTTestContext::new(DEFAULT_GROUP_SIZE).await;
     let mut test_context = context.derive_new(2)?;
 
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
-    // messages.push(init_message);
     for _ in 0..TEST_REPEATS {
         let (add_member_response, message) = add_member(&mut context).await?;
         messages.push(message);
@@ -322,7 +320,7 @@ async fn test_get_message() -> eyre::Result<()> {
     let get_messages_response = get_messages(&mut test_context, TEST_REPEATS as i64, 1).await?;
     assert_eq!(get_messages_response.status(), StatusCode::ACCEPTED);
     // frame.encode(&mut buf).unwrap();
-    let mut buf = BytesMut::from(&*get_messages_response.bytes().await?);
+    let buf = BytesMut::from(&*get_messages_response.bytes().await?);
     let sp_frames = SpFrames::decode(buf)?;
 
     for (sp_frame, message) in sp_frames.sp_frames.iter().zip(messages.iter()) {
@@ -338,12 +336,18 @@ async fn test_add_member() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let mut context = ARTTestContext::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut other = context.derive_new(2)?;
 
     for _ in 0..TEST_REPEATS {
         let add_member_response = add_member(&mut context).await?.0;
-
         assert_eq!(add_member_response.status(), StatusCode::OK);
+
+        // fail to add member with not owner
+        let add_member_response = add_member(&mut other).await?.0;
+        assert_eq!(add_member_response.status(), StatusCode::UNAUTHORIZED);
     }
+
+
 
     Ok(())
 }
@@ -446,7 +450,7 @@ async fn test_get_art() -> eyre::Result<()> {
             &art_response.json::<GetARTResponse>().await?.art,
         )?;
 
-        assert_eq!(received_art.root.public_key, art_roots[(i) as usize]);
+        assert_eq!(received_art.root.public_key, art_roots[i]);
         retrieval_context.art =
             PrivateART::from_public_art(received_art, retrieval_context.initial_secrets[1])?;
     }
@@ -461,7 +465,7 @@ fn new_nonce() -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn test_delete_chat() -> eyre::Result<()> {
+async fn test_delete_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let mut context = ARTTestContext::new(DEFAULT_GROUP_SIZE).await.0;
@@ -474,32 +478,32 @@ async fn test_delete_chat() -> eyre::Result<()> {
         .await?
         .challenge;
 
-    let tbs_frame = protos::FrameTbs {
+    let tbs_frame = FrameTbs {
         group_id: context.chat_uuid.to_string(),
         epoch: 0,
         nonce,
-        group_operation: Some(protos::GroupOperation {
-            operation: Some(protos::group_operation::Operation::DropGroup(challenge)),
+        group_operation: Some(GroupOperation {
+            operation: Some(Operation::DropGroup(challenge)),
         }),
         protected_payload: vec![],
     };
 
     let mut buf = BytesMut::new();
-    tbs_frame.encode(&mut buf).unwrap();
+    tbs_frame.encode(&mut buf)?;
     let msg = &*buf;
 
     let pk = vec![context.art.public_key_of(&context.art.secret_key)];
-    let signature = sign(&vec![context.art.secret_key], &pk, &msg).unwrap();
+    let signature = sign(&vec![context.art.secret_key], &pk, &msg)?;
     let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
 
-    let mut req = protos::Frame {
+    let mut req = Frame {
         frame: Some(tbs_frame),
         proof: signature,
     };
 
     let mut buf = BytesMut::new();
-    req.encode(&mut buf).unwrap();
+    req.encode(&mut buf)?;
 
     let delete_response = context
         .client
@@ -516,21 +520,34 @@ async fn test_delete_chat() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn create_new_chat(art: PublicART<CortadoAffine>) -> eyre::Result<(Uuid, BytesMut)> {
+async fn create_new_chat(art: PublicART<CortadoAffine>, sk: Fr) -> eyre::Result<(Uuid, BytesMut)> {
     let chat_id = Uuid::now_v7();
     let client = reqwest::Client::new();
 
-    let req = protos::Frame {
-        frame: Some(protos::FrameTbs {
-            group_id: chat_id.to_string(),
-            epoch: 0,
-            nonce: vec![],
-            group_operation: Some(protos::GroupOperation {
-                operation: Some(Operation::Init(art.serialize()?)),
-            }),
-            protected_payload: vec![],
+    let pk = art.public_key_of(&sk);
+    let mut serialized_pk = Vec::new();
+    pk.serialize_uncompressed(&mut serialized_pk)?;
+
+    let tbs_frame = FrameTbs {
+        group_id: chat_id.to_string(),
+        epoch: 0,
+        nonce: serialized_pk,
+        group_operation: Some(GroupOperation {
+            operation: Some(Operation::Init(art.serialize()?)),
         }),
-        proof: vec![],
+        protected_payload: vec![],
+    };
+
+    let mut msg = BytesMut::new();
+    tbs_frame.encode(&mut msg)?;
+
+    let signature = sign(&vec![sk], &vec![pk], &msg)?;
+    let verification_result = verify(&signature, &vec![pk], &msg);
+    assert!(verification_result.is_ok());
+
+    let req = Frame {
+        frame: Some(tbs_frame),
+        proof: signature,
     };
 
     let mut buf = BytesMut::new();
@@ -576,11 +593,11 @@ async fn update_key(
     let (_, key_update_changes) = context.art.update_key(&new_secret_key).unwrap();
     let (_, artefacts) = context.art.recompute_root_key_with_artefacts().unwrap();
 
-    let tbs_frame = protos::FrameTbs {
+    let tbs_frame = FrameTbs {
         group_id: context.chat_uuid.to_string(),
         epoch,
         nonce: vec![],
-        group_operation: Some(protos::GroupOperation {
+        group_operation: Some(GroupOperation {
             operation: Some(Operation::KeyUpdate(key_update_changes.serialze().unwrap())),
         }),
         protected_payload: payload.unwrap_or(vec![]),
@@ -631,7 +648,7 @@ async fn update_key(
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
-    let mut req = protos::Frame {
+    let mut req = Frame {
         frame: Some(tbs_frame),
         proof: proof_bytes,
     };
@@ -654,7 +671,7 @@ async fn update_key(
 async fn add_member(
     context: &mut ARTTestContext,
 ) -> reqwest::Result<(reqwest::Response, BytesMut)> {
-    let old_tk = context.art.recompute_root_key().unwrap().key;
+    let old_tk = context.art.secret_key;
     let new_user_secret_key = Fr::rand(&mut context.rng);
     let (_, append_user_changes) = context.art.append_node(&new_user_secret_key).unwrap();
     let (_, artefacts) = context
@@ -665,12 +682,12 @@ async fn add_member(
         )
         .unwrap();
 
-    let tbs_frame = protos::FrameTbs {
+    let tbs_frame = FrameTbs {
         group_id: context.chat_uuid.to_string(),
         epoch: 0,
         nonce: vec![],
-        group_operation: Some(protos::GroupOperation {
-            operation: Some(protos::group_operation::Operation::AddMember(
+        group_operation: Some(GroupOperation {
+            operation: Some(Operation::AddMember(
                 append_user_changes.serialze().unwrap(),
             )),
         }),
@@ -721,7 +738,7 @@ async fn add_member(
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
-    let mut req = protos::Frame {
+    let mut req = Frame {
         frame: Some(tbs_frame),
         proof: proof_bytes,
     };
@@ -783,7 +800,7 @@ async fn make_blank(
     context: &mut ARTTestContext,
     member_id: usize,
 ) -> reqwest::Result<reqwest::Response> {
-    let old_tk = context.art.recompute_root_key().unwrap().key;
+    let old_tk = context.art.secret_key;
     let user_to_remove = CortadoAffine::generator()
         .mul(&context.initial_secrets[member_id])
         .into_affine();
@@ -800,12 +817,12 @@ async fn make_blank(
         )
         .unwrap();
 
-    let tbs_frame = protos::FrameTbs {
+    let tbs_frame = FrameTbs {
         group_id: context.chat_uuid.to_string(),
         epoch: 0,
         nonce: vec![],
-        group_operation: Some(protos::GroupOperation {
-            operation: Some(protos::group_operation::Operation::RemoveMember(
+        group_operation: Some(GroupOperation {
+            operation: Some(Operation::RemoveMember(
                 remove_user_changes.serialze().unwrap(),
             )),
         }),
@@ -857,7 +874,7 @@ async fn make_blank(
     let mut proof_bytes = Vec::new();
     proof.serialize_uncompressed(&mut proof_bytes).unwrap();
 
-    let mut req = protos::Frame {
+    let mut req = Frame {
         frame: Some(tbs_frame),
         proof: proof_bytes,
     };

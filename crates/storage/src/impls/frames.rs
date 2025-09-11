@@ -1,4 +1,4 @@
-use crate::{DataStorage, MessageStorage, StorageError, DATABASE};
+use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
 use futures_util::TryStreamExt;
 use mongodb::{
     bson::doc,
@@ -13,13 +13,13 @@ use uuid::Uuid;
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "frame_outbox";
 
-pub struct MongoMessageStorage {
-    messages_collection: Collection<FrameRecord>,
-    messages_outbox_collection: Collection<FrameRecord>,
-    chat_id: Uuid,
+pub struct MongoFramesStorage {
+    pub messages_collection: Collection<FrameRecord>,
+    pub messages_outbox_collection: Collection<FrameRecord>,
+    pub chat_id: Uuid,
 }
 
-impl MongoMessageStorage {
+impl MongoFramesStorage {
     pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
         let db = DATABASE
             .get()
@@ -47,7 +47,7 @@ impl MongoMessageStorage {
 }
 
 #[async_trait::async_trait]
-impl MessageStorage for MongoMessageStorage {
+impl FrameStorage for MongoFramesStorage {
     async fn stream_messages(
         &self,
     ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, StorageError> {
@@ -56,7 +56,7 @@ impl MessageStorage for MongoMessageStorage {
         Ok(change_stream)
     }
 
-    async fn store_message(&self, content: Vec<u8>, epoch: i64) -> Result<(), StorageError> {
+    async fn next_sequence_number(&self) -> Result<u64, StorageError> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -69,19 +69,25 @@ impl MessageStorage for MongoMessageStorage {
             Some(result) => result.sequence_number + 1,
             None => 0,
         };
-        debug!(
-            "Store message with sequence number {}",
-            next_sequence_number
-        );
+
+        Ok(next_sequence_number)
+    }
+
+    async fn store_message(&self, content: Vec<u8>, epoch: i64, outbox_only: bool) -> Result<(), StorageError> {
+        let message_collection = &self.messages_collection;
+
+        let next_sequence_number = self.next_sequence_number().await?;
 
         let mut message = FrameRecord::new(content, next_sequence_number, None, epoch);
         let mut session = self.messages_collection.client().start_session().await?;
         session.start_transaction().await?;
 
-        message_collection
-            .insert_one(message.clone())
-            .session(&mut session)
-            .await?;
+        if !outbox_only {
+            message_collection
+                .insert_one(message.clone())
+                .session(&mut session)
+                .await?;
+        }
 
         // change message for outbox_collection
         message.chat_id = Some(self.chat_id);
@@ -160,7 +166,7 @@ impl MessageStorage for MongoMessageStorage {
 }
 
 #[async_trait::async_trait]
-impl DataStorage for MongoMessageStorage {
+impl DataStorage for MongoFramesStorage {
     type Data = FrameRecord;
 
     async fn get_collection(&self) -> &Collection<Self::Data> {
