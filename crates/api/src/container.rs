@@ -10,6 +10,8 @@ use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
+use ark_serialize::CanonicalDeserialize;
+use cortado::CortadoAffine;
 use tokio::sync::RwLock;
 use tracing::debug;
 use types::errors::{ARTServiceError, ServiceError};
@@ -50,8 +52,6 @@ impl Container {
 
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
-        // let mut buf = BytesMut::new();
-        // frame.encode(&mut buf).unwrap();
 
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
 
@@ -62,11 +62,15 @@ impl Container {
 
         // Decide, how to handle request
         let response = match operation {
-            Some(Operation::Init(public_art)) => self
-                .art_service
-                .init_group(id, public_art, false)
-                .await
-                .map(|_| StatusCode::CREATED)?,
+            Some(Operation::Init(public_art)) => {
+                self
+                    .art_service
+                    .init_group(id, public_art, false, tbs_frame.nonce)
+                    .await?;
+
+                StatusCode::CREATED
+
+            },
             Some(Operation::AddMember(changes)) => {
                 self.update_art(id, tbs_frame.protected_payload, changes)
                     .await?
@@ -79,16 +83,23 @@ impl Container {
                 self.update_art(id, tbs_frame.protected_payload, changes)
                     .await?
             }
-            Some(Operation::DropGroup(_)) => self
-                .art_service
-                .delete_chat(&id)
-                .await
-                .map(|_| StatusCode::NO_CONTENT)?,
+            Some(Operation::DropGroup(_)) => {
+                self
+                    .art_service
+                    .delete_chat(&id)
+                    .await?;
+
+                self.messenger_service
+                    .send_message(body.to_vec(), &id, tbs_frame.epoch as i64, true)
+                    .await?;
+
+                return Ok(StatusCode::NO_CONTENT);
+            }
             None => StatusCode::OK,
         };
 
         self.messenger_service
-            .send_message(body.to_vec(), &id, tbs_frame.epoch as i64)
+            .send_message(body.to_vec(), &id, tbs_frame.epoch as i64, false)
             .await?;
 
         Ok(response)

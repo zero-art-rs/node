@@ -20,9 +20,9 @@ use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
 use types::errors::ARTServiceError;
-use types::messenger_schemas::{GetMessageQuery};
+use types::messenger_schemas::GetMessageQuery;
 use types::protos::group_operation::Operation;
-use types::protos::{Frame, GroupOperation};
+use types::protos::{Frame, FrameTbs, GroupOperation};
 use types::{
     RouteId, add_route_id,
     errors::{ApiError, VerificationError},
@@ -152,8 +152,8 @@ async fn verification_middleware_inner(
 
                     if public_key_is_wrong {
                         error!(
-                        "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
-                    );
+                            "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
+                        );
                         return Err(VerificationError::InvalidInput);
                     }
                 }
@@ -207,9 +207,8 @@ async fn verification_middleware_inner(
             let operation_data = match &operation {
                 None => Some(get_opcode_and_input_for_send_message(state.clone(), id).await?),
                 Some(Operation::Init(_)) => {
-                    return Ok(next
-                        .run(Request::from_parts(parts.clone(), Body::from(bytes)))
-                        .await);
+
+                    Some(get_opcode_and_input_for_init_group(&tbs_frame)?)
                 }
                 Some(Operation::AddMember(branch_changes_bytes))
                 | Some(Operation::RemoveMember(branch_changes_bytes))
@@ -251,6 +250,20 @@ async fn verification_middleware_inner(
         .await)
 }
 
+
+pub fn get_opcode_and_input_for_init_group(
+    tbs_frame: &FrameTbs,
+) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    let public_key = CortadoAffine::deserialize_uncompressed(&*tbs_frame.nonce)?;
+
+    Ok((
+        VerificationOpcode::InitGroup,
+        PublicInputs::Signature {
+            public_keys: vec![public_key],
+        }
+    ))
+}
+
 pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
     chat_id: Uuid,
@@ -268,8 +281,14 @@ pub async fn get_opcode_and_input_for_art_update(
             VerificationOpcode::KeyUpdate,
             vec![art.get_node(&branch_changes.node_index)?.public_key],
         ),
-        BranchChangesType::AppendNode => (VerificationOpcode::AddMember, vec![art.root.public_key]),
-        BranchChangesType::MakeBlank => (VerificationOpcode::MakeBlank, vec![art.root.public_key]),
+        BranchChangesType::AppendNode => (
+            VerificationOpcode::AddMember,
+            vec![get_left_most_leaf_public_key(state, chat_id).await?],
+        ),
+        BranchChangesType::MakeBlank => (
+            VerificationOpcode::MakeBlank,
+            vec![get_left_most_leaf_public_key(state, chat_id).await?],
+        ),
         _ => return Err(VerificationError::UnsupportedOperation),
     };
 
@@ -281,6 +300,20 @@ pub async fn get_opcode_and_input_for_art_update(
             co_path: verification_artefacts.co_path,
         },
     ))
+}
+
+pub async fn get_left_most_leaf_public_key(
+    state: Arc<Container>,
+    id: Uuid,
+) -> Result<CortadoAffine, VerificationError> {
+    let art = state.art_service.get_art(&id, None).await?.art;
+
+    let mut left_most_leaf = &art.root;
+    while let Ok(node) = left_most_leaf.get_left() {
+        left_most_leaf = node;
+    }
+
+    Ok(left_most_leaf.public_key)
 }
 
 pub async fn get_opcode_and_input_for_drop_group(

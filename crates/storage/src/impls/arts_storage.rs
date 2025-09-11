@@ -25,8 +25,8 @@ impl MongoARTStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let arts_collection = db.collection("chats".as_ref());
-        let initial_arts_collection = db.collection("initial_chats".as_ref());
+        let arts_collection = db.collection("arts".as_ref());
+        let initial_arts_collection = db.collection("initial_arts".as_ref());
 
         let index_model = IndexModel::builder()
             .keys(doc! { "chat_id": -1})
@@ -49,8 +49,8 @@ impl MongoARTStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let arts_collection = db.collection("chats".as_ref());
-        let initial_arts_collection = db.collection("initial_chats".as_ref());
+        let arts_collection = db.collection("arts".as_ref());
+        let initial_arts_collection = db.collection("initial_arts".as_ref());
 
         Ok(Self {
             arts_collection,

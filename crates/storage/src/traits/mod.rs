@@ -1,7 +1,7 @@
-mod arts;
+mod arts_storage;
 mod data_storage;
-mod messages;
+mod frames;
 
-pub use arts::ARTStorage;
+pub use arts_storage::ARTStorage;
 pub use data_storage::DataStorage;
-pub use messages::MessageStorage;
+pub use frames::FrameStorage;

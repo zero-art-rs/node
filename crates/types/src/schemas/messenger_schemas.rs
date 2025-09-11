@@ -5,7 +5,6 @@ use serde_with::{base64::Base64, serde_as};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
-
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
