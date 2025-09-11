@@ -31,7 +31,7 @@ jobs:
 
       - name: Build Image
         run: |
-          buildah bud -t $IMAGE_NAME:1 .
+          buildah bud --ssh default=$SSH_AUTH_SOCK  -t $IMAGE_NAME:1 .
 
       - name: Login to GHCR
         run: |
