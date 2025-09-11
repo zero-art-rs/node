@@ -96,7 +96,10 @@ pub trait DataStorage: Send + Sync {
         Ok(())
     }
 
-    async fn drop_collection_in_session(&self, sesion: &mut ClientSession) -> Result<(), mongodb::error::Error> {
+    async fn drop_collection_in_session(
+        &self,
+        sesion: &mut ClientSession,
+    ) -> Result<(), mongodb::error::Error> {
         self.get_collection().await.drop().session(sesion).await?;
         Ok(())
     }

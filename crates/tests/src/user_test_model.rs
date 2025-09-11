@@ -53,6 +53,7 @@ pub(crate) struct UserTestModel {
     pub initial_secrets: Vec<Fr>,
     pub chat_uuid: Uuid,
     pub epoch: u64,
+    pub owner_id_key: Option<Fr>,
 }
 
 impl UserTestModel {
@@ -60,6 +61,7 @@ impl UserTestModel {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect();
+        let owner_id_key = Fr::rand(&mut rng);
         let (art, _) =
             PrivateART::new_art_from_secrets(&secrets, &CortadoAffine::generator()).unwrap();
 
@@ -71,6 +73,7 @@ impl UserTestModel {
             initial_secrets: secrets,
             chat_uuid: id,
             epoch: 0, // init request is already one epoch
+            owner_id_key: Some(owner_id_key),
         };
 
         // Create new_group for testing
@@ -79,6 +82,7 @@ impl UserTestModel {
                 PublicART::new_art_from_secrets(&user.initial_secrets, &CortadoAffine::generator())
                     .unwrap()
                     .0,
+                owner_id_key,
             )
             .await
             .unwrap();
@@ -100,24 +104,46 @@ impl UserTestModel {
             initial_secrets: self.initial_secrets.clone(),
             chat_uuid: self.chat_uuid,
             epoch: self.epoch,
+            owner_id_key: None,
         })
+    }
+
+    pub fn is_owner(&self) -> bool {
+        match self.owner_id_key {
+            Some(_) => true,
+            None => false,
+        }
     }
 
     async fn create_new_chat(
         &self,
         art: PublicART<CortadoAffine>,
+        sk: Fr,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
-        let req = Frame {
-            frame: Some(FrameTbs {
-                group_id: self.chat_uuid.to_string(),
-                epoch: 0,
-                nonce: vec![],
-                group_operation: Some(GroupOperation {
-                    operation: Some(Operation::Init(art.serialize()?)),
-                }),
-                protected_payload: vec![],
+        let pk = art.public_key_of(&sk);
+        let mut serialized_pk = Vec::new();
+        pk.serialize_uncompressed(&mut serialized_pk)?;
+
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: 0,
+            nonce: serialized_pk,
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::Init(art.serialize()?)),
             }),
-            proof: vec![],
+            protected_payload: vec![],
+        };
+
+        let mut msg = BytesMut::new();
+        tbs_frame.encode(&mut msg)?;
+
+        let signature = sign(&vec![sk], &vec![pk], &msg)?;
+        let verification_result = verify(&signature, &vec![pk], &msg);
+        assert!(verification_result.is_ok());
+
+        let req = Frame {
+            frame: Some(tbs_frame),
+            proof: signature,
         };
 
         self.send_frame(req).await
@@ -157,11 +183,12 @@ impl UserTestModel {
         let proof_bytes =
             self.prove_and_check_art_update(secret_key, artefacts, &tbs_frame, key_update_changes)?;
 
-        let update_key_response = self.send_frame(Frame {
-            frame: Some(tbs_frame),
-            proof: proof_bytes,
-        })
-        .await?;
+        let update_key_response = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: proof_bytes,
+            })
+            .await?;
 
         assert_eq!(update_key_response.0.status(), StatusCode::OK);
         self.epoch += 1;
@@ -173,16 +200,16 @@ impl UserTestModel {
     pub async fn add_member(&mut self) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = self.art.recompute_root_key()?.key;
+        // let old_tk = self.art.recompute_root_key()?.key;
+        let old_tk = self.art.secret_key.clone();
         let new_user_secret_key = Fr::rand(&mut rng);
-        let (_, append_user_changes, artefacts) =
-            self.art.append_node(&new_user_secret_key)?;
+        let (_, append_user_changes, artefacts) = self.art.append_node(&new_user_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
-            group_operation: Some(protos::GroupOperation {
+            group_operation: Some(GroupOperation {
                 operation: Some(Operation::AddMember(append_user_changes.serialze()?)),
             }),
             protected_payload: vec![],
@@ -191,11 +218,12 @@ impl UserTestModel {
         let proof_bytes =
             self.prove_and_check_art_update(old_tk, artefacts, &tbs_frame, append_user_changes)?;
 
-        let add_member_response = self.send_frame(Frame {
-            frame: Some(tbs_frame),
-            proof: proof_bytes,
-        })
-        .await?;
+        let add_member_response = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: proof_bytes,
+            })
+            .await?;
 
         assert_eq!(add_member_response.0.status(), StatusCode::OK);
         self.epoch += 1;
@@ -209,7 +237,10 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = self.art.recompute_root_key()?.key;
+        let old_tk = match self.is_owner() {
+            true => self.art.secret_key.clone(),
+            false => self.art.recompute_root_key()?.key,
+        };
         let user_to_remove = self.art.public_key_of(&self.initial_secrets[member_id]);
         let temporary_secret_key = Fr::rand(&mut rng);
         let (_, remove_user_changes, artefacts) = self
@@ -226,13 +257,15 @@ impl UserTestModel {
             protected_payload: vec![],
         };
 
-        let mut proof_bytes =
+        let proof_bytes =
             self.prove_and_check_art_update(old_tk, artefacts, &tbs_frame, remove_user_changes)?;
 
-        let make_blank_result = self.send_frame(Frame {
-            frame: Some(tbs_frame),
-            proof: proof_bytes,
-        }).await?;
+        let make_blank_result = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: proof_bytes,
+            })
+            .await?;
 
         assert_eq!(make_blank_result.0.status(), StatusCode::NO_CONTENT);
         self.epoch += 1;
@@ -284,8 +317,7 @@ impl UserTestModel {
 
     pub async fn get_challenge(&self) -> reqwest::Result<Vec<u8>> {
         let mut serialized_public_key = Vec::new();
-        self
-            .art
+        self.art
             .public_key_of(&self.art.secret_key)
             .serialize_uncompressed(&mut serialized_public_key)
             .unwrap();
@@ -372,7 +404,9 @@ impl UserTestModel {
         secret_key_to_use: Option<Fr>,
         proof_mode: String,
     ) -> eyre::Result<()> {
-        let art = self.get_art(epoch, secret_key_to_use, proof_mode.clone()).await?;
+        let art = self
+            .get_art(epoch, secret_key_to_use, proof_mode.clone())
+            .await?;
         self.art = PrivateART::from_public_art(art, self.art.secret_key)?;
         self.epoch = epoch;
 
@@ -382,7 +416,7 @@ impl UserTestModel {
     pub async fn delete_group(&mut self) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let nonce = Self::new_nonce();
 
-        let challenge =  self.get_challenge().await?;
+        let challenge = self.get_challenge().await?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -403,10 +437,12 @@ impl UserTestModel {
         let verification_result = verify(&signature, &pk, &msg);
         assert!(verification_result.is_ok());
 
-        let delete_response = self.send_frame(Frame {
-            frame: Some(tbs_frame),
-            proof: signature,
-        }).await?;
+        let delete_response = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: signature,
+            })
+            .await?;
 
         assert_eq!(delete_response.0.status(), StatusCode::NO_CONTENT);
         self.epoch += 1;
@@ -414,11 +450,7 @@ impl UserTestModel {
         Ok(delete_response)
     }
 
-    fn sign_and_check_signature(
-        &self,
-        msg: &[u8],
-        sk: Fr,
-    ) -> eyre::Result<Vec<u8>> {
+    fn sign_and_check_signature(&self, msg: &[u8], sk: Fr) -> eyre::Result<Vec<u8>> {
         let pk = self.art.public_key_of(&sk);
 
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
@@ -476,7 +508,76 @@ impl UserTestModel {
         Ok(proof_bytes)
     }
 
-    fn new_nonce() -> Vec<u8> {
+    async fn get_changes(
+        &mut self,
+        limit: i64,
+        skip: i64,
+        epoch: u64,
+    ) -> reqwest::Result<Vec<BranchChanges<CortadoAffine>>> {
+        let tk = self.art.recompute_root_key().unwrap().key;
+        let pk = self.art.root.public_key;
+
+        let mut msg = Vec::new();
+        let nonce = (0..DEFAULT_NONCE_LENGTH)
+            .map(|_| rand::random::<u8>())
+            .collect::<Vec<u8>>();
+        msg.extend_from_slice(self.chat_uuid.as_bytes());
+        msg.extend(&nonce);
+
+        let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
+
+        assert!(verify(&signature, &vec![pk], &msg).is_ok());
+
+        let changes_response = self
+            .client
+            .get(format!(
+                "{}/{}/{}/{}",
+                BACKEND_URL, "v1/group", self.chat_uuid, "frames"
+            ))
+            .query(&GetMessageQuery {
+                message_sequence_number: None,
+                signature,
+                limit,
+                skip,
+                nonce,
+                epoch: Some(epoch),
+            })
+            .send()
+            .await?;
+
+        assert_eq!(changes_response.status(), StatusCode::OK);
+
+        let records = changes_response.json::<Vec<types::FrameRecord>>().await?;
+        let mut changes = Vec::with_capacity(records.len());
+        for record in records {
+            let mut buf = BytesMut::new();
+            buf.put(&*record.content);
+            let frame = Frame::decode(buf).unwrap();
+            let frame_change = match frame
+                .frame
+                .unwrap()
+                .group_operation
+                .unwrap()
+                .operation
+                .unwrap()
+            {
+                Operation::Init(_) => None,
+                Operation::AddMember(change)
+                | Operation::KeyUpdate(change)
+                | Operation::RemoveMember(change) => {
+                    Some(BranchChanges::<CortadoAffine>::deserialize(change.as_slice()).unwrap())
+                }
+                Operation::DropGroup(_) => None,
+            };
+            if let Some(frame_change) = frame_change {
+                changes.push(frame_change)
+            }
+        }
+
+        Ok(changes)
+    }
+
+    pub fn new_nonce() -> Vec<u8> {
         (0..DEFAULT_NONCE_LENGTH)
             .map(|_| rand::random::<u8>())
             .collect::<Vec<u8>>()

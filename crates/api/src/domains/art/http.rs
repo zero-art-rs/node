@@ -19,7 +19,7 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
     params(
         GetARTQuery,
         ("id" = Uuid, Path, description = "Group id"),
-        ("epoch" = i64, Path, description = "Get art at provided epoch")
+        ("epoch" = u64, Path, description = "Get art at provided epoch")
     ),
     responses(
         (status = 200, description = "ART retrieved successfully", body = GetARTResponse),
@@ -31,7 +31,7 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 #[instrument(skip(state), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
-    Path((chat_id, epoch)): Path<(Uuid, i64)>,
+    Path((chat_id, epoch)): Path<(Uuid, u64)>,
     Query(payload): Query<GetARTQuery>,
 ) -> Result<Json<GetARTResponse>, ApiError> {
     payload.validate()?;

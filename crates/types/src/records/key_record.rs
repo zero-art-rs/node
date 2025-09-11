@@ -1,11 +1,11 @@
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use bson::serde_helpers::uuid_1_as_binary;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use std::fmt;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 use uuid::Uuid;
-use bson::serde_helpers::uuid_1_as_binary;
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -22,7 +22,11 @@ pub struct KeyRecord {
 
 impl fmt::Display for KeyRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{ owner_public_key: {}, ", BASE64_STANDARD.encode(&self.owner_public_key))?;
+        write!(
+            f,
+            "{{ owner_public_key: {}, ",
+            BASE64_STANDARD.encode(&self.owner_public_key)
+        )?;
         write!(f, "chat_id: {} }}", BASE64_STANDARD.encode(self.chat_id))
     }
 }

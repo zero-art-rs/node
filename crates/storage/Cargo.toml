@@ -14,3 +14,5 @@ art = { workspace = true }
 cortado = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
 bson = { workspace = true, features = ["uuid-1"] }
+bytes = { workspace = true }
+prost = { workspace = true }

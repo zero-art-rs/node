@@ -15,11 +15,12 @@ use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
 use std::sync::Arc;
+use storage::{ARTStorage, MongoARTStorage};
 use tracing::{debug, error, warn};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
-use types::errors::ARTServiceError;
+use types::errors::{ARTServiceError, StorageError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::group_operation::Operation;
 use types::protos::{Frame, FrameTbs, GroupOperation};
@@ -130,7 +131,7 @@ async fn verification_middleware_inner(
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
             let Path((chat_id, epoch)) =
-                Path::<(Uuid, i64)>::from_request_parts(&mut parts.clone(), &state).await?;
+                Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
             let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
             let art = state.art_service.get_art(&chat_id, Some(epoch)).await?.art;
@@ -141,6 +142,7 @@ async fn verification_middleware_inner(
                     CortadoAffine::default()
                 });
 
+            debug!("Check provided public key is in art");
             match ProofMode::try_from(payload.proof_mode.as_str())? {
                 ProofMode::UseLeafKey => {
                     let mut public_key_is_wrong = true;
@@ -159,6 +161,7 @@ async fn verification_middleware_inner(
                 }
                 ProofMode::UseRootKey => {
                     if art.get_root().public_key != public_key {
+                        error!("Provided public key mismatch with root key");
                         return Err(VerificationError::InvalidInput);
                     }
                 }
@@ -206,16 +209,36 @@ async fn verification_middleware_inner(
 
             let operation_data = match &operation {
                 None => Some(get_opcode_and_input_for_send_message(state.clone(), id).await?),
-                Some(Operation::Init(_)) => {
-
-                    Some(get_opcode_and_input_for_init_group(&tbs_frame)?)
-                }
+                Some(Operation::Init(_)) => Some(get_opcode_and_input_for_init_group(&tbs_frame)?),
                 Some(Operation::AddMember(branch_changes_bytes))
                 | Some(Operation::RemoveMember(branch_changes_bytes))
-                | Some(Operation::KeyUpdate(branch_changes_bytes)) => Some(
-                    get_opcode_and_input_for_art_update(state.clone(), id, branch_changes_bytes)
+                | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
+                    let current_epoch = MongoARTStorage::new()
+                        .await?
+                        .get_current_epoch(&id)
+                        .await
+                        .map_err(StorageError::from)?;
+
+                    if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
+                        error!(
+                            "Invalid epoch provided ({}), while the current one is {}",
+                            tbs_frame.epoch, current_epoch
+                        );
+                        return Err(VerificationError::InvalidEpoch {
+                            current: current_epoch,
+                            provided: tbs_frame.epoch,
+                        });
+                    }
+
+                    Some(
+                        get_opcode_and_input_for_art_update(
+                            state.clone(),
+                            id,
+                            branch_changes_bytes,
+                        )
                         .await?,
-                ),
+                    )
+                }
                 Some(Operation::DropGroup(_)) => {
                     Some(get_opcode_and_input_for_drop_group(state.clone(), id).await?)
                 }
@@ -250,7 +273,6 @@ async fn verification_middleware_inner(
         .await)
 }
 
-
 pub fn get_opcode_and_input_for_init_group(
     tbs_frame: &FrameTbs,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
@@ -260,19 +282,19 @@ pub fn get_opcode_and_input_for_init_group(
         VerificationOpcode::InitGroup,
         PublicInputs::Signature {
             public_keys: vec![public_key],
-        }
+        },
     ))
 }
 
 pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
-    chat_id: Uuid,
+    id: Uuid,
     branch_changes_bytes: &Vec<u8>,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes =
         BranchChanges::<CortadoAffine>::deserialize(branch_changes_bytes.as_slice())?;
 
-    let art = state.art_service.get_art(&chat_id, None).await?.art;
+    let art = state.art_service.get_art(&id, None).await?.art;
     let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
 
     debug!("Check aux keys correctness..");
@@ -281,14 +303,22 @@ pub async fn get_opcode_and_input_for_art_update(
             VerificationOpcode::KeyUpdate,
             vec![art.get_node(&branch_changes.node_index)?.public_key],
         ),
-        BranchChangesType::AppendNode => (
-            VerificationOpcode::AddMember,
-            vec![get_left_most_leaf_public_key(state, chat_id).await?],
-        ),
-        BranchChangesType::MakeBlank => (
-            VerificationOpcode::MakeBlank,
-            vec![get_left_most_leaf_public_key(state, chat_id).await?],
-        ),
+        BranchChangesType::AppendNode => {
+            // TODO: check if it is the first append node in the epoch
+
+            (
+                VerificationOpcode::AddMember,
+                vec![get_left_most_leaf_public_key(state, id).await?],
+            )
+        }
+        BranchChangesType::MakeBlank => {
+            let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
+                true => art.root.public_key,
+                false => get_left_most_leaf_public_key(state, id).await?,
+            };
+
+            (VerificationOpcode::MakeBlank, vec![aux_public_key])
+        }
         _ => return Err(VerificationError::UnsupportedOperation),
     };
 

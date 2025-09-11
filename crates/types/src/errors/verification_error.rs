@@ -1,4 +1,4 @@
-use crate::errors::ARTServiceError;
+use crate::errors::{ARTServiceError, StorageError};
 use art::errors::ARTError;
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
@@ -7,6 +7,8 @@ use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
+    #[error("Invalid epoch provided ({provided}), while the current one is {current}")]
+    InvalidEpoch { current: u64, provided: u64 },
     #[error("Invalid input Provided")]
     InvalidInput,
     #[error("Failed to use ART {0}")]
@@ -37,6 +39,8 @@ pub enum VerificationError {
     JsonRejection(#[from] JsonRejection),
     #[error("Failed to decode request: {0}")]
     DecodeError(#[from] prost::DecodeError),
+    #[error("Failed to retrieve data from the storage: {0}")]
+    StorageError(#[from] StorageError),
 }
 
 impl From<serde_json::Error> for VerificationError {

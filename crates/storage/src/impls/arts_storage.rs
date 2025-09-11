@@ -1,14 +1,18 @@
-use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
+use crate::{DataStorage, MongoFramesStorage, StorageError};
 use art::types::NodeIndex;
 use art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
 };
-use cortado::CortadoAffine as ARTGroup;
+use bytes::{BufMut, BytesMut};
+use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use tracing::{debug, error, warn};
-use types::ARTRecord;
+use types::errors::{ARTServiceError, MessageServiceError};
+use types::protos::{group_operation::Operation, Frame};
+use types::utils::decode_branch_changes;
+use types::{protos, ARTRecord, FrameRecord};
 use uuid::Uuid;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
@@ -216,7 +220,7 @@ impl ARTStorage for MongoARTStorage {
         Ok(())
     }
 
-    async fn get_latest_epoch(&self, chat_id: &Uuid) -> Result<i64, mongodb::error::Error> {
+    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error> {
         let cursor = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })
@@ -246,17 +250,17 @@ impl ARTStorage for MongoARTStorage {
 
     async fn replace_art(
         &self,
-        chat_id: Uuid,
-        new_art: ARTRecord<ARTGroup>,
+        id: Uuid,
+        new_art_record: ARTRecord<ARTGroup>,
     ) -> Result<(), StorageError> {
-        debug!("Retrieving latest art for chat: {}", chat_id);
+        debug!("Retrieving latest art for chat: {}", id);
         let art = self
             .arts_collection
-            .find_one_and_replace(doc! {"chat_id": chat_id}, new_art)
+            .find_one_and_replace(doc! {"chat_id": id}, new_art_record)
             .await?;
 
         if art.is_none() {
-            error!("No art found for chat: {chat_id}");
+            error!("No art found for chat: {id}");
             return Err(StorageError::NotFound);
         }
 

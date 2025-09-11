@@ -2,21 +2,23 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
+use ark_serialize::CanonicalDeserialize;
 use art::types::BranchChangesType;
 use axum::body::Bytes;
 use axum::http::StatusCode;
 use bytes::BytesMut;
+use cortado::CortadoAffine;
+use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
-use ark_serialize::CanonicalDeserialize;
-use cortado::CortadoAffine;
+use storage::{ARTStorage, MongoARTStorage};
 use tokio::sync::RwLock;
 use tracing::debug;
-use types::errors::{ARTServiceError, ServiceError};
-use types::protos::Frame;
+use types::errors::{ARTServiceError, ServiceError, StorageError};
 use types::protos::group_operation::Operation;
+use types::protos::{Frame, FrameTbs};
 use types::utils::decode_branch_changes;
 use uuid::Uuid;
 
@@ -63,37 +65,23 @@ impl Container {
         // Decide, how to handle request
         let response = match operation {
             Some(Operation::Init(public_art)) => {
-                self
-                    .art_service
+                self.art_service
                     .init_group(id, public_art, false, tbs_frame.nonce)
                     .await?;
 
                 StatusCode::CREATED
-
-            },
-            Some(Operation::AddMember(changes)) => {
-                self.update_art(id, tbs_frame.protected_payload, changes)
-                    .await?
             }
-            Some(Operation::RemoveMember(changes)) => {
-                self.update_art(id, tbs_frame.protected_payload, changes)
-                    .await?
-            }
-            Some(Operation::KeyUpdate(changes)) => {
-                self.update_art(id, tbs_frame.protected_payload, changes)
-                    .await?
+            Some(Operation::AddMember(changes))
+            | Some(Operation::RemoveMember(changes))
+            | Some(Operation::KeyUpdate(changes)) => {
+                self.update_art(id, changes, tbs_frame.epoch).await?
             }
             Some(Operation::DropGroup(_)) => {
-                self
+                return Ok(self
                     .art_service
                     .delete_chat(&id)
-                    .await?;
-
-                self.messenger_service
-                    .send_message(body.to_vec(), &id, tbs_frame.epoch as i64, true)
-                    .await?;
-
-                return Ok(StatusCode::NO_CONTENT);
+                    .await
+                    .map(|_| StatusCode::NO_CONTENT)?);
             }
             None => StatusCode::OK,
         };
@@ -107,24 +95,34 @@ impl Container {
 
     pub async fn update_art(
         &self,
-        chat_id: Uuid,
-        payload: Vec<u8>,
+        id: Uuid,
         branch_changes_bytes: Vec<u8>,
+        update_epoch: u64,
     ) -> Result<StatusCode, ServiceError> {
-        self.start_updating(chat_id).await?;
+        // self.start_updating(chat_id).await?;
 
         let branch_changes =
             decode_branch_changes(&branch_changes_bytes).map_err(ARTServiceError::from)?;
-        if let Err(e) = self
-            .art_service
-            .update_art(chat_id, &branch_changes, payload.to_vec())
-            .await
-        {
-            self.stop_updating(chat_id).await;
+
+        let current_epoch = self.art_service.get_current_epoch(id).await?;
+
+        match update_epoch {
+            e if e == current_epoch => {
+                // resolve merge conflict
+                // let applied_changes = self.messenger_service.get_changes(doc! {"epoch": e});
+            }
+            e if e == current_epoch + 1 => {
+                // update art
+            }
+            _ => {}
+        }
+
+        if let Err(e) = self.art_service.update_art(id, &branch_changes).await {
+            // self.stop_updating(chat_id).await;
             return Err(e.into());
         }
 
-        self.stop_updating(chat_id).await;
+        // self.stop_updating(chat_id).await;
 
         match branch_changes.change_type {
             BranchChangesType::UpdateKey => Ok(StatusCode::OK),

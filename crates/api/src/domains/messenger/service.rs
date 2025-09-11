@@ -1,11 +1,15 @@
+use art::types::BranchChanges;
 use bytes::{BufMut, BytesMut};
-use mongodb::bson::Document;
+use cortado::CortadoAffine;
+use mongodb::bson::{Document, doc};
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
-use types::FrameRecord;
-use types::errors::MessageServiceError;
+use types::errors::{ARTServiceError, MessageServiceError};
+use types::protos::group_operation::Operation;
 use types::protos::{Frame, SpFrame, SpFrames};
+use types::utils::decode_branch_changes;
+use types::{FrameRecord, protos};
 use uuid::Uuid;
 
 pub struct MessengerService {}
@@ -97,13 +101,10 @@ impl MessengerService {
 
     pub async fn delete_messages(
         &self,
-        chat_id: &Uuid,
+        id: &Uuid,
         filter: Document,
     ) -> Result<Vec<FrameRecord>, MessageServiceError> {
-        let result = MongoFramesStorage::new(chat_id)
-            .await?
-            .delete(filter)
-            .await?;
+        let result = MongoFramesStorage::new(id).await?.delete(filter).await?;
         Ok(result)
     }
 }

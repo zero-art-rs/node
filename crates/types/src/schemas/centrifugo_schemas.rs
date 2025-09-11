@@ -19,7 +19,7 @@ pub struct AuthRequest {
     pub chat_ids: Vec<Uuid>,
 
     /// Epochs which are known to user for each group id. Default is 0.
-    pub epochs: Vec<i64>,
+    pub epochs: Vec<u64>,
 
     /// Proof of art root secret key knowledge for each group id.
     #[schema(value_type = String, content_encoding = "base64")]

@@ -1,9 +1,6 @@
 use crate::{DataStorage, DATABASE};
 use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
-use types::{
-    KeyRecord,
-    errors::StorageError
-};
+use types::{errors::StorageError, KeyRecord};
 
 /// Collection to store owner public key for every chat.
 pub struct MongoKeysStorage {
@@ -25,9 +22,7 @@ impl MongoKeysStorage {
 
         keys_collection.create_index(index_model.clone()).await?;
 
-        Ok(Self {
-            keys_collection,
-        })
+        Ok(Self { keys_collection })
     }
 }
 

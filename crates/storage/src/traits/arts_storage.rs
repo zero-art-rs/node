@@ -1,10 +1,13 @@
 use uuid::Uuid;
 
-use crate::StorageError;
+use crate::{MongoFramesStorage, StorageError};
 use art::types::{BranchChanges, PublicART};
-use cortado::CortadoAffine as ARTGroup;
+use bson::doc;
+use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::ClientSession;
-use types::ARTRecord;
+use types::protos::group_operation::Operation;
+use types::utils::decode_branch_changes;
+use types::{protos, ARTRecord, FrameRecord};
 
 /// Storage for art full states
 #[async_trait::async_trait]
@@ -47,7 +50,7 @@ pub trait ARTStorage: Send + Sync {
     async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;
 
     /// Get the sequence number of the art
-    async fn get_latest_epoch(&self, chat_id: &Uuid) -> Result<i64, mongodb::error::Error>;
+    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error>;
 
     async fn update_metadata(
         &self,

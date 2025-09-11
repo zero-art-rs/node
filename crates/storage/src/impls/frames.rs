@@ -1,4 +1,7 @@
 use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
+use art::types::BranchChanges;
+use bytes::{BufMut, BytesMut};
+use cortado::CortadoAffine;
 use futures_util::TryStreamExt;
 use mongodb::{
     bson::doc,
@@ -6,12 +9,16 @@ use mongodb::{
     options::IndexOptions,
     ClientSession, Collection, IndexModel,
 };
+use prost::Message;
 use tracing::debug;
+use types::protos::group_operation::Operation;
+use types::protos::Frame;
+use types::utils::decode_branch_changes;
 use types::FrameRecord;
 use uuid::Uuid;
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
-pub const OUTBOX_COLLECTION_NAME: &str = "frame_outbox";
+pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
 
 pub struct MongoFramesStorage {
     pub messages_collection: Collection<FrameRecord>,
@@ -73,7 +80,12 @@ impl FrameStorage for MongoFramesStorage {
         Ok(next_sequence_number)
     }
 
-    async fn store_message(&self, content: Vec<u8>, epoch: i64, outbox_only: bool) -> Result<(), StorageError> {
+    async fn store_message(
+        &self,
+        content: Vec<u8>,
+        epoch: i64,
+        outbox_only: bool,
+    ) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
 
         let next_sequence_number = self.next_sequence_number().await?;
@@ -159,9 +171,72 @@ impl FrameStorage for MongoFramesStorage {
     }
 
     async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), StorageError> {
-        self.messages_collection.drop().session(&mut *session).await?;
+        self.messages_collection
+            .drop()
+            .session(&mut *session)
+            .await?;
 
         Ok(())
+    }
+
+    fn extract_branch_changes(
+        messages: &FrameRecord,
+    ) -> Result<Option<BranchChanges<CortadoAffine>>, StorageError> {
+        let mut buf = BytesMut::new();
+        buf.put(messages.content.as_slice());
+        let frame = Frame::decode(buf)?;
+
+        if let Some(tbs_frame) = &frame.frame {
+            if let Some(group_operation) = &tbs_frame.group_operation {
+                if let Some(operation) = &group_operation.operation {
+                    return match operation {
+                        Operation::AddMember(branch_changes) => {
+                            Ok(Some(decode_branch_changes(branch_changes)?))
+                        }
+                        Operation::RemoveMember(branch_changes) => {
+                            Ok(Some(decode_branch_changes(branch_changes)?))
+                        }
+                        Operation::KeyUpdate(branch_changes) => {
+                            Ok(Some(decode_branch_changes(branch_changes)?))
+                        }
+                        _ => Ok(None),
+                    };
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn get_epoch_changes(
+        &self,
+        id: Uuid,
+        epoch: u64,
+    ) -> Result<Vec<BranchChanges<CortadoAffine>>, StorageError> {
+        let limit = types::DEFAULT_LIMIT;
+        let mut skip = 0;
+
+        let mut records = MongoFramesStorage::new(&id)
+            .await?
+            .list(doc! {"epoch": epoch as i64}, None, limit, skip)
+            .await?;
+
+        let mut changes = Vec::new();
+        while !records.is_empty() {
+            for record in &records {
+                if let Ok(Some(branch_changes)) = Self::extract_branch_changes(record) {
+                    changes.push(branch_changes);
+                }
+            }
+            skip += types::DEFAULT_LIMIT;
+
+            records = MongoFramesStorage::new(&id)
+                .await?
+                .list(doc! {"epoch": epoch as i64}, None, limit, skip)
+                .await?;
+        }
+
+        Ok(changes)
     }
 }
 

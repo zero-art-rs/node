@@ -73,7 +73,7 @@ pub async fn list_messages(
     }
 
     if let Some(epoch) = payload.epoch {
-        filter.insert("epoch", doc! { "$gte": epoch });
+        filter.insert("epoch", doc! { "$gte": epoch as i64 });
     }
 
     let messages = state

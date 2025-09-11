@@ -32,7 +32,7 @@ use std::{collections::HashMap, ops::Mul, time::Duration};
 use tracing::debug;
 use tracing::field::debug;
 use types::messenger_schemas::GetMessageQuery;
-use types::protos::{GroupOperation, Frame, FrameTbs, SpFrames, group_operation::Operation};
+use types::protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation};
 use types::{art_schemas::*, centrifugo_schemas::*, messenger_schemas::*, protos};
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
@@ -127,7 +127,7 @@ impl ARTTestContext {
             PublicART::new_art_from_secrets(&secrets, &CortadoAffine::generator())
                 .unwrap()
                 .0,
-            owner_id_key
+            owner_id_key,
         )
         .await
         .unwrap();
@@ -346,8 +346,6 @@ async fn test_add_member() -> eyre::Result<()> {
         let add_member_response = add_member(&mut other).await?.0;
         assert_eq!(add_member_response.status(), StatusCode::UNAUTHORIZED);
     }
-
-
 
     Ok(())
 }

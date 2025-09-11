@@ -33,7 +33,7 @@ pub struct GetMessageQuery {
     pub nonce: Vec<u8>,
 
     /// Sequence number of the art used in proof and the . Default is 0.
-    pub epoch: Option<i64>,
+    pub epoch: Option<u64>,
 }
 
 #[serde_as]
