@@ -6,7 +6,7 @@ on:
     # - 'v?[0-9]+.[0-9]+.[0-9]+'
     # - 'v?[0-9]+.[0-9]+.[0-9]+-[0-9]+'
     branches:
-      - "**"
+      - "ci/add-cache"
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.sha }}
