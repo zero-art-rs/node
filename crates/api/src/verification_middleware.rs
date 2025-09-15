@@ -16,16 +16,17 @@ use proof_verifier::verifier_engine::*;
 use prost::Message;
 use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage};
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
+use tracing::field::debug;
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
 use types::errors::{ARTServiceError, StorageError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::group_operation::Operation;
-use types::protos::{Frame, FrameTbs, GroupOperation};
+use types::protos::{Frame, FrameTbs};
 use types::{
-    RouteId, add_route_id,
+    RouteId,
     errors::{ApiError, VerificationError},
 };
 use uuid::Uuid;
@@ -83,7 +84,7 @@ async fn verification_middleware_inner(
 
             let mut root_keys = Vec::new();
             for (chat_id, epoch) in payload.chat_ids.iter().zip(payload.epochs.iter()) {
-                let art = state.art_service.get_art(&chat_id, Some(*epoch)).await?.art;
+                let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
                 root_keys.push(art.get_root().public_key);
             }
@@ -108,7 +109,7 @@ async fn verification_middleware_inner(
 
             let art = state
                 .art_service
-                .get_art(&chat_id, Some(payload.epoch.unwrap_or(0)))
+                .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
                 .await?
                 .art;
 
@@ -134,7 +135,7 @@ async fn verification_middleware_inner(
                 Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
             let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
-            let art = state.art_service.get_art(&chat_id, Some(epoch)).await?.art;
+            let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
 
             let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)
                 .unwrap_or_else(|_| {
@@ -207,54 +208,52 @@ async fn verification_middleware_inner(
                 Some(val) => val.operation.as_ref(),
             };
 
-            let operation_data = match &operation {
-                None => Some(get_opcode_and_input_for_send_message(state.clone(), id).await?),
-                Some(Operation::Init(_)) => Some(get_opcode_and_input_for_init_group(&tbs_frame)?),
+            // Check if epoch is nor decreasing nor to big
+            let current_epoch = MongoARTStorage::new()
+                .await?
+                .get_current_epoch(&id)
+                .await
+                .map_err(StorageError::from)?;
+
+            if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
+                error!(
+                    "Invalid epoch provided ({}), while the current one is {}",
+                    tbs_frame.epoch, current_epoch
+                );
+                return Err(VerificationError::InvalidEpoch {
+                    current: current_epoch,
+                    provided: tbs_frame.epoch,
+                });
+            }
+
+            debug!("Retreive operation_data...");
+            let (opcode, public_inputs) = match &operation {
+                None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
+                Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
                 Some(Operation::AddMember(branch_changes_bytes))
                 | Some(Operation::RemoveMember(branch_changes_bytes))
                 | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
-                    let current_epoch = MongoARTStorage::new()
-                        .await?
-                        .get_current_epoch(&id)
-                        .await
-                        .map_err(StorageError::from)?;
-
-                    if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
-                        error!(
-                            "Invalid epoch provided ({}), while the current one is {}",
-                            tbs_frame.epoch, current_epoch
-                        );
-                        return Err(VerificationError::InvalidEpoch {
-                            current: current_epoch,
-                            provided: tbs_frame.epoch,
-                        });
-                    }
-
-                    Some(
-                        get_opcode_and_input_for_art_update(
-                            state.clone(),
-                            id,
-                            branch_changes_bytes,
-                        )
-                        .await?,
+                    get_opcode_and_input_for_art_update(
+                        state.clone(),
+                        id,
+                        branch_changes_bytes,
+                        Some(tbs_frame.epoch - 1),
                     )
+                    .await?
                 }
                 Some(Operation::DropGroup(_)) => {
-                    Some(get_opcode_and_input_for_drop_group(state.clone(), id).await?)
+                    get_opcode_and_input_for_drop_group(state.clone(), id).await?
                 }
             };
 
-            match operation_data {
-                Some((opcode, public_inputs)) => Some(VerificationRequest {
-                    opcode,
-                    data: VerifierData {
-                        proof: frame.proof,
-                        public_inputs,
-                        context: associated_data,
-                    },
-                }),
-                None => None,
-            }
+            Some(VerificationRequest {
+                opcode,
+                data: VerifierData {
+                    proof: frame.proof,
+                    public_inputs,
+                    context: associated_data,
+                },
+            })
         }
         _ => return Err(VerificationError::UnknownEndpoint),
     };
@@ -290,11 +289,12 @@ pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
+    epoch: Option<u64>,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes =
         BranchChanges::<CortadoAffine>::deserialize(branch_changes_bytes.as_slice())?;
 
-    let art = state.art_service.get_art(&id, None).await?.art;
+    let art = state.art_service.get_art(id, epoch).await?.art;
     let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
 
     debug!("Check aux keys correctness..");
@@ -304,8 +304,6 @@ pub async fn get_opcode_and_input_for_art_update(
             vec![art.get_node(&branch_changes.node_index)?.public_key],
         ),
         BranchChangesType::AppendNode => {
-            // TODO: check if it is the first append node in the epoch
-
             (
                 VerificationOpcode::AddMember,
                 vec![get_left_most_leaf_public_key(state, id).await?],
@@ -313,9 +311,17 @@ pub async fn get_opcode_and_input_for_art_update(
         }
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
-                true => art.root.public_key,
-                false => get_left_most_leaf_public_key(state, id).await?,
+                true => {
+                    debug!("Use root public key for verification");
+                    art.root.public_key
+                },
+                false => {
+                    debug!("Use left most leaf public key for \"remove member\" verification.");
+                    get_left_most_leaf_public_key(state, id).await?
+                },
             };
+
+            debug!("aux_public_key.x: {}", aux_public_key.x);
 
             (VerificationOpcode::MakeBlank, vec![aux_public_key])
         }
@@ -336,7 +342,7 @@ pub async fn get_left_most_leaf_public_key(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<CortadoAffine, VerificationError> {
-    let art = state.art_service.get_art(&id, None).await?.art;
+    let art = state.art_service.get_art(id, None).await?.art;
 
     let mut left_most_leaf = &art.root;
     while let Ok(node) = left_most_leaf.get_left() {
@@ -350,7 +356,7 @@ pub async fn get_opcode_and_input_for_drop_group(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state.art_service.get_art(&id, None).await?.art;
+    let art = state.art_service.get_art(id, None).await?.art;
 
     let mut left_most_leaf = &art.root;
     let mut path = Vec::new();
@@ -376,7 +382,7 @@ pub async fn get_opcode_and_input_for_send_message(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state.art_service.get_art(&id, None).await?.art;
+    let art = state.art_service.get_art(id, None).await?.art;
 
     Ok((
         VerificationOpcode::SendMessage,

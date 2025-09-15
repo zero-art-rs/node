@@ -39,12 +39,6 @@ pub trait ARTStorage: Send + Sync {
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
     ) -> Result<(), StorageError>;
-    async fn update_art_in_session(
-        &self,
-        session: &mut ClientSession,
-        changes: BranchChanges<ARTGroup>,
-        chat_id: Uuid,
-    ) -> Result<(), mongodb::error::Error>;
 
     /// Drop initial_arts_collection and/or arts_collection if empty
     async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;

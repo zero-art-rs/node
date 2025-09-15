@@ -1,6 +1,6 @@
 use crate::{ARTStorage, DATABASE};
 use crate::{DataStorage, MongoFramesStorage, StorageError};
-use art::types::NodeIndex;
+use art::types::{BranchChangesType, NodeIndex};
 use art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
@@ -168,36 +168,6 @@ impl ARTStorage for MongoARTStorage {
         } else {
             warn!("Art not found");
             return Err(StorageError::NotFound);
-        }
-
-        Ok(())
-    }
-
-    async fn update_art_in_session(
-        &self,
-        session: &mut ClientSession,
-        changes: BranchChanges<ARTGroup>,
-        chat_id: Uuid,
-    ) -> Result<(), mongodb::error::Error> {
-        let filter = doc! { "chat_id": chat_id };
-
-        debug!("Updating art for chat: {}", chat_id);
-        if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
-            art_record
-                .art
-                .update_public_art(&changes)
-                .map_err(|e| mongodb::error::Error::from(std::io::Error::other(e.to_string())))?;
-            art_record.epoch += 1;
-
-            self.arts_collection
-                .find_one_and_replace(filter, art_record)
-                .session(session)
-                .await?;
-        } else {
-            error!("Art not found");
-            return Err(mongodb::error::Error::from(std::io::Error::other(
-                StorageError::NotFound,
-            )));
         }
 
         Ok(())

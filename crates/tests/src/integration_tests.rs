@@ -9,6 +9,7 @@ use cortado::CortadoAffine;
 use crypto::schnorr::{sign, verify};
 use prost::Message;
 use tracing::debug;
+use tracing::field::debug;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::protos;
 use types::protos::{Frame, SpFrames};
@@ -18,7 +19,7 @@ const CENTRIFUGO_URL: &str = "http://localhost:8000";
 // used for tests, which can be repeated
 const TEST_REPEATS: usize = 4;
 const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
-const DEFAULT_GROUP_SIZE: u64 = 10;
+const DEFAULT_GROUP_SIZE: u64 = 100;
 
 #[tokio::test]
 async fn test_get_message() -> eyre::Result<()> {
@@ -64,7 +65,8 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
     let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
 
     for i in 0..TEST_REPEATS {
-        context.make_blank(i + 1).await?;
+        let path = context.index_of(i + 1).unwrap().get_path().unwrap();
+        context.make_blank(&path).await?;
         context.add_member().await?;
     }
 
@@ -80,7 +82,8 @@ async fn test_remove_member() -> eyre::Result<()> {
 
     // skip the root node
     for i in 0..TEST_REPEATS {
-        context.make_blank(i + 5).await?;
+        let path = context.index_of(i + 5).unwrap().get_path().unwrap();
+        context.make_blank(&path).await?;
 
         let received_art = retrieval_context
             .get_art((i + 1) as u64, None, ProofMode::UseLeafKey.to_string())
@@ -93,7 +96,7 @@ async fn test_remove_member() -> eyre::Result<()> {
 
         retrieval_context.art = PrivateART::from_public_art(received_art, context.art.secret_key)?;
 
-        let sk_to_use = retrieval_context.art.recompute_root_key()?.key;
+        let sk_to_use = retrieval_context.art.get_root_key()?.key;
         let received_art_check = retrieval_context
             .get_art(
                 (i + 1) as u64,
@@ -128,7 +131,7 @@ async fn test_get_art() -> eyre::Result<()> {
             .get_art(i as u64, None, ProofMode::UseLeafKey.to_string())
             .await?;
 
-        assert_eq!(received_art.root.public_key, art_roots[(i) as usize]);
+        assert_eq!(received_art.root.public_key, art_roots[i]);
 
         retrieval_context.art =
             PrivateART::from_public_art(received_art, retrieval_context.initial_secrets[1])?;
@@ -137,85 +140,128 @@ async fn test_get_art() -> eyre::Result<()> {
     Ok(())
 }
 
-// #[tokio::test]
-// async fn test_epoch_merge() -> eyre::Result<()> {
-//     init_tracing_for_test();
-//
-//     let mut rng = StdRng::seed_from_u64(rand::random());
-//
-//     let payload = UserTestModel::new_nonce();
-//
-//     let (mut user0, _) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
-//     let mut user1 = user0.derive_new(1)?;
-//     let mut user2 = user0.derive_new(2)?;
-//     let mut user3 = user0.derive_new(5)?;
-//
-//     // sanity check
-//     assert_eq!(user2.art.get_root(), user0.art.get_root());
-//     assert_eq!(user1.art.get_root(), user0.art.get_root());
-//     assert_eq!(user3.art.get_root(), user0.art.get_root());
-//
-//     debug!("User 0 update key ...");
-//     user0.update_key(Some(payload.clone())).await?;
-//     let user0_pk = user0.art.public_key_of(&user0.art.get_secret_key());
-//
-//     debug!("User 1 update key ...");
-//     user1.update_key(Some(payload.clone())).await?;
-//     let user1_pk = user1.art.public_key_of(&user1.art.get_secret_key());
-//
-//     debug!("User 3 add member ...");
-//     user3.add_member().await?;
-//     let user3_pk = user3.art.public_key_of(&user3.art.get_secret_key());
-//
-//     // debug!("Users pull available changes ...");
-//     // user0.pull_changes(1000, 0).await?;
-//     // user1.pull_changes(1000, 0).await?;
-//     // user3.pull_changes(1000, 0).await?;
-//     // let changes = user2.pull_changes(1000, 0).await?;
-//
-//     debug!("User 2 merge changes locally ...");
-//     let merge_options = user2.merge_changes(&changes).await?;
-//
-//     debug!("User 2 update and send update request with merge resolve");
-//     let key_update_response2 = user2
-//         .update_key_and_send_request(metadata.clone(), payload.clone(), Some(merge_options))
-//         .await?;
-//     assert_eq!(key_update_response2.status(), StatusCode::OK);
-//
-//     let merge_change = user0.pull_changes(1000, 3).await?;
-//     assert_eq!(merge_change.len(), 1);
-//
-//     debug!("User 0 apply merge changes ...");
-//     user0.apply_merge_changes(&merge_change[0]).await?;
-//     assert_eq!(
-//         user0.art.get_node(user0.art.get_node_index())?.public_key,
-//         user0_pk
-//     );
-//     assert_eq!(user0.art.get_root(), user2.art.get_root());
-//
-//     debug!("User 1 apply merge changes ...");
-//     user1.apply_merge_changes(&merge_change[0]).await?;
-//     assert_eq!(
-//         user1.art.get_node(user1.art.get_node_index())?.public_key,
-//         user1_pk
-//     );
-//     assert_eq!(user1.art.get_root(), user0.art.get_root());
-//
-//     debug!("User 3 apply merge changes ...");
-//     user3.apply_merge_changes(&merge_change[0]).await?;
-//     assert_eq!(
-//         user3.art.get_node(user3.art.get_node_index())?.public_key,
-//         user3_pk
-//     );
-//     assert_eq!(user3.art.get_root(), user0.art.get_root());
-//
-//     debug!("User 2 update key ...");
-//     user2.update_key_and_send_request(None, None, None);
-//
-//     let change = user0.pull_changes(1000, user0.epoch).await?;
-//
-//     Ok(())
-// }
+#[tokio::test]
+async fn test_epoch_merge() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let payload = UserTestModel::new_nonce();
+
+    let (mut user0, _) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
+    let mut user1 = user0.derive_new(1)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(5)?;
+
+    // sanity check
+    assert_eq!(user2.art.get_root(), user0.art.get_root());
+    assert_eq!(user1.art.get_root(), user0.art.get_root());
+    assert_eq!(user3.art.get_root(), user0.art.get_root());
+
+    debug!("User 0 update key ...");
+    user0.add_member().await?;
+    // user0.update_key(None).await?;
+    debug!("User0 TK_x: {}", user0.art.root.public_key.x);
+
+    debug!("User 1 update key ...");
+    user1.update_key(Some(payload.clone())).await?;
+    debug!("User1 TK_x: {}", user1.art.root.public_key.x);
+
+    debug!("User 3 add member ...");
+    user3.update_key(Some(payload.clone())).await?;
+    debug!("User3 TK_x: {}", user3.art.root.public_key.x);
+
+    let changes = user2.get_changes(20, 0, None).await?;
+
+    debug!("User 2 merge changes locally ...");
+    user2
+        .art
+        .recompute_path_secrets_for_observer(&changes)
+        .unwrap();
+    user2.art.merge(&changes)?;
+    user2.epoch += 1;
+    debug!("User2 MTK_x: {}", user2.art.root.public_key.x);
+
+    assert_eq!(
+        user2
+            .art
+            .public_key_of(&user2.art.get_root_key().unwrap().key),
+        user2.art.root.public_key,
+        "Check if secret on path is the same one used for art root pub key computation."
+    );
+
+    debug!("User 2 update and send update request with merge resolved");
+    user2.update_key(Some(payload.clone())).await?;
+    debug!("User2 TK_x: {}", user2.art.root.public_key.x);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_merge_for_removal() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let payload = UserTestModel::new_nonce();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(5)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(1)?;
+    debug!("User0 sk: {}", user0.art.public_key_of(&user0.art.get_secret_key()).x);
+
+    // sanity check
+    assert_eq!(user2.art.get_root(), user0.art.get_root());
+    assert_eq!(user1.art.get_root(), user0.art.get_root());
+    assert_eq!(user3.art.get_root(), user0.art.get_root());
+
+    let target_node_path = user0.index_of(4).unwrap().get_path().unwrap();
+
+    debug!("User 0 update key ...");
+    user0.make_blank(&target_node_path).await?;
+    // user0.update_key(None).await?;
+    debug!("User0 TK_x: {}", user0.art.root.public_key.x);
+    debug!("User0 tk: {}", user0.art.get_root_key().unwrap().key);
+
+    debug!("User1 receive changes ..");
+    let blank_user_0 = user1.get_changes(20, 0, None).await?;
+    user1.art.update_private_art(&blank_user_0[0]).unwrap();
+    user1.epoch += 1;
+    debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
+    assert_eq!(user1.art.get_root(), user0.art.get_root());
+
+    debug!("User 1 update key ...");
+    user1.make_blank(&target_node_path).await?;
+    debug!("User1 TK_x: {}", user1.art.root.public_key.x);
+    debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
+    assert_eq!(user1.art.public_key_of(&user1.art.get_root_key()?.key), user1.art.get_root().public_key);
+
+    debug!("User 2 receive changes ...");
+    let blank_user_1 = user2.get_changes(20, 0, None).await?;
+    user2.art.update_private_art(&blank_user_1[0]).unwrap();
+    user2.epoch += 1;
+    debug!("User2 tk: {}", user2.art.get_root_key().unwrap().key);
+    // debug!("art2:\n{}", user2.art.get_root());
+    assert_eq!(user2.art.get_root(), user0.art.get_root());
+    assert_eq!(
+        user2.art.public_key_of(&user2.art.get_root_key()?.key),
+        user0.art.public_key_of(&user0.art.get_root_key()?.key),
+    );
+
+    debug!("User 2 receive seccond changes ...");
+    user2.art.update_private_art(&blank_user_1[1])?;
+    debug!("User2 tk: {}", user2.art.get_root_key().unwrap().key);
+    user2.epoch += 1;
+    // debug!("art2:\n{}", user2.art.get_root());
+    assert_eq!(user2.art.get_root(), user1.art.get_root());
+    assert_eq!(
+        user2.art.public_key_of(&user2.art.get_root_key()?.key),
+        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+    );
+    assert_eq!(user2.art.public_key_of(&user2.art.get_root_key()?.key), user1.art.get_root().public_key);
+
+    debug!("User 2 update key ...");
+    user2.update_key(None).await?;
+    debug!("New TK.x: {}", user2.art.root.public_key.x);
+    Ok(())
+}
 
 #[tokio::test]
 async fn test_delete_group() -> eyre::Result<()> {
@@ -230,6 +276,6 @@ async fn test_delete_group() -> eyre::Result<()> {
 fn init_tracing_for_test() {
     _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(true)
+        .with_target(false)
         .try_init();
 }

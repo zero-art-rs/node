@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-integration-tests = []
+merge_changes = []
 art_modifications = []
 verification = ["art_modifications"]
 

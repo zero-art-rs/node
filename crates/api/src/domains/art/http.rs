@@ -38,7 +38,7 @@ pub async fn get_art(
 
     let art_record = state
         .art_service
-        .get_art(&chat_id, Some(epoch))
+        .get_art(chat_id, Some(epoch))
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 

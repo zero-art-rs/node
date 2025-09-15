@@ -12,10 +12,6 @@ mod container;
 pub(crate) mod domains;
 mod router;
 mod verification_middleware;
-// pub use verification_middleware::verification_middleware;
-
-#[cfg(all(test, feature = "integration-tests"))]
-mod tests;
 
 pub use container::Container;
 pub use domains::art::service::ARTService;

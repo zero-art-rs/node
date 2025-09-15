@@ -6,35 +6,32 @@ use ark_std::{
     rand::prelude::StdRng,
     rand::{SeedableRng, thread_rng},
 };
-use art::types::{BranchChanges, ProverArtefacts};
+use art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
 use art::{
     errors::ARTError,
-    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView},
+    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
     types::{PrivateART, PublicART},
 };
 use axum::body::Bytes;
-use base64::{Engine, prelude::BASE64_STANDARD};
 use bulletproofs::PedersenGens;
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
 use crypto::schnorr::{sign, verify};
 use curve25519_dalek::Scalar;
-use eventsource_stream::Eventsource;
-use futures_util::StreamExt;
-use mongodb::bson::doc;
 use prost::Message;
-use rand::Rng;
 use reqwest::StatusCode;
-use serde::Deserialize;
-use serde_json::json;
-use serde_with::{base64::Base64, serde_as};
-use std::{collections::HashMap, ops::Mul, time::Duration};
+use std::ops::Mul;
 use tracing::debug;
 use tracing::field::debug;
-use types::errors::StorageError;
-use types::messenger_schemas::GetMessageQuery;
-use types::protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation};
-use types::{art_schemas::*, centrifugo_schemas::*, messenger_schemas::*, protos};
+use types::{
+    art_schemas::*,
+    centrifugo_schemas::*,
+    messenger_schemas::GetMessageQuery,
+    messenger_schemas::*,
+    protos,
+    protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation},
+    utils::extract_branch_changes,
+};
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
@@ -89,6 +86,16 @@ impl UserTestModel {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         (user, init_message)
+    }
+
+    pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ARTError> {
+        Ok(NodeIndex::from(
+            self.art.get_path_to_leaf(
+                &self.art.public_key_of(
+                    &self.initial_secrets[member_id],
+                )
+            )?
+        ))
     }
 
     /// Clone this uses, and change this user secret key to the different one
@@ -174,14 +181,14 @@ impl UserTestModel {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
-            group_operation: Some(protos::GroupOperation {
+            group_operation: Some(GroupOperation {
                 operation: Some(Operation::KeyUpdate(key_update_changes.serialze()?)),
             }),
             protected_payload: payload.unwrap_or(vec![]),
         };
 
         let proof_bytes =
-            self.prove_and_check_art_update(secret_key, artefacts, &tbs_frame, key_update_changes)?;
+            self.prove_and_check_art_update(secret_key, &artefacts, &tbs_frame, &key_update_changes)?;
 
         let update_key_response = self
             .send_frame(Frame {
@@ -190,7 +197,11 @@ impl UserTestModel {
             })
             .await?;
 
-        assert_eq!(update_key_response.0.status(), StatusCode::OK);
+        assert_eq!(
+            update_key_response.0.status(),
+            StatusCode::OK,
+            "Check if key update is successful."
+        );
         self.epoch += 1;
 
         Ok(update_key_response)
@@ -200,10 +211,10 @@ impl UserTestModel {
     pub async fn add_member(&mut self) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        // let old_tk = self.art.recompute_root_key()?.key;
+        // let old_tk = self.art.get_root_key()?.key;
         let old_tk = self.art.secret_key.clone();
         let new_user_secret_key = Fr::rand(&mut rng);
-        let (_, append_user_changes, artefacts) = self.art.append_node(&new_user_secret_key)?;
+        let (_, append_user_changes, artefacts) = self.art.append_or_replace_node(&new_user_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -216,7 +227,7 @@ impl UserTestModel {
         };
 
         let proof_bytes =
-            self.prove_and_check_art_update(old_tk, artefacts, &tbs_frame, append_user_changes)?;
+            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &append_user_changes)?;
 
         let add_member_response = self
             .send_frame(Frame {
@@ -231,18 +242,19 @@ impl UserTestModel {
         Ok(add_member_response)
     }
 
-    pub async fn make_blank(
+    pub async fn make_blank (
         &mut self,
-        member_id: usize,
+        user_to_remove: &Vec<Direction>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let old_tk = match self.is_owner() {
             true => self.art.secret_key.clone(),
-            false => self.art.recompute_root_key()?.key,
+            false => self.art.get_root_key()?.key,
         };
-        let user_to_remove = self.art.public_key_of(&self.initial_secrets[member_id]);
+
         let temporary_secret_key = Fr::rand(&mut rng);
+        debug!("temporary_secret_key: {}", temporary_secret_key);
         let (_, remove_user_changes, artefacts) = self
             .art
             .make_blank(&user_to_remove, &temporary_secret_key)?;
@@ -258,7 +270,7 @@ impl UserTestModel {
         };
 
         let proof_bytes =
-            self.prove_and_check_art_update(old_tk, artefacts, &tbs_frame, remove_user_changes)?;
+            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &remove_user_changes)?;
 
         let make_blank_result = self
             .send_frame(Frame {
@@ -267,14 +279,18 @@ impl UserTestModel {
             })
             .await?;
 
-        assert_eq!(make_blank_result.0.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            make_blank_result.0.status(),
+            StatusCode::NO_CONTENT,
+            "Check if remove member is successful."
+        );
         self.epoch += 1;
 
         Ok(make_blank_result)
     }
 
-    pub async fn get_messages(&mut self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
-        let sk = self.art.recompute_root_key()?.key;
+    pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
+        let sk = self.art.get_root_key()?.key;
         let pk = self.art.public_key_of(&sk);
 
         let nonce = Self::new_nonce();
@@ -342,7 +358,7 @@ impl UserTestModel {
     }
 
     pub async fn get_art(
-        &mut self,
+        &self,
         epoch: u64,
         secret_key_to_use: Option<Fr>,
         proof_mode: String,
@@ -433,8 +449,8 @@ impl UserTestModel {
         let msg = &*buf;
 
         let pk = vec![self.art.public_key_of(&self.art.secret_key)];
-        let signature = sign(&vec![self.art.secret_key], &pk, &msg).unwrap();
-        let verification_result = verify(&signature, &pk, &msg);
+        let signature = sign(&vec![self.art.secret_key], &pk, msg).unwrap();
+        let verification_result = verify(&signature, &pk, msg);
         assert!(verification_result.is_ok());
 
         let delete_response = self
@@ -454,19 +470,18 @@ impl UserTestModel {
         let pk = self.art.public_key_of(&sk);
 
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
-        let verification_result = verify(&signature, &vec![pk], &msg);
-        assert!(verification_result.is_ok());
+        let verification_result = verify(&signature, &vec![pk], msg);
+        assert!(verification_result.is_ok(), "Failed to verify signature");
 
         Ok(signature)
     }
 
     fn prove_and_check_art_update(
-        &mut self,
+        &self,
         secret_key: Fr,
-        artefacts: ProverArtefacts<CortadoAffine>,
-        // associated_data: &[u8],
+        artefacts: &ProverArtefacts<CortadoAffine>,
         tbs_frame: &FrameTbs,
-        changes: BranchChanges<CortadoAffine>,
+        changes: &BranchChanges<CortadoAffine>,
     ) -> eyre::Result<Vec<u8>> {
         let mut buf = BytesMut::new();
         tbs_frame.encode(&mut buf)?;
@@ -478,6 +493,8 @@ impl UserTestModel {
 
         let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
 
+        debug!("Using public_key.x: {} for proof creation.", &public_key.x);
+
         let proof = art_prove(
             Self::get_pedersen_basis(),
             associated_data,
@@ -487,8 +504,7 @@ impl UserTestModel {
             artefacts.secrets.clone(),
             vec![secret_key],
             blindings,
-        )
-        .unwrap();
+        )?;
 
         let verification_result = art_verify(
             Self::get_pedersen_basis(),
@@ -508,13 +524,13 @@ impl UserTestModel {
         Ok(proof_bytes)
     }
 
-    async fn get_changes(
-        &mut self,
+    pub async fn get_changes(
+        &self,
         limit: i64,
         skip: i64,
-        epoch: u64,
-    ) -> reqwest::Result<Vec<BranchChanges<CortadoAffine>>> {
-        let tk = self.art.recompute_root_key().unwrap().key;
+        epoch: Option<u64>,
+    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+        let tk = self.art.get_root_key()?.key;
         let pk = self.art.root.public_key;
 
         let mut msg = Vec::new();
@@ -523,6 +539,8 @@ impl UserTestModel {
             .collect::<Vec<u8>>();
         msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&nonce);
+
+        debug!("Using {} for verification.", pk.x);
 
         let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
 
@@ -540,37 +558,25 @@ impl UserTestModel {
                 limit,
                 skip,
                 nonce,
-                epoch: Some(epoch),
+                epoch,
             })
             .send()
             .await?;
 
-        assert_eq!(changes_response.status(), StatusCode::OK);
+        assert_eq!(changes_response.status(), StatusCode::ACCEPTED);
 
-        let records = changes_response.json::<Vec<types::FrameRecord>>().await?;
-        let mut changes = Vec::with_capacity(records.len());
-        for record in records {
-            let mut buf = BytesMut::new();
-            buf.put(&*record.content);
-            let frame = Frame::decode(buf).unwrap();
-            let frame_change = match frame
-                .frame
-                .unwrap()
-                .group_operation
-                .unwrap()
-                .operation
-                .unwrap()
-            {
-                Operation::Init(_) => None,
-                Operation::AddMember(change)
-                | Operation::KeyUpdate(change)
-                | Operation::RemoveMember(change) => {
-                    Some(BranchChanges::<CortadoAffine>::deserialize(change.as_slice()).unwrap())
-                }
-                Operation::DropGroup(_) => None,
+        let buf = BytesMut::from(&*changes_response.bytes().await?);
+        let sp_frames = SpFrames::decode(buf)?.sp_frames;
+
+        let mut changes = Vec::with_capacity(sp_frames.len());
+        for sp_frame in sp_frames {
+            let frame = match sp_frame.frame {
+                Some(frame) => frame,
+                None => continue,
             };
-            if let Some(frame_change) = frame_change {
-                changes.push(frame_change)
+
+            if let Some(frame_change) = extract_branch_changes(&frame)? {
+                changes.push(frame_change);
             }
         }
 
@@ -578,8 +584,8 @@ impl UserTestModel {
     }
 
     pub fn new_nonce() -> Vec<u8> {
-        (0..DEFAULT_NONCE_LENGTH)
-            .map(|_| rand::random::<u8>())
+        std::iter::repeat(rand::random::<u8>())
+            .take(DEFAULT_NONCE_LENGTH as usize)
             .collect::<Vec<u8>>()
     }
 

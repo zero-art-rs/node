@@ -5,7 +5,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, deco
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use types::centrifugo_schemas::{AuthRequest, AuthResponse};
+use types::centrifugo_schemas::AuthRequest;
 use types::errors::ApiError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

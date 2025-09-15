@@ -6,19 +6,15 @@ use ark_serialize::CanonicalDeserialize;
 use art::types::BranchChangesType;
 use axum::body::Bytes;
 use axum::http::StatusCode;
-use bytes::BytesMut;
-use cortado::CortadoAffine;
-use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
-use storage::{ARTStorage, MongoARTStorage};
 use tokio::sync::RwLock;
 use tracing::debug;
-use types::errors::{ARTServiceError, ServiceError, StorageError};
+use types::errors::{ARTServiceError, ServiceError};
+use types::protos::Frame;
 use types::protos::group_operation::Operation;
-use types::protos::{Frame, FrameTbs};
 use types::utils::decode_branch_changes;
 use uuid::Uuid;
 
@@ -29,29 +25,10 @@ pub struct Container {
 
     pub proof_verifier_sender: ProofVerifierSender,
 
-    pub art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
     pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
 impl Container {
-    pub async fn art_is_updating(&self, chat_id: Uuid) -> bool {
-        self.art_is_updating.read().await.contains(&chat_id)
-    }
-
-    pub async fn start_updating(&self, chat_id: Uuid) -> Result<(), ServiceError> {
-        if self.art_is_updating(chat_id).await {
-            debug!("Failed to update art. It is currently changing");
-            Err(ServiceError::from(ARTServiceError::ArtIsChanging))
-        } else {
-            self.art_is_updating.write().await.insert(chat_id);
-            Ok(())
-        }
-    }
-
-    pub async fn stop_updating(&self, chat_id: Uuid) {
-        self.art_is_updating.write().await.remove(&chat_id);
-    }
-
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
 
@@ -97,7 +74,7 @@ impl Container {
         &self,
         id: Uuid,
         branch_changes_bytes: Vec<u8>,
-        update_epoch: u64,
+        new_epoch: u64,
     ) -> Result<StatusCode, ServiceError> {
         // self.start_updating(chat_id).await?;
 
@@ -106,20 +83,16 @@ impl Container {
 
         let current_epoch = self.art_service.get_current_epoch(id).await?;
 
-        match update_epoch {
+        match new_epoch {
             e if e == current_epoch => {
                 // resolve merge conflict
-                // let applied_changes = self.messenger_service.get_changes(doc! {"epoch": e});
+                self.art_service.merge_change(id, branch_changes.clone(), new_epoch).await?;
             }
             e if e == current_epoch + 1 => {
-                // update art
+                // update art and increment epoch
+                self.art_service.update_art(id, &branch_changes).await?;
             }
-            _ => {}
-        }
-
-        if let Err(e) = self.art_service.update_art(id, &branch_changes).await {
-            // self.stop_updating(chat_id).await;
-            return Err(e.into());
+            _ => return Err(ARTServiceError::InvalidInput.into()),
         }
 
         // self.stop_updating(chat_id).await;

@@ -47,15 +47,9 @@ bson = { version = "2.15.0", features = ["chrono-0_4"] }
 tracing-subscriber = { version = "0.3.19" }
 uuid = { version = "1.17.0", features = ["v7", "serde"] }
 jsonwebtoken = "9.3.1"
-zk = { git = "ssh://git@github.com/zk-messenger/project-m.git" }
 tokio-stream = { version = "0.1.10" }
-art = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "art-dev" }
-crypto = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
-cortado = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
 postcard = { version = "1.1.2"  }
 serde_with = { version = "3.14.0", features = ["base64"] }
-bulletproofs = { version = "5.0.0", git="https://github.com/zk-messenger/bulletproofs"}
-zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 curve25519-dalek = { version = "4.1.3", features = ["digest", "group", "rand_core", "serde"] }
 serde_urlencoded = { version = "0.7.1" }
 axum-core = "0.5.2"
@@ -68,6 +62,14 @@ bytes = { version = "1.10.1" }
 eventsource-stream = { version = "0.2.3" }
 futures = { version = "0.3.31" }
 reqwest = { version = "0.12.23" }
+
+crypto = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "art-dev"  }
+cortado = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "art-dev"  }
+zk = { git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "art-dev" }
+#art = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "art-dev" }
+art = { path = "../project-m/crates/art" }
+bulletproofs = { version = "5.0.0", git="https://github.com/zk-messenger/bulletproofs"}
+zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 
 [workspace.lints.clippy]
 all = "warn"

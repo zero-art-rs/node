@@ -186,26 +186,7 @@ impl FrameStorage for MongoFramesStorage {
         buf.put(messages.content.as_slice());
         let frame = Frame::decode(buf)?;
 
-        if let Some(tbs_frame) = &frame.frame {
-            if let Some(group_operation) = &tbs_frame.group_operation {
-                if let Some(operation) = &group_operation.operation {
-                    return match operation {
-                        Operation::AddMember(branch_changes) => {
-                            Ok(Some(decode_branch_changes(branch_changes)?))
-                        }
-                        Operation::RemoveMember(branch_changes) => {
-                            Ok(Some(decode_branch_changes(branch_changes)?))
-                        }
-                        Operation::KeyUpdate(branch_changes) => {
-                            Ok(Some(decode_branch_changes(branch_changes)?))
-                        }
-                        _ => Ok(None),
-                    };
-                }
-            }
-        }
-
-        Ok(None)
+        Ok(types::utils::extract_branch_changes(&frame)?)
     }
 
     async fn get_epoch_changes(

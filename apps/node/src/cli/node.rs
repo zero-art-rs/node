@@ -85,7 +85,6 @@ impl Node {
             centrifugo_service: Arc::new(centrifugo_service),
             art_service: Arc::new(art_service),
             proof_verifier_sender,
-            art_is_updating: Arc::new(RwLock::new(HashSet::new())),
             challenges: Arc::new(RwLock::new(HashSet::new())),
         });
 
