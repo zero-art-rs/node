@@ -7,7 +7,8 @@ on:
     - 'v?[0-9]+.[0-9]+.[0-9]+-[0-9]+'
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/zk-messenger-node
+  IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+  CACHE_REPO: ghcr.io/${{ github.repository }}/cache
 
 jobs:
   build:
@@ -30,14 +31,19 @@ jobs:
         with:
             ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | buildah login ghcr.io -u ${{ github.repository_owner }} --password-stdin               
+
       - name: Build Image
         run: |
-          buildah bud --ssh default=$SSH_AUTH_SOCK  -t $IMAGE_NAME:${{ github.ref_name }} .
-
-      - name: Login to GHCR
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | buildah login ghcr.io -u ${{ github.actor }} --password-stdin
+          buildah bud \
+          --ssh default=$SSH_AUTH_SOCK \
+          --layers \
+          --cache-from $CACHE_REPO \
+          --cache-to $CACHE_REPO \
+          -t $IMAGE_NAME .
 
       - name: Push Image (tag)
         run: |
-          buildah push $IMAGE_NAME:${{ github.ref_name }}
+          buildah push $IMAGE_NAME
