@@ -208,12 +208,14 @@ async fn verification_middleware_inner(
                 Some(val) => val.operation.as_ref(),
             };
 
+            debug!("try to get_epoch ...");
             // Check if epoch is nor decreasing nor to big
             let current_epoch = MongoARTStorage::new()
                 .await?
                 .get_current_epoch(&id)
-                .await
-                .map_err(StorageError::from)?;
+                .await.unwrap_or(0);
+
+            debug!("try to get_epoch");
 
             if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
                 error!(
