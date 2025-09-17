@@ -41,6 +41,8 @@ pub enum VerificationError {
     DecodeError(#[from] prost::DecodeError),
     #[error("Failed to retrieve data from the storage: {0}")]
     StorageError(#[from] StorageError),
+    #[error("Failed to retrieve data from storage: {0}")]
+    MongoDBError(#[from] mongodb::error::Error),
 }
 
 impl From<serde_json::Error> for VerificationError {

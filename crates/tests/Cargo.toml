@@ -3,6 +3,9 @@ name = "tests"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+integration_tests = []
+
 [dependencies]
 axum-test = { workspace = true }
 storage = { path = "../storage" }
@@ -52,6 +55,8 @@ curve25519-dalek = { workspace = true }
 ark-ed25519 = { workspace = true }
 crypto = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+api = { path = "../api" }
 
 [lints]
 workspace = true

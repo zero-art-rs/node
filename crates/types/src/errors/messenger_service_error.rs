@@ -14,3 +14,9 @@ pub enum MessageServiceError {
     #[error("Failed to encode payload: {0}")]
     EncodeError(#[from] prost::EncodeError),
 }
+
+impl From<mongodb::error::Error> for MessageServiceError {
+    fn from(err: mongodb::error::Error) -> Self {
+        Self::Storage(StorageError::from(err))
+    }
+}

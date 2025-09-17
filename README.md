@@ -33,7 +33,8 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 * `api` features
   * **api/art_modifications** - Enable art modification endpoints for use
   * **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
-  * **api/integration-tests** - Enables integration tests.
+* `tests`
+  * **tests/integration_tests** - Enables integration tests.
 
 ### Run 
 

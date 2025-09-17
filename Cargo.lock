@@ -3961,6 +3961,7 @@ dependencies = [
 name = "tests"
 version = "0.1.0"
 dependencies = [
+ "api",
  "ark-ec",
  "ark-ed25519",
  "ark-serialize",

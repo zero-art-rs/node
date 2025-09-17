@@ -1,115 +1,71 @@
 use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
-use mongodb::options::FindOptions;
 use mongodb::{bson::Document, ClientSession, Collection};
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::debug;
 
+/// It is a generic abstraction storage of typed data. It requires some default methods, which
+/// are the same for different storages.
+///
+/// # Type Parameters
+/// * `D` - The type of documents stored in the MongoDB collection.  
+/// * `E` - The type of documents stored in the MongoDB collection.
 #[async_trait::async_trait]
-pub trait DataStorage: Send + Sync {
-    type Data: Send + Sync + Serialize + DeserializeOwned;
-
-    async fn get_collection(&self) -> &Collection<Self::Data>;
-
+pub trait DataStorage<D, E>: Send + Sync {
     async fn list(
         &self,
         filter: Document,
         sort_option: Option<Document>,
         limit: i64,
         skip: i64,
-    ) -> Result<Vec<Self::Data>, StorageError> {
-        let mut cursor = self
-            .get_collection()
-            .await
-            .find(filter)
-            // .sort(sort_option.unwrap_or_default())
-            .skip(skip as u64)
-            .limit(limit as i64)
-            .await?;
+    ) -> Result<Vec<D>, E>;
 
-        let mut records = Vec::new();
-        while cursor.advance().await? {
-            records.push(cursor.deserialize_current()?);
-        }
+    async fn count(&self, filter: Document, limit: i64, skip: i64) -> Result<u64, E>;
 
-        Ok(records)
-    }
+    async fn find_one(&self, filter: Document) -> Result<Option<D>, E>;
 
-    async fn count(&self, filter: Document, limit: i64, skip: i64) -> Result<u64, StorageError> {
-        Ok(self
-            .get_collection()
-            .await
-            .count_documents(filter)
-            // .find(filter)
-            .skip(skip as u64)
-            .limit(limit as u64)
-            .await?)
-    }
+    async fn insert_one(&self, record: D) -> Result<(), E>;
 
-    async fn find_one(&self, filter: Document) -> Result<Option<Self::Data>, StorageError> {
-        let cursor = self.get_collection().await.find_one(filter).await?;
+    async fn insert_many(&self, records: Vec<D>) -> Result<(), E>;
 
-        Ok(cursor)
-    }
+    async fn delete(&self, filter: Document) -> Result<Vec<D>, E>;
 
-    async fn insert_one(&self, record: Self::Data) -> Result<(), StorageError> {
-        self.get_collection().await.insert_one(record).await?;
+    async fn clear(&self, session: &mut ClientSession) -> Result<(), E>;
 
-        Ok(())
-    }
-
-    async fn insert_many(&self, records: Vec<Self::Data>) -> Result<(), StorageError> {
-        self.get_collection().await.insert_many(records).await?;
-
-        Ok(())
-    }
-
-    async fn delete(&self, filter: Document) -> Result<Vec<Self::Data>, StorageError> {
-        let collection = &self.get_collection().await;
-        let mut collection_cursor = collection.find(filter.clone()).await?;
-        let mut records = Vec::new();
-
-        while let Some(message) = collection_cursor.try_next().await? {
-            records.push(message);
-        }
-
-        collection.delete_many(filter).await?;
-
-        Ok(records)
-    }
-
-    async fn clear(&self, session: &mut ClientSession) -> Result<(), mongodb::error::Error> {
-        debug!("Clear message collection ...");
-        self.get_collection()
-            .await
-            .delete_many(doc! {})
-            .session(session)
-            .await?;
-
-        debug!("Message collection cleared successfully");
-        Ok(())
-    }
-
-    async fn drop_collection(&self) -> Result<(), mongodb::error::Error> {
-        self.get_collection().await.drop().await?;
-        Ok(())
-    }
+    async fn drop_collection(&self) -> Result<(), E>;
 
     async fn drop_collection_in_session(
         &self,
         sesion: &mut ClientSession,
-    ) -> Result<(), mongodb::error::Error> {
-        self.get_collection().await.drop().session(sesion).await?;
-        Ok(())
-    }
+    ) -> Result<(), E>;
 
-    async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error> {
-        let collection = self.get_collection().await;
-        if collection.find_one(doc! {}).await?.is_none() {
-            collection.drop().await?;
-        }
+    async fn drop_collection_if_empty(&self) -> Result<(), E>;
+}
 
-        Ok(())
-    }
+/// It is a generic abstraction for MongoDB-backed storage of typed data. It
+/// contains a default implementation of general methods.   
+///
+/// # Type Parameters
+/// * `D` - The type of documents stored in the MongoDB collection.  
+///
+/// # Usage
+///
+/// One can implement this trait for a specific Mongo-backed storage struct
+/// that owns a `Collection<T>`.  
+///
+/// ```ignore
+/// #[async_trait::async_trait]
+/// impl MongoDataStorage<ARTRecord<CortadoAffine>> for MongoARTStorage {
+///     async fn get_collection(&self) -> &Collection<ARTRecord<CortadoAffine>> {
+///         &self.arts_collection
+///     }
+/// }
+/// ```
+#[async_trait::async_trait]
+pub trait MongoDataStorage<D>: Send + Sync
+where
+    D: Serialize + DeserializeOwned + Send + Sync,
+{
+    async fn get_collection(&self) -> &Collection<D>;
 }

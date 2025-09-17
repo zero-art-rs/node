@@ -1,9 +1,10 @@
-use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
+use crate::{DataStorage, FrameStorage, MongoARTStorage, MongoSessionSupport, StorageError, DATABASE};
 use art::types::BranchChanges;
 use bytes::{BufMut, BytesMut};
 use cortado::CortadoAffine;
 use futures_util::TryStreamExt;
 use mongodb::{
+    error::Error,
     bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
     options::IndexOptions,
@@ -16,6 +17,7 @@ use types::protos::Frame;
 use types::utils::decode_branch_changes;
 use types::FrameRecord;
 use uuid::Uuid;
+use crate::impls::data_storage::MongoDataStorage;
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
@@ -23,16 +25,21 @@ pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
 pub struct MongoFramesStorage {
     pub messages_collection: Collection<FrameRecord>,
     pub messages_outbox_collection: Collection<FrameRecord>,
-    pub chat_id: Uuid,
+    pub id: Uuid,
 }
 
-impl MongoFramesStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
-        let db = DATABASE
-            .get()
-            .ok_or_else(|| StorageError::DatabaseRetrieval)?;
+#[async_trait::async_trait]
+impl FrameStorage for MongoFramesStorage {
+    type Data = FrameRecord;
+    type Session = ClientSession;
+    type Error = Error;
 
-        let messages_collection_name = format!("{GROUP_COLLECTION_NAME}/{chat_id}");
+    async fn new(id: Uuid) -> Result<Self, Self::Error> {
+        let db = DATABASE.get().ok_or_else(|| {
+            Self::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
+
+        let messages_collection_name = format!("{GROUP_COLLECTION_NAME}/{id}");
         let messages_collection = db.collection(&messages_collection_name);
 
         let messages_outbox_collection = db.collection(OUTBOX_COLLECTION_NAME);
@@ -48,22 +55,19 @@ impl MongoFramesStorage {
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
-            chat_id: *chat_id,
+            id,
         })
     }
-}
 
-#[async_trait::async_trait]
-impl FrameStorage for MongoFramesStorage {
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, StorageError> {
+    ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, Self::Error> {
         let change_stream = self.messages_collection.watch().await?;
 
         Ok(change_stream)
     }
 
-    async fn next_sequence_number(&self) -> Result<u64, StorageError> {
+    async fn next_sequence_number(&self) -> Result<u64, Self::Error> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -85,7 +89,7 @@ impl FrameStorage for MongoFramesStorage {
         content: Vec<u8>,
         epoch: i64,
         outbox_only: bool,
-    ) -> Result<(), StorageError> {
+    ) -> Result<(), Self::Error> {
         let message_collection = &self.messages_collection;
 
         let next_sequence_number = self.next_sequence_number().await?;
@@ -102,7 +106,7 @@ impl FrameStorage for MongoFramesStorage {
         }
 
         // change message for outbox_collection
-        message.chat_id = Some(self.chat_id);
+        message.chat_id = Some(self.id);
 
         self.messages_outbox_collection
             .insert_one(message)
@@ -119,7 +123,7 @@ impl FrameStorage for MongoFramesStorage {
         session: &mut ClientSession,
         content: Vec<u8>,
         epoch: i64,
-    ) -> Result<(), mongodb::error::Error> {
+    ) -> Result<(), Self::Error> {
         let message_collection = &self.messages_collection;
 
         let mut cursor = message_collection
@@ -145,7 +149,7 @@ impl FrameStorage for MongoFramesStorage {
             .await?;
 
         // change message for outbox_collection
-        message.chat_id = Some(self.chat_id);
+        message.chat_id = Some(self.id);
 
         self.messages_outbox_collection
             .insert_one(message)
@@ -155,7 +159,7 @@ impl FrameStorage for MongoFramesStorage {
         Ok(())
     }
 
-    async fn get_existing_collection(chat_id: Uuid) -> Result<Self, mongodb::error::Error> {
+    async fn get_existing_collection(chat_id: Uuid) -> Result<Self, Self::Error> {
         let db = DATABASE.get().ok_or_else(|| {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
@@ -166,11 +170,11 @@ impl FrameStorage for MongoFramesStorage {
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
-            chat_id,
+            id: chat_id,
         })
     }
 
-    async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), StorageError> {
+    async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), Self::Error> {
         self.messages_collection
             .drop()
             .session(&mut *session)
@@ -178,54 +182,18 @@ impl FrameStorage for MongoFramesStorage {
 
         Ok(())
     }
+}
 
-    fn extract_branch_changes(
-        messages: &FrameRecord,
-    ) -> Result<Option<BranchChanges<CortadoAffine>>, StorageError> {
-        let mut buf = BytesMut::new();
-        buf.put(messages.content.as_slice());
-        let frame = Frame::decode(buf)?;
-
-        Ok(types::utils::extract_branch_changes(&frame)?)
-    }
-
-    async fn get_epoch_changes(
-        &self,
-        id: Uuid,
-        epoch: u64,
-    ) -> Result<Vec<BranchChanges<CortadoAffine>>, StorageError> {
-        let limit = types::DEFAULT_LIMIT;
-        let mut skip = 0;
-
-        let mut records = MongoFramesStorage::new(&id)
-            .await?
-            .list(doc! {"epoch": epoch as i64}, None, limit, skip)
-            .await?;
-
-        let mut changes = Vec::new();
-        while !records.is_empty() {
-            for record in &records {
-                if let Ok(Some(branch_changes)) = Self::extract_branch_changes(record) {
-                    changes.push(branch_changes);
-                }
-            }
-            skip += types::DEFAULT_LIMIT;
-
-            records = MongoFramesStorage::new(&id)
-                .await?
-                .list(doc! {"epoch": epoch as i64}, None, limit, skip)
-                .await?;
-        }
-
-        Ok(changes)
+#[async_trait::async_trait]
+impl MongoDataStorage<FrameRecord> for MongoFramesStorage {
+    async fn get_collection(&self) -> &Collection<FrameRecord> {
+        &self.messages_collection
     }
 }
 
 #[async_trait::async_trait]
-impl DataStorage for MongoFramesStorage {
-    type Data = FrameRecord;
-
-    async fn get_collection(&self) -> &Collection<Self::Data> {
-        &self.messages_collection
+impl MongoSessionSupport<Error, ClientSession> for MongoFramesStorage {
+    async fn start_session(&self) -> Result<ClientSession, Error> {
+        self.messages_collection.client().start_session().await
     }
 }

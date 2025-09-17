@@ -28,12 +28,12 @@ impl MessengerService {
     pub async fn send_message(
         &self,
         message: Vec<u8>,
-        chat_id: &Uuid,
+        id: &Uuid,
         epoch: i64,
         outbox_only: bool,
     ) -> Result<(), MessageServiceError> {
         debug!("Store and send new message");
-        MongoFramesStorage::new(chat_id)
+        MongoFramesStorage::new(*id)
             .await?
             .store_message(message, epoch, outbox_only)
             .await?;
@@ -43,12 +43,12 @@ impl MessengerService {
 
     pub async fn list_messages(
         &self,
-        chat_id: &Uuid,
+        id: &Uuid,
         filter: Document,
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        let messages = MongoFramesStorage::new(chat_id)
+        let messages = MongoFramesStorage::new(*id)
             .await?
             .list(filter.clone(), None, limit, skip)
             .await?;
@@ -86,12 +86,12 @@ impl MessengerService {
 
     pub async fn count_messages(
         &self,
-        chat_id: &Uuid,
+        id: &Uuid,
         filter: Document,
         limit: i64,
         skip: i64,
     ) -> Result<u64, MessageServiceError> {
-        Ok(MongoFramesStorage::new(chat_id)
+        Ok(MongoFramesStorage::new(*id)
             .await?
             .count(filter, limit, skip)
             .await?)
@@ -102,7 +102,7 @@ impl MessengerService {
         id: &Uuid,
         filter: Document,
     ) -> Result<Vec<FrameRecord>, MessageServiceError> {
-        let result = MongoFramesStorage::new(id).await?.delete(filter).await?;
+        let result = MongoFramesStorage::new(*id).await?.delete(filter).await?;
         Ok(result)
     }
 }
