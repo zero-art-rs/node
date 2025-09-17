@@ -3,6 +3,10 @@ name = "zk-messenger-node"
 version = "0.1.9"
 edition = "2024"
 
+[[bin]]
+name = "zk-messenger-node"
+path = "src/main.rs"
+
 [features]
 default = ["verification"]
 art_modifications = ["api/art_modifications"]
