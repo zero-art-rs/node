@@ -30,6 +30,7 @@ use types::{
     errors::{ApiError, VerificationError},
 };
 use uuid::Uuid;
+use sha3::{Digest, Sha3_256};
 
 pub async fn verification_middleware(
     state: State<Arc<Container>>,
@@ -117,6 +118,8 @@ async fn verification_middleware_inner(
             msg.extend_from_slice(chat_id.as_bytes());
             msg.extend(&payload.nonce);
 
+            let msg = Sha3_256::digest(&msg).to_vec();
+
             Some(VerificationRequest {
                 opcode: VerificationOpcode::GetMessages,
                 data: VerifierData {
@@ -177,6 +180,8 @@ async fn verification_middleware_inner(
             msg.extend(payload.challenge);
             msg.extend(epoch.to_be_bytes());
 
+            let msg = Sha3_256::digest(&msg).to_vec();
+
             Some(VerificationRequest {
                 opcode: VerificationOpcode::GetMessages,
                 data: VerifierData {
@@ -201,7 +206,7 @@ async fn verification_middleware_inner(
 
             let mut buf = BytesMut::new();
             tbs_frame.encode(&mut buf).unwrap();
-            let associated_data = buf.to_vec();
+            let associated_data = Sha3_256::digest(buf.to_vec()).to_vec();
 
             let operation = match &tbs_frame.group_operation {
                 None => None,

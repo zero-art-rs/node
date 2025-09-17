@@ -35,6 +35,7 @@ use types::{
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
+use sha3::{Digest, Sha3_256};
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
@@ -143,6 +144,8 @@ impl UserTestModel {
 
         let mut msg = BytesMut::new();
         tbs_frame.encode(&mut msg)?;
+
+        let msg = Sha3_256::digest(msg.to_vec());
 
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
         let verification_result = verify(&signature, &vec![pk], &msg);
@@ -299,6 +302,8 @@ impl UserTestModel {
         msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&nonce);
 
+        let msg = Sha3_256::digest(&msg).to_vec();
+
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
         let verification_result = verify(&signature, &vec![pk], &msg);
         assert!(verification_result.is_ok());
@@ -375,6 +380,8 @@ impl UserTestModel {
         msg.extend(&challenge);
         msg.extend(epoch.to_be_bytes());
 
+        let msg = Sha3_256::digest(&msg).to_vec();
+
         let sk = match secret_key_to_use {
             Some(secret_key) => secret_key,
             None => self.art.secret_key,
@@ -446,7 +453,7 @@ impl UserTestModel {
 
         let mut buf = BytesMut::new();
         tbs_frame.encode(&mut buf).unwrap();
-        let msg = &*buf;
+        let msg = &*Sha3_256::digest(&*buf).to_vec();
 
         let pk = vec![self.art.public_key_of(&self.art.secret_key)];
         let signature = sign(&vec![self.art.secret_key], &pk, msg).unwrap();
@@ -485,7 +492,7 @@ impl UserTestModel {
     ) -> eyre::Result<Vec<u8>> {
         let mut buf = BytesMut::new();
         tbs_frame.encode(&mut buf)?;
-        let associated_data = &*buf;
+        let associated_data = &*Sha3_256::digest(&buf).to_vec();
 
         let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
             .map(|_| Scalar::random(&mut thread_rng()))
@@ -539,6 +546,8 @@ impl UserTestModel {
             .collect::<Vec<u8>>();
         msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&nonce);
+
+        let msg = Sha3_256::digest(&msg).to_vec();
 
         debug!("Using {} for verification.", pk.x);
 
