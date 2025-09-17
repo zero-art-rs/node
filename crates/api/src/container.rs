@@ -60,6 +60,7 @@ impl Container {
                     .await
                     .map(|_| StatusCode::NO_CONTENT)?);
             }
+            Some(Operation::LeaveGroup(index)) => self.handle_self_removal(id, index).await?,
             None => StatusCode::OK,
         };
 
@@ -68,6 +69,12 @@ impl Container {
             .await?;
 
         Ok(response)
+    }
+
+    pub async fn handle_self_removal(&self, id: Uuid, index: u64) -> Result<StatusCode, ServiceError> {
+        self.art_service.mark_as_removed(id, index).await?;
+
+        Ok(StatusCode::OK)
     }
 
     pub async fn update_art(

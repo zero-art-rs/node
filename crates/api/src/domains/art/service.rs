@@ -1,5 +1,5 @@
 use art::traits::ARTPublicAPI;
-use art::types::{BranchChanges, BranchChangesType, PublicART};
+use art::types::{BranchChanges, BranchChangesType, NodeIndex, PublicART};
 use bytes::BytesMut;
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
@@ -270,12 +270,15 @@ impl ARTService {
         };
 
         let arts_storage = MongoARTStorage::new().await?;
+
         MongoKeysStorage::new()
             .await?
-            .insert_one(KeyRecord {
-                owner_public_key: owner_id_pub_key,
-                chat_id: id,
-            })
+            .insert_one(
+                KeyRecord {
+                    owner_public_key: owner_id_pub_key,
+                    chat_id: id,
+                },
+            )
             .await?;
 
         debug!("Check if ART for group {} already exists...", id);
@@ -331,6 +334,24 @@ impl ARTService {
             .await?;
 
         session.commit_transaction().await?;
+
+        Ok(())
+    }
+
+    pub async fn mark_as_removed(&self, id: Uuid, index: u64) -> Result<(), ARTServiceError> {
+        let arts_storage = MongoARTStorage::get_existing_storage().await?;
+        let mut art_record = arts_storage.get_art(id).await?;
+        art_record
+            .art
+            .get_mut_node(&NodeIndex::from(index))?
+            .is_blank = true;
+
+        // art_record.epoch += 1;
+
+        debug!(
+            "User with index {index} marked himself as removed",
+        );
+        arts_storage.replace_art(id, art_record).await?;
 
         Ok(())
     }

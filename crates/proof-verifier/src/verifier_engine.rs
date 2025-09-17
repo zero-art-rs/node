@@ -16,7 +16,8 @@ pub enum VerificationOpcode {
     InitGroup,
     KeyUpdate,
     AddMember,
-    MakeBlank,
+    RemoveMember,
+    LeaveGroup,
     SendMessage,
     GetMessages,
     GetChanges,
@@ -54,7 +55,7 @@ impl VerificationRequest {
         match self.opcode {
             VerificationOpcode::KeyUpdate
             | VerificationOpcode::AddMember
-            | VerificationOpcode::MakeBlank => {
+            | VerificationOpcode::RemoveMember => {
                 let PublicInputs::ArtUpdateInput {
                     path,
                     co_path,

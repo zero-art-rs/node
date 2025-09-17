@@ -243,6 +243,9 @@ async fn verification_middleware_inner(
                     )
                     .await?
                 }
+                Some(Operation::LeaveGroup(index)) => {
+                    get_opcode_and_input_for_leave_group(state.clone(), id, *index).await?
+                }
                 Some(Operation::DropGroup(_)) => {
                     get_opcode_and_input_for_drop_group(state.clone(), id).await?
                 }
@@ -325,7 +328,7 @@ pub async fn get_opcode_and_input_for_art_update(
 
             debug!("aux_public_key.x: {}", aux_public_key.x);
 
-            (VerificationOpcode::MakeBlank, vec![aux_public_key])
+            (VerificationOpcode::RemoveMember, vec![aux_public_key])
         }
         _ => return Err(VerificationError::UnsupportedOperation),
     };
@@ -393,6 +396,26 @@ pub async fn get_opcode_and_input_for_send_message(
         },
     ))
 }
+pub async fn get_opcode_and_input_for_leave_group(
+    state: Arc<Container>,
+    id: Uuid,
+    user_index: u64,
+) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    let art = state.art_service.get_art(id, None).await?.art;
+    let leaf = art.get_node(&NodeIndex::from(user_index))?;
+
+    if !leaf.is_leaf() {
+        return Err(VerificationError::InvalidInput);
+    }
+
+    Ok((
+        VerificationOpcode::LeaveGroup,
+        PublicInputs::Signature {
+            public_keys: vec![leaf.public_key],
+        },
+    ))
+}
+
 
 pub async fn verify(
     message: ProofVerifierMessage,

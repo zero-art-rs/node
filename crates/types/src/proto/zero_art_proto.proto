@@ -20,11 +20,24 @@ message User {
   Role role = 5; // user role
 }
 
+enum ContentAttachmentType {
+	IMAGE = 0;
+	BINARY = 1;
+	VIDEO = 2;
+}
+
+message ContentAttachment {
+	string id = 1;
+	ContentAttachmentType type = 2;
+	bytes data = 3;
+}
+
 // CRDT payload: could be either incremental change or full document
 message CRDTPayload {
 	oneof payload {
 		bytes incremental_change = 1;
 		bytes full_document = 2;
+		ContentAttachment media_attachment = 3;
 		// TODO: consider adding sync protocol msgs
 	}
 }
@@ -55,6 +68,8 @@ message GroupActionPayload {
 	  User join_group = 4; // join group action
 	  User change_user = 5; // user changes they metadata
 	  GroupInfo change_group = 6; // group metadata change
+	  User leave_group = 7; // member leaves group
+	  User finalize_removal = 8; // finalize removal of a member
 	  // TODO: add accusations
   }
 }
@@ -64,6 +79,7 @@ message Payload {
   oneof content {
     CRDTPayload crdt = 1;
     ChatPayload chat = 2;
+
     // TODO: consider adding new payload types: message, media file, etc
     GroupActionPayload action = 10;
   }
@@ -76,7 +92,7 @@ message GroupOperation {
 		bytes add_member = 2; // branch_changes
 		bytes remove_member = 3; // branch_changes
 		bytes key_update = 4; // branch_changes
-
+		uint64 leave_group = 5; // null
 		bytes drop_group = 10; // challenge
 	}
 }
@@ -116,6 +132,9 @@ message ProtectedPayloadTBS {
   }
   google.protobuf.Timestamp created = 4;
   repeated Payload payload = 5;
+
+  // GroupActionPayload group_action = 6;
+  // bytes content = 7;
 }
 
 // protected application layer message(decrypted Frame.protected_payload)
@@ -128,28 +147,31 @@ message ProtectedPayload {
 message ProtectedInviteData {
 	string group_id = 1;
 	uint64 epoch = 2;
+	bytes stage_key = 3;
 }
 
 // Invite for some identified user (Q_id, Q_spk)
 message IdentifiedInvite {
-	bytes identity_public_key = 1; // public key of invitor
-	bytes ephemeral_public_key = 2; // one-time ephemeral public key of invitor
-	bytes spk_public_key = 3; // spk public key of invitee
-	bytes protected_invite_data = 9; // encrypted on shared secret ProtectedInviteData
+	bytes identity_public_key = 1; // identity public key of invitee
+	bytes spk_public_key = 2; // spk public key of invitee
 }
 
 // Invite for unidentified user
 message UnidentifiedInvite {
-	bytes identity_public_key = 1; // public key of invitor
-	bytes ephemeral_public_key = 2; // one-time ephemeral public key of invitor
 	bytes private_key = 3; // private key of invitee
-	bytes protected_invite_data = 9; // encrypted on shared secret ProtectedInviteData
 }
 
-message Invite {
+message InviteTbs {
 	oneof invite {
 		IdentifiedInvite identified_invite = 1;
 		UnidentifiedInvite unidentified_invite = 2;
 	}
-	bytes signature = 5; // Sign(identity_public_key, invite.serialize())
+	bytes protected_invite_data = 9; // encrypted on shared secret ProtectedInviteData
+	bytes identity_public_key = 10; // public key of invitor
+	bytes ephemeral_public_key = 11; // one-time ephemeral public key of invitor
+}
+
+message Invite {
+	InviteTbs invite = 1;
+	bytes signature = 9; // Sign(identity_public_key, invite.serialize())
 }
