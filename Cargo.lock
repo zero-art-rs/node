@@ -5395,7 +5395,7 @@ dependencies = [
 
 [[package]]
 name = "zk-messenger-node"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "api",
  "chrono",
