@@ -47,6 +47,15 @@ async fn test_get_message() -> eyre::Result<()> {
 }
 
 #[tokio::test]
+async fn test_init_group() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_add_member() -> eyre::Result<()> {
     init_tracing_for_test();
 

@@ -250,6 +250,7 @@ async fn verification_middleware_inner(
                     get_opcode_and_input_for_drop_group(state.clone(), id).await?
                 }
             };
+            debug!("opcode and public_inputs retrieved successfully");
 
             Some(VerificationRequest {
                 opcode,
@@ -262,6 +263,8 @@ async fn verification_middleware_inner(
         }
         _ => return Err(VerificationError::UnknownEndpoint),
     };
+
+    debug!("send verification request to proof verifier ...");
 
     if let Some(verification_req) = verification_req {
         verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
@@ -280,6 +283,7 @@ async fn verification_middleware_inner(
 pub fn get_opcode_and_input_for_init_group(
     tbs_frame: &FrameTbs,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    debug!("get_opcode_and_input_for_init_group");
     let public_key = CortadoAffine::deserialize_uncompressed(&*tbs_frame.nonce)?;
 
     Ok((
@@ -296,6 +300,7 @@ pub async fn get_opcode_and_input_for_art_update(
     branch_changes_bytes: &Vec<u8>,
     epoch: Option<u64>,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    debug!("get_opcode_and_input_for_art_update");
     let branch_changes =
         BranchChanges::<CortadoAffine>::deserialize(branch_changes_bytes.as_slice())?;
 
@@ -387,6 +392,7 @@ pub async fn get_opcode_and_input_for_send_message(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    debug!("get_opcode_and_input_for_send_message");
     let art = state.art_service.get_art(id, None).await?.art;
 
     Ok((
@@ -401,6 +407,7 @@ pub async fn get_opcode_and_input_for_leave_group(
     id: Uuid,
     user_index: u64,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    debug!("get_opcode_and_input_for_leave_group");
     let art = state.art_service.get_art(id, None).await?.art;
     let leaf = art.get_node(&NodeIndex::from(user_index))?;
 
@@ -421,14 +428,17 @@ pub async fn verify(
     message: ProofVerifierMessage,
     proof_verifier_sender: &ProofVerifierSender,
 ) -> Result<(), VerificationError> {
+    debug!("verify");
     let verdict = match message {
         ProofVerifierMessage::ArtUpdate { .. } => {
+            debug!("Verify ArtUpdate");
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::ArtUpdate { verdict } => verdict,
                 _ => return Err(VerificationError::InvalidResultMessage),
             }
         }
         ProofVerifierMessage::SchnorrSignature { .. } => {
+            debug!("Verify SchnorrSignature");
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::SchnorrSignature { verdict } => verdict,
                 _ => return Err(VerificationError::InvalidResultMessage),
