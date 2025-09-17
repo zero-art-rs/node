@@ -1,30 +1,45 @@
+use std::marker::PhantomData;
 use bytes::{BufMut, BytesMut};
+use cortado::CortadoAffine;
 use mongodb::bson::Document;
 use prost::Message;
-use storage::{DataStorage, FrameStorage, MongoFramesStorage};
+use storage::{ARTStorage, DataStorage, FrameStorage, KeyStorage, MongoFramesStorage, SessionSupport};
 use tracing::debug;
-use types::{
-    FrameRecord,
-    errors::MessageServiceError,
-    protos::{Frame, SpFrame, SpFrames},
-};
+use types::{FrameRecord, errors::MessageServiceError, protos::{Frame, SpFrame, SpFrames}, ARTRecord, KeyRecord};
 use uuid::Uuid;
+use types::errors::ARTServiceError;
 
-pub struct MessengerService {}
+pub struct MessengerService<F, S> {
+    // art_storage_type: PhantomData<A>,
+    frame_storage_type: PhantomData<F>,
+    // key_storage_type: PhantomData<K>,
+    session_type: PhantomData<S>,
+}
 
-impl MessengerService {
+impl<F, S> MessengerService<F, S> {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
-impl Default for MessengerService {
+impl<F, S> Default for MessengerService<F, S> {
     fn default() -> Self {
-        Self::new()
+        Self {
+            frame_storage_type: Default::default(),
+            session_type: Default::default(),
+        }
     }
 }
 
-impl MessengerService {
+impl<F, S> MessengerService<F, S>
+where
+    // A: ARTStorage<Data = ARTRecord<CortadoAffine>, Session = S> + SessionSupport<A::Error, S>,
+    F: FrameStorage<Data = FrameRecord, Session = S> + SessionSupport<F::Error, S>,
+    // K: KeyStorage<Data = KeyRecord, Error = A::Error, Session = S> + SessionSupport<A::Error, S>,
+    // ARTServiceError: From<A::Error>,
+    // ARTServiceError: From<F::Error>,
+    MessageServiceError: From<F::Error>,
+{
     pub async fn send_message(
         &self,
         message: Vec<u8>,
@@ -33,7 +48,7 @@ impl MessengerService {
         outbox_only: bool,
     ) -> Result<(), MessageServiceError> {
         debug!("Store and send new message");
-        MongoFramesStorage::new(*id)
+        F::new(*id)
             .await?
             .store_message(message, epoch, outbox_only)
             .await?;
@@ -48,7 +63,7 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        let messages = MongoFramesStorage::new(*id)
+        let messages = F::new(*id)
             .await?
             .list(filter.clone(), None, limit, skip)
             .await?;
@@ -91,7 +106,7 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<u64, MessageServiceError> {
-        Ok(MongoFramesStorage::new(*id)
+        Ok(F::new(*id)
             .await?
             .count(filter, limit, skip)
             .await?)
@@ -102,7 +117,7 @@ impl MessengerService {
         id: &Uuid,
         filter: Document,
     ) -> Result<Vec<FrameRecord>, MessageServiceError> {
-        let result = MongoFramesStorage::new(*id).await?.delete(filter).await?;
+        let result = F::new(*id).await?.delete(filter).await?;
         Ok(result)
     }
 }

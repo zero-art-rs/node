@@ -10,6 +10,7 @@ use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
+use mongodb::ClientSession;
 use tokio::sync::RwLock;
 use tracing::debug;
 use types::errors::{ARTServiceError, ServiceError};
@@ -17,11 +18,12 @@ use types::protos::Frame;
 use types::protos::group_operation::Operation;
 use types::utils::decode_branch_changes;
 use uuid::Uuid;
+use storage::{MongoARTStorage, MongoFramesStorage, MongoKeysStorage};
 
 pub struct Container {
-    pub messenger_service: Arc<MessengerService>,
+    pub messenger_service: Arc<MessengerService<MongoFramesStorage, ClientSession>>,
     pub centrifugo_service: Arc<CentrifugoService>,
-    pub art_service: Arc<ARTService>,
+    pub art_service: Arc<ARTService<MongoARTStorage, MongoFramesStorage, MongoKeysStorage, ClientSession>>,
 
     pub proof_verifier_sender: ProofVerifierSender,
 

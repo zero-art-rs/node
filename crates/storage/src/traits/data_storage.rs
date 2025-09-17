@@ -2,6 +2,7 @@ use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
 use mongodb::{bson::Document, ClientSession, Collection};
+use mongodb::error::Error;
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::debug;
 
@@ -11,8 +12,9 @@ use tracing::debug;
 /// # Type Parameters
 /// * `D` - The type of documents stored in the MongoDB collection.  
 /// * `E` - The type of documents stored in the MongoDB collection.
+/// * `S` — The type representing a session handle.
 #[async_trait::async_trait]
-pub trait DataStorage<D, E>: Send + Sync {
+pub trait DataStorage<D, E, S>: Send + Sync {
     async fn list(
         &self,
         filter: Document,
@@ -25,19 +27,23 @@ pub trait DataStorage<D, E>: Send + Sync {
 
     async fn find_one(&self, filter: Document) -> Result<Option<D>, E>;
 
+    async fn find_one_and_replace(&self, filter: Document, replacement: D, session: Option<&mut S>) -> Result<Option<D>, E>;
+
     async fn insert_one(&self, record: D) -> Result<(), E>;
 
     async fn insert_many(&self, records: Vec<D>) -> Result<(), E>;
 
     async fn delete(&self, filter: Document) -> Result<Vec<D>, E>;
 
-    async fn clear(&self, session: &mut ClientSession) -> Result<(), E>;
+    async fn delete_one(&self, filter: Document, session: Option<&mut S>) -> Result<(), Error>;
+
+    async fn clear(&self, session: &mut S) -> Result<(), E>;
 
     async fn drop_collection(&self) -> Result<(), E>;
 
     async fn drop_collection_in_session(
         &self,
-        sesion: &mut ClientSession,
+        sesion: &mut S,
     ) -> Result<(), E>;
 
     async fn drop_collection_if_empty(&self) -> Result<(), E>;

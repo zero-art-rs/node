@@ -132,7 +132,7 @@ dependencies = [
  "bytes",
  "callbacks",
  "chrono",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "crypto",
  "curve25519-dalek",
  "eventsource-stream",
@@ -165,7 +165,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "validator",
- "zk 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "zk",
  "zkp",
 ]
 
@@ -383,6 +383,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "art"
 version = "0.1.1"
+source = "git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev#9ede04be0e96562752b65947ebb16fbf81bad69e"
 dependencies = [
  "ark-ec",
  "ark-ed25519",
@@ -390,7 +391,7 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "bulletproofs 5.0.0",
- "cortado 0.1.0",
+ "cortado",
  "criterion",
  "curve25519-dalek",
  "display_tree",
@@ -403,7 +404,7 @@ dependencies = [
  "thiserror 2.0.16",
  "tracing",
  "tracing-subscriber",
- "zk 0.1.0",
+ "zk",
  "zkp",
 ]
 
@@ -916,18 +917,6 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cortado"
 version = "0.1.0"
-dependencies = [
- "ark-algebra-test-templates",
- "ark-ec",
- "ark-ff",
- "ark-serialize",
- "ark-std",
- "curve25519-dalek",
-]
-
-[[package]]
-name = "cortado"
-version = "0.1.0"
 source = "git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev#9ede04be0e96562752b65947ebb16fbf81bad69e"
 dependencies = [
  "ark-algebra-test-templates",
@@ -1032,7 +1021,7 @@ version = "0.1.0"
 source = "git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev#9ede04be0e96562752b65947ebb16fbf81bad69e"
 dependencies = [
  "ark-serialize",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "hkdf",
  "rand 0.8.5",
  "rand_core 0.6.4",
@@ -2983,7 +2972,7 @@ dependencies = [
  "ark-serialize",
  "art",
  "bulletproofs 5.0.0",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "crypto",
  "eyre",
  "tokio",
@@ -2991,7 +2980,7 @@ dependencies = [
  "tracing",
  "types",
  "uuid",
- "zk 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "zk",
  "zkp",
 ]
 
@@ -3836,7 +3825,7 @@ dependencies = [
  "async-trait",
  "bson",
  "bytes",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "futures-util",
  "mongodb",
  "prost",
@@ -3975,7 +3964,7 @@ dependencies = [
  "bytes",
  "callbacks",
  "chrono",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "crypto",
  "curve25519-dalek",
  "eventsource-stream",
@@ -4008,7 +3997,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "validator",
- "zk 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "zk",
  "zkp",
 ]
 
@@ -4416,7 +4405,7 @@ dependencies = [
  "bson",
  "callbacks",
  "chrono",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "eyre",
  "hex",
  "mongodb",
@@ -5350,29 +5339,6 @@ dependencies = [
 [[package]]
 name = "zk"
 version = "0.1.0"
-dependencies = [
- "ark-ec",
- "ark-ed25519",
- "ark-ff",
- "ark-serialize",
- "ark-std",
- "bulletproofs 5.0.0",
- "chrono",
- "cortado 0.1.0",
- "curve25519-dalek",
- "hex",
- "merlin",
- "once_cell",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "tracing",
- "tracing-subscriber",
- "zkp",
-]
-
-[[package]]
-name = "zk"
-version = "0.1.0"
 source = "git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev#9ede04be0e96562752b65947ebb16fbf81bad69e"
 dependencies = [
  "ark-ec",
@@ -5382,7 +5348,7 @@ dependencies = [
  "ark-std",
  "bulletproofs 5.0.0",
  "chrono",
- "cortado 0.1.0 (git+ssh://git@github.com/zk-messenger/project-m.git?branch=art-dev)",
+ "cortado",
  "curve25519-dalek",
  "hex",
  "merlin",

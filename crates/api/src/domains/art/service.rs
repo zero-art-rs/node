@@ -16,35 +16,49 @@ use types::utils::{decode_art, decode_branch_changes};
 use crate::MessengerService;
 #[cfg(not(feature = "art_modifications"))]
 use art::types::ARTNode;
-use mongodb::ClientSession;
 use mongodb::error::Error;
 use prost::Message;
 use types::protos::Frame;
 
-pub struct ARTService {}
+pub struct ARTService<A, F, K, S> {
+    art_storage_type: PhantomData<A>,
+    frame_storage_type: PhantomData<F>,
+    key_storage_type: PhantomData<K>,
+    session_type: PhantomData<S>,
+}
 
-impl ARTService {
+impl<A, F, K, S> ARTService<A, F, K, S> {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
-impl Default for ARTService {
+impl<A, F, K, S> Default for ARTService<A, F, K, S> {
     fn default() -> Self {
-        Self::new()
+        Self {
+            art_storage_type: Default::default(),
+            frame_storage_type: Default::default(),
+            key_storage_type: Default::default(),
+            session_type: Default::default(),
+        }
     }
 }
 
-impl ARTService
-// where
-//     S: ARTStorage + DataStorage
+impl<A, F, K, S> ARTService<A, F, K, S>
+where
+    A: ARTStorage<Data = ARTRecord<CortadoAffine>, Session = S> + SessionSupport<A::Error, S>,
+    F: FrameStorage<Data = FrameRecord, Error = A::Error, Session = S> + SessionSupport<A::Error, S>,
+    K: KeyStorage<Data = KeyRecord, Error = A::Error, Session = S> + SessionSupport<A::Error, S>,
+    ARTServiceError: From<A::Error>,
+    ARTServiceError: From<F::Error>,
+    ARTServiceError: From<K::Error>,
 {
     pub async fn get_art(
         &self,
         id: Uuid,
         epoch: Option<u64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let arts_storage = MongoARTStorage::new().await?;
+        let arts_storage = A::new().await?;
         let record = match epoch {
             Some(epoch) => self.get_art_by_epoch(id, epoch).await?,
             None => arts_storage
@@ -65,7 +79,7 @@ impl ARTService
             "Retrieving previous art for sequence_number: {}",
             epoch.unwrap_or(0)
         );
-        let arts_storage = MongoARTStorage::new().await?;
+        let arts_storage = A::new().await?;
         let previous_epoch = arts_storage.get_current_epoch(&id).await?;
 
         let previous_art = match epoch {
@@ -107,7 +121,7 @@ impl ARTService
         let limit = types::DEFAULT_LIMIT;
         let mut skip = 0;
 
-        let mut records = MongoFramesStorage::new(id)
+        let mut records = F::new(id)
             .await?
             .list(doc! {"epoch": epoch as i64}, None, limit, skip)
             .await?;
@@ -123,7 +137,7 @@ impl ARTService
             }
             skip += types::DEFAULT_LIMIT;
 
-            records = MongoFramesStorage::new(id)
+            records = F::new(id)
                 .await?
                 .list(doc! {"epoch": epoch as i64}, None, limit, skip)
                 .await?;
@@ -162,7 +176,7 @@ impl ARTService
         id: &Uuid,
         epoch: u64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let message_storage = MongoFramesStorage::new(*id).await?;
+        let message_storage = F::new(*id).await?;
 
         let art_record = self.get_initial_art(id).await?;
         let mut initial_art = art_record.art;
@@ -227,7 +241,7 @@ impl ARTService
     }
 
     pub async fn get_current_epoch(&self, id: Uuid) -> Result<u64, ARTServiceError> {
-        let current_epoch = MongoARTStorage::new().await?.get_current_epoch(&id).await?;
+        let current_epoch = A::new().await?.get_current_epoch(&id).await?;
 
         Ok(current_epoch)
     }
@@ -236,7 +250,7 @@ impl ARTService
         &self,
         chat_id: &Uuid,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let arts_storage = MongoARTStorage::new().await?;
+        let arts_storage = A::new().await?;
         match arts_storage.get_initial_art(*chat_id).await? {
             Some(record) => Ok(record),
             None => {
@@ -248,32 +262,27 @@ impl ARTService
 
     pub async fn delete_chat(&self, id: &Uuid) -> Result<(), ARTServiceError> {
         debug!("Deleting chat: {}...", id);
-        let arts_storage = MongoARTStorage::new().await?;
-        let keys_storage = MongoKeysStorage::new().await?;
-        let frame_storage = MongoFramesStorage::new(*id).await?;
+        let arts_storage = A::new().await?;
+        let keys_storage = K::new().await?;
+        let frame_storage = F::new(*id).await?;
 
         if arts_storage.get_art(*id).await?.is_none() {
             error!("No art found for chat: {id}");
             return Err(ARTServiceError::NotFound);
         }
 
-        // let mut session = arts_storage.start_session().await?;
-        let mut session = arts_storage.arts_collection.client().start_session().await?;
-        // MongoARTStorage::start_transaction(&mut session).await?;
-        session.start_transaction().await?;
+        let mut session = arts_storage.start_session().await?;
+        A::start_transaction(&mut session).await?;
 
         arts_storage.delete_group(&mut session, *id).await?;
         keys_storage
-            .keys_collection
-            .delete_one(doc! {"chat_id": id})
-            .session(&mut session)
+            .delete_one(doc! {"chat_id": id}, Some(&mut session))
             .await?;
 
-        // MongoARTStorage::commit_transaction(&mut session).await?;
-        session.commit_transaction().await?;
+        A::commit_transaction(&mut session).await?;
 
         arts_storage.drop_collection_if_empty().await?;
-        frame_storage.messages_collection.drop().await?;
+        frame_storage.drop_collection_if_empty().await?;
 
         debug!("Deletion is successful");
 
@@ -306,8 +315,8 @@ impl ARTService
             }
         };
 
-        let arts_storage = MongoARTStorage::new().await?;
-        MongoKeysStorage::new()
+        let arts_storage = A::new().await?;
+        K::new()
             .await?
             .insert_one(KeyRecord {
                 owner_public_key: owner_id_pub_key,
@@ -321,16 +330,13 @@ impl ARTService
         }
         debug!("Group {} isn't created yet.", id);
 
-        // let mut session = arts_storage.start_session().await?;
-        let mut session = arts_storage.arts_collection.client().start_session().await?;
+        let mut session = arts_storage.start_session().await?;
 
-        // MongoARTStorage::start_transaction(&mut session).await?;
-        session.start_transaction().await?;
+        A::start_transaction(&mut session).await?;
         arts_storage
             .new_group(&mut session, art, id, is_private)
             .await?;
-        // MongoARTStorage::commit_transaction(&mut session).await?;
-        session.commit_transaction().await?;
+        A::commit_transaction(&mut session).await?;
 
         debug!("Successfully created new group with id: {id}");
 
@@ -342,7 +348,7 @@ impl ARTService
         chat_id: Uuid,
         changes: &BranchChanges<ARTGroup>,
     ) -> Result<(), ARTServiceError> {
-        let arts_storage = MongoARTStorage::new().await?;
+        let arts_storage = A::new().await?;
 
         let latest_art = arts_storage.get_art(chat_id).await?.ok_or(ARTServiceError::NotFound)?;
         if latest_art.is_private {
@@ -353,30 +359,27 @@ impl ARTService
         }
 
         let mut session = arts_storage.start_session().await?;
-        // let mut session = arts_storage.arts_collection.client().start_session().await?;
-        MongoARTStorage::start_transaction(&mut session).await?;
-        // session.start_transaction().await?;
+        A::start_transaction(&mut session).await?;
         self
             .update_art_in_session(&mut session, changes.clone(), chat_id)
             .await?;
-        MongoARTStorage::commit_transaction(&mut session).await?;
-        // session.commit_transaction().await?;
+        A::commit_transaction(&mut session).await?;
 
         Ok(())
     }
 
     pub async fn update_art_in_session(
         &self,
-        session: &mut ClientSession,
+        session: &mut S,
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
     ) -> Result<(), ARTServiceError> {
         let filter = doc! { "chat_id": chat_id };
 
-        let arts_storage = MongoARTStorage::new().await?;
+        let arts_storage = A::new().await?;
 
         debug!("Updating art for chat: {}", chat_id);
-        if let Some(mut art_record) = arts_storage.arts_collection.find_one(filter.clone()).await? {
+        if let Some(mut art_record) = arts_storage.find_one(filter.clone()).await? {
             art_record
                 .art
                 .update_public_art(&changes)?;
@@ -388,9 +391,8 @@ impl ARTService
                 &art_record.art.root.public_key.x
             );
 
-            arts_storage.arts_collection
-                .find_one_and_replace(filter, art_record)
-                .session(session)
+            arts_storage
+                .find_one_and_replace(filter, art_record, Some(&mut *session))
                 .await?;
         } else {
             error!("Art not found");
@@ -436,7 +438,7 @@ impl ARTService
         change: BranchChanges<CortadoAffine>,
         new_epoch: u64,
     ) -> Result<(), ARTServiceError> {
-        let arts_storage = MongoARTStorage::new().await?;
+        let arts_storage = A::new().await?;
 
         // let latest_art = arts_storage.get_art(id).await?;
         let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;

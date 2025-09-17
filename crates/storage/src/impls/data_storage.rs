@@ -8,7 +8,7 @@ use mongodb::error::Error;
 use serde::de::DeserializeOwned;
 
 #[async_trait::async_trait]
-impl<M, D> DataStorage<D, Error> for M
+impl<M, D> DataStorage<D, Error, ClientSession> for M
 where
     M: MongoDataStorage<D>,
     D: Send + Sync + Serialize + DeserializeOwned + 'static,
@@ -54,6 +54,17 @@ where
         Ok(cursor)
     }
 
+    async fn find_one_and_replace(&self, filter: Document, replacement: D, session: Option<&mut ClientSession>) -> Result<Option<D>, Error> {
+        let cursor = self.get_collection().await.find_one_and_replace(filter, replacement);
+        
+        let cursor = match session {
+            Some(session) => cursor.session(session).await?,
+            None => cursor.await?, 
+        };
+
+        Ok(cursor)
+    }
+
     async fn insert_one(&self, record: D) -> Result<(), Error> {
         self.get_collection().await.insert_one(record).await?;
 
@@ -78,6 +89,17 @@ where
         collection.delete_many(filter).await?;
 
         Ok(records)
+    }
+
+    async fn delete_one(&self, filter: Document, session: Option<&mut ClientSession>) -> Result<(), Error> {
+        let delete_one_request = self.get_collection().await.delete_one(filter);
+
+        match session {
+            Some(session) => delete_one_request.session(session).await?,
+            None => delete_one_request.await?,
+        };
+
+        Ok(())
     }
 
     async fn clear(&self, session: &mut ClientSession) -> Result<(), Error> {

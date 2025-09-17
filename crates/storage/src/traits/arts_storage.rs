@@ -25,7 +25,7 @@ use crate::traits::session_support::SessionSupport;
 ///   A database session or transaction handle, used to group operations
 ///   into a consistent context.
 #[async_trait::async_trait]
-pub trait ARTStorage: DataStorage<Self::Data, Self::Error> + Send + Sync + Sized {
+pub trait ARTStorage: DataStorage<Self::Data, Self::Error, Self::Session> + Send + Sync + Sized {
     type Data;
     type Session;
     type Error;
