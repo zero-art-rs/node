@@ -1,0 +1,49 @@
+name: Build and Push Image
+
+on:
+  push:
+    tags:
+    - 'v?[0-9]+.[0-9]+.[0-9]+'
+    - 'v?[0-9]+.[0-9]+.[0-9]+-[0-9]+'
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+  CACHE_REPO: ghcr.io/${{ github.repository }}/cache
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Buildah
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install buildah
+
+      - name: SSH AUTH 
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | buildah login ghcr.io -u ${{ github.repository_owner }} --password-stdin               
+
+      - name: Build Image
+        run: |
+          buildah bud \
+          --ssh default=$SSH_AUTH_SOCK \
+          --layers \
+          --cache-from $CACHE_REPO \
+          --cache-to $CACHE_REPO \
+          -t $IMAGE_NAME .
+
+      - name: Push Image (tag)
+        run: |
+          buildah push $IMAGE_NAME

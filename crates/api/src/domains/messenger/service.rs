@@ -4,7 +4,7 @@ use cortado::CortadoAffine;
 use mongodb::bson::Document;
 use prost::Message;
 use storage::{ARTStorage, DataStorage, FrameStorage, KeyStorage, MongoFramesStorage, SessionSupport};
-use tracing::debug;
+use tracing::{debug, trace};
 use types::{FrameRecord, errors::MessageServiceError, protos::{Frame, SpFrame, SpFrames}, ARTRecord, KeyRecord};
 use uuid::Uuid;
 use types::errors::ARTServiceError;
@@ -63,23 +63,25 @@ where
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        let messages = F::new(*id)
+        trace!("List messages...");
+        let frame_records = F::new(*id)
             .await?
             .list(filter.clone(), None, limit, skip)
             .await?;
 
-        if messages.is_empty() {
-            debug!("No messages found for filter {}", &filter);
+        if frame_records.is_empty() {
+            debug!("No records found for filter {}", &filter);
         } else {
             debug!(
-                "Found {} messages for the filter {}",
-                messages.len(),
+                "Found {} records for the filter {}",
+                frame_records.len(),
                 &filter
             );
         }
 
         let mut sp_frames = SpFrames { sp_frames: vec![] };
-        for message in &messages {
+        trace!("Retrieve sp_frames from frame_records");
+        for message in &frame_records {
             let mut frame_buf = BytesMut::new();
             frame_buf.put(&*message.content);
 
@@ -94,6 +96,7 @@ where
         }
 
         let mut sp_frames_buf = BytesMut::new();
+        trace!("Encode sp_frames...");
         sp_frames.encode(&mut sp_frames_buf)?;
 
         Ok(sp_frames_buf)

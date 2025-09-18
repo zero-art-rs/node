@@ -153,6 +153,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "serde_with",
+ "sha3",
  "storage",
  "tokio",
  "tokio-util",
@@ -3985,6 +3986,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "serde_with",
+ "sha3",
  "storage",
  "tokio",
  "tokio-util",
@@ -5362,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "zk-messenger-node"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "api",
  "chrono",

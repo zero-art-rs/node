@@ -1,13 +1,16 @@
 use art::traits::ARTPublicAPI;
-use art::types::{BranchChanges, BranchChangesType, PublicART};
+use art::types::{BranchChanges, BranchChangesType,NodeIndex, PublicART};
 use bytes::{BufMut, BytesMut};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
-use storage::{ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage, MongoKeysStorage, StorageError, KeyStorage, SessionSupport};
-use tracing::{debug, error};
+use storage::{
+    ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
+    MongoKeysStorage, StorageError, KeyStorage, SessionSupport
+};
 use types::{ARTRecord, KeyRecord, protos, FrameRecord};
+use tracing::{debug, error, trace};
 use uuid::Uuid;
 
 use types::errors::{ARTServiceError, MessageServiceError};
@@ -58,6 +61,7 @@ where
         id: Uuid,
         epoch: Option<u64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        trace!("Create ARTStorage");
         let arts_storage = A::new().await?;
         let record = match epoch {
             Some(epoch) => self.get_art_by_epoch(id, epoch).await?,
@@ -68,43 +72,6 @@ where
         };
 
         Ok(record)
-    }
-
-    pub async fn get_previous_art(
-        &self,
-        id: Uuid,
-        epoch: Option<u64>,
-    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        debug!(
-            "Retrieving previous art for sequence_number: {}",
-            epoch.unwrap_or(0)
-        );
-        let arts_storage = A::new().await?;
-        let previous_epoch = arts_storage.get_current_epoch(&id).await?;
-
-        let previous_art = match epoch {
-            Some(epoch) => {
-                if epoch < 1 {
-                    error!(
-                        "Art sequence_number can't be less than 1, because there is no way to verify the given proof."
-                    );
-                    return Err(ARTServiceError::NoPreviousRecord);
-                }
-
-                if previous_epoch < epoch {
-                    error!(
-                        "Given sequence_number ({}) is to big (max: {}). There is no way to verify the given proof.",
-                        epoch, previous_epoch
-                    );
-                    return Err(ARTServiceError::NotFound);
-                }
-
-                self.get_art_by_epoch(id, epoch - 1).await?
-            }
-            None => self.get_art_by_epoch(id, previous_epoch - 1).await?,
-        };
-
-        Ok(previous_art)
     }
 
     pub fn extract_branch_changes(
@@ -318,10 +285,12 @@ where
         let arts_storage = A::new().await?;
         K::new()
             .await?
-            .insert_one(KeyRecord {
-                owner_public_key: owner_id_pub_key,
-                chat_id: id,
-            })
+            .insert_one(
+                KeyRecord {
+                    owner_public_key: owner_id_pub_key,
+                    chat_id: id,
+                },
+            )
             .await?;
 
         debug!("Check if ART for group {} already exists...", id);
@@ -364,6 +333,24 @@ where
             .update_art_in_session(&mut session, changes.clone(), chat_id)
             .await?;
         A::commit_transaction(&mut session).await?;
+
+        Ok(())
+    }
+
+    pub async fn mark_as_removed(&self, id: Uuid, index: u64) -> Result<(), ARTServiceError> {
+        let arts_storage = A::new().await?;
+        let mut art_record = arts_storage.get_art(id).await?;
+        art_record
+            .art
+            .get_mut_node(&NodeIndex::from(index))?
+            .is_blank = true;
+
+        // art_record.epoch += 1;
+
+        debug!(
+            "User with index {index} marked himself as removed",
+        );
+        arts_storage.replace_art(id, art_record).await?;
 
         Ok(())
     }

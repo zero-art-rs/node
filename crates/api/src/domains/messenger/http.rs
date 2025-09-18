@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use bytes::{Bytes, BytesMut};
 use mongodb::bson::doc;
 use std::sync::Arc;
-use tracing::instrument;
+use tracing::{instrument, trace};
 use types::errors::ApiError;
 use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery};
 use types::protos::{Frame, SpFrames};
@@ -60,15 +60,18 @@ pub async fn list_messages(
     Path(id): Path<Uuid>,
     Query(payload): Query<GetMessageQuery>,
 ) -> Result<(StatusCode, BytesMut), ApiError> {
+    trace!("Validate payload");
     payload.validate()?;
 
     let mut filter = doc! {};
 
     if let Some(sequence_number) = payload.message_sequence_number {
+        trace!("Append sequence_number: {}, to filter", sequence_number);
         filter.insert("sequence_number", doc! { "$gte": sequence_number });
     }
 
     if let Some(epoch) = payload.epoch {
+        trace!("Append epoch: {}, to filter", epoch);
         filter.insert("epoch", doc! { "$gte": epoch as i64 });
     }
 
@@ -100,18 +103,22 @@ pub async fn count_messages(
     Path(id): Path<Uuid>,
     Query(payload): Query<CountMessagesQuery>,
 ) -> Result<(StatusCode, Json<u64>), ApiError> {
+    trace!("Validate payload");
     payload.validate()?;
 
     let mut filter = doc! {};
 
     if let Some(sequence_number) = payload.message_sequence_number {
+        trace!("Append sequence_number: {}, to filter", sequence_number);
         filter.insert("sequence_number", doc! { "$gte": sequence_number });
     }
 
     if let Some(epoch) = payload.epoch {
+        trace!("Append epoch: {}, to filter", epoch);
         filter.insert("epoch", doc! { "$gte": epoch });
     }
 
+    trace!("Count messages...");
     let count = state
         .messenger_service
         .count_messages(&id, filter.clone(), payload.limit, payload.skip)

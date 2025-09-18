@@ -3,6 +3,9 @@ name = "api"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+path = "src/lib.rs"
+
 [features]
 merge_changes = []
 art_modifications = []
@@ -47,6 +50,7 @@ callbacks = { path = "../callback" }
 prost = { workspace = true }
 bytes = { workspace = true }
 prost-types = { workspace = true }
+sha3 = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json", "stream"] }

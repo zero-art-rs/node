@@ -8,6 +8,8 @@ autoexamples = false
 autotests = false
 build = "build.rs"
 
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
 serde = { workspace = true }
