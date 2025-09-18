@@ -50,7 +50,7 @@ jobs:
   
   deploy:
     name: Deploy
-    needs: converge
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Add kubeconfig and update image
