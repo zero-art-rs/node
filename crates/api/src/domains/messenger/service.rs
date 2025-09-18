@@ -2,7 +2,7 @@ use bytes::{BufMut, BytesMut};
 use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
-use tracing::debug;
+use tracing::{debug, trace};
 use types::{
     FrameRecord,
     errors::MessageServiceError,
@@ -48,23 +48,25 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        let messages = MongoFramesStorage::new(chat_id)
+        trace!("List messages...");
+        let frame_records = MongoFramesStorage::new(chat_id)
             .await?
             .list(filter.clone(), None, limit, skip)
             .await?;
 
-        if messages.is_empty() {
-            debug!("No messages found for filter {}", &filter);
+        if frame_records.is_empty() {
+            debug!("No records found for filter {}", &filter);
         } else {
             debug!(
-                "Found {} messages for the filter {}",
-                messages.len(),
+                "Found {} records for the filter {}",
+                frame_records.len(),
                 &filter
             );
         }
 
         let mut sp_frames = SpFrames { sp_frames: vec![] };
-        for message in &messages {
+        trace!("Retrieve sp_frames from frame_records");
+        for message in &frame_records {
             let mut frame_buf = BytesMut::new();
             frame_buf.put(&*message.content);
 
@@ -79,6 +81,7 @@ impl MessengerService {
         }
 
         let mut sp_frames_buf = BytesMut::new();
+        trace!("Encode sp_frames...");
         sp_frames.encode(&mut sp_frames_buf)?;
 
         Ok(sp_frames_buf)

@@ -8,7 +8,7 @@ use storage::{
     ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
     MongoKeysStorage, StorageError,
 };
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 use types::{ARTRecord, KeyRecord, protos};
 use uuid::Uuid;
 
@@ -40,6 +40,7 @@ impl ARTService {
         id: Uuid,
         epoch: Option<u64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        trace!("Create MongoARTStorage");
         let arts_storage = MongoARTStorage::new().await?;
         let record = match epoch {
             Some(epoch) => self.get_art_by_epoch(id, epoch).await?,
@@ -50,43 +51,6 @@ impl ARTService {
         };
 
         Ok(record)
-    }
-
-    pub async fn get_previous_art(
-        &self,
-        id: Uuid,
-        epoch: Option<u64>,
-    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        debug!(
-            "Retrieving previous art for sequence_number: {}",
-            epoch.unwrap_or(0)
-        );
-        let arts_storage = MongoARTStorage::new().await?;
-        let previous_epoch = arts_storage.get_current_epoch(&id).await?;
-
-        let previous_art = match epoch {
-            Some(epoch) => {
-                if epoch < 1 {
-                    error!(
-                        "Art sequence_number can't be less than 1, because there is no way to verify the given proof."
-                    );
-                    return Err(ARTServiceError::NoPreviousRecord);
-                }
-
-                if previous_epoch < epoch {
-                    error!(
-                        "Given sequence_number ({}) is to big (max: {}). There is no way to verify the given proof.",
-                        epoch, previous_epoch
-                    );
-                    return Err(ARTServiceError::NotFound);
-                }
-
-                self.get_art_by_epoch(id, epoch - 1).await?
-            }
-            None => self.get_art_by_epoch(id, previous_epoch - 1).await?,
-        };
-
-        Ok(previous_art)
     }
 
     pub async fn get_art_by_epoch(

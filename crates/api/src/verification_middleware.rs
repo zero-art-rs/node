@@ -16,8 +16,7 @@ use proof_verifier::verifier_engine::*;
 use prost::Message;
 use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage};
-use tracing::{debug, error};
-use tracing::field::debug;
+use tracing::{debug, error, trace};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
@@ -72,23 +71,33 @@ async fn verification_middleware_inner(
     );
 
     let (parts, body) = request.into_parts();
+    trace!("Try to parse bytes into body...");
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
     let query = parts.uri.query();
 
+    trace!("Match route_id");
     let verification_req = match route_id {
         "authenticate" => {
+            trace!("Retrieve payload from bytes...");
             let Json(payload) = Json::<AuthRequest>::from_bytes(&bytes)?;
 
             if payload.chat_ids.len() != payload.epochs.len() {
+                error!(
+                    "The len of ids and epochs must be the same, but provided {} and {}",
+                    payload.chat_ids.len(),
+                    payload.epochs.len()
+                );
                 return Err(VerificationError::InvalidInput);
             }
 
             let mut root_keys = Vec::new();
+            trace!("Retrieve root keys for requested arts");
             for (chat_id, epoch) in payload.chat_ids.iter().zip(payload.epochs.iter()) {
                 let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
                 root_keys.push(art.get_root().public_key);
             }
+            trace!("Successfully retrieved {} root keys", root_keys.len());
 
             Some(VerificationRequest {
                 opcode: VerificationOpcode::AuthRequest,
@@ -102,12 +111,16 @@ async fn verification_middleware_inner(
             })
         }
         "list_messages" | "count_messages" => {
+            trace!("Try to retrieve query...");
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
+            trace!("Try to parse path parameters...");
             let Path(chat_id) =
                 Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+            trace!("Try to get payload...");
             let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
 
+            trace!("Try to get art...");
             let art = state
                 .art_service
                 .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
@@ -132,21 +145,23 @@ async fn verification_middleware_inner(
             })
         }
         "get_art" => {
+            trace!("Try to retrieve query...");
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
+            trace!("Try to parse path parameters...");
             let Path((chat_id, epoch)) =
                 Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
+
+            trace!("Try to get payload...");
             let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
+            trace!("Try to get art...");
             let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
 
-            let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)
-                .unwrap_or_else(|_| {
-                    error!("Failed to deserialize public key");
-                    CortadoAffine::default()
-                });
+            trace!("Try to deserialize public key...");
+            let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)?;
 
-            debug!("Check provided public key is in art");
+            debug!("Check if provided public key is in art...");
             match ProofMode::try_from(payload.proof_mode.as_str())? {
                 ProofMode::UseLeafKey => {
                     let mut public_key_is_wrong = true;
@@ -194,33 +209,40 @@ async fn verification_middleware_inner(
             })
         }
         "send_frame" => {
+            trace!("Try to retrieve path data...");
             let Path(id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
-            let frame = Frame::decode(bytes.clone())?;
 
+            trace!("Try to decode frame...");
+            let frame = Frame::decode(bytes.clone())?;
+            trace!("Successfully decoded frame");
+
+            trace!("Try to take tbs_frame...");
             let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
+            trace!("Successfully took tbs_frame");
 
             if tbs_frame.group_id != id.to_string() {
                 error!("Group ID mismatch");
                 return Err(VerificationError::InvalidInput);
             }
 
+            trace!("Compute associated_data...");
             let mut buf = BytesMut::new();
             tbs_frame.encode(&mut buf).unwrap();
             let associated_data = Sha3_256::digest(buf.to_vec()).to_vec();
+
 
             let operation = match &tbs_frame.group_operation {
                 None => None,
                 Some(val) => val.operation.as_ref(),
             };
 
-            debug!("try to get_epoch ...");
+            trace!("try to get_epoch ...");
             // Check if epoch is nor decreasing nor to big
             let current_epoch = MongoARTStorage::new()
                 .await?
                 .get_current_epoch(&id)
                 .await.unwrap_or(0);
-
-            debug!("try to get_epoch");
+            trace!("Epoch received successfully");
 
             if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
                 error!(
@@ -269,13 +291,13 @@ async fn verification_middleware_inner(
         _ => return Err(VerificationError::UnknownEndpoint),
     };
 
-    debug!("send verification request to proof verifier ...");
+    trace!("send verification request to proof verifier ...");
 
     if let Some(verification_req) = verification_req {
         verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
     }
 
-    debug!("verification completed successfully");
+    trace!("Verification completed successfully. Run next layer...");
 
     Ok(next
         .run(Request::from_parts(
@@ -397,8 +419,11 @@ pub async fn get_opcode_and_input_for_send_message(
     state: Arc<Container>,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    debug!("get_opcode_and_input_for_send_message");
+    trace!("get_opcode_and_input_for_send_message");
+
+    trace!("Try to get ART from storage...");
     let art = state.art_service.get_art(id, None).await?.art;
+    trace!("ART retrieved");
 
     Ok((
         VerificationOpcode::SendMessage,
@@ -407,18 +432,27 @@ pub async fn get_opcode_and_input_for_send_message(
         },
     ))
 }
+
 pub async fn get_opcode_and_input_for_leave_group(
     state: Arc<Container>,
     id: Uuid,
     user_index: u64,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     debug!("get_opcode_and_input_for_leave_group");
+
+    trace!("Try to get ART from storage...");
     let art = state.art_service.get_art(id, None).await?.art;
+    trace!("ART retrieved");
+
+    trace!("Try to get leaf in art...");
     let leaf = art.get_node(&NodeIndex::from(user_index))?;
 
+    trace!("Node retrieved. Check if it is a leaf...");
     if !leaf.is_leaf() {
+        error!("Provided index {} points on non leaf node", user_index);
         return Err(VerificationError::InvalidInput);
     }
+    trace!("Provided index is leaf");
 
     Ok((
         VerificationOpcode::LeaveGroup,
@@ -433,17 +467,16 @@ pub async fn verify(
     message: ProofVerifierMessage,
     proof_verifier_sender: &ProofVerifierSender,
 ) -> Result<(), VerificationError> {
-    debug!("verify");
     let verdict = match message {
         ProofVerifierMessage::ArtUpdate { .. } => {
-            debug!("Verify ArtUpdate");
+            trace!("Try to Verify ArtUpdate...");
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::ArtUpdate { verdict } => verdict,
                 _ => return Err(VerificationError::InvalidResultMessage),
             }
         }
         ProofVerifierMessage::SchnorrSignature { .. } => {
-            debug!("Verify SchnorrSignature");
+            trace!("try to Verify SchnorrSignature...");
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::SchnorrSignature { verdict } => verdict,
                 _ => return Err(VerificationError::InvalidResultMessage),
