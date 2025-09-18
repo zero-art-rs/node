@@ -155,6 +155,8 @@ async fn verification_middleware_inner(
             trace!("Try to get payload...");
             let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
+            debug!("Received GetArtQuery: {:?}", payload);
+
             trace!("Try to get art...");
             let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
 
