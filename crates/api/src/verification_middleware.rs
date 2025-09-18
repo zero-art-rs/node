@@ -1,7 +1,7 @@
 use crate::Container;
 use ark_serialize::CanonicalDeserialize;
 use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::{BranchChanges, BranchChangesType, Direction, LeafIterWithPath, NodeIndex};
+use art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, LeafIterWithPath, NodeIndex};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::middleware::Next;
@@ -165,7 +165,7 @@ async fn verification_middleware_inner(
             match ProofMode::try_from(payload.proof_mode.as_str())? {
                 ProofMode::UseLeafKey => {
                     let mut public_key_is_wrong = true;
-                    for (node, _) in LeafIterWithPath::new(art.get_root()) {
+                    for node in LeafIter::new(art.get_root()) {
                         if node.public_key.eq(&public_key) {
                             public_key_is_wrong = false;
                         }
@@ -185,8 +185,6 @@ async fn verification_middleware_inner(
                     }
                 }
             }
-
-            debug!("Check if provided public key is correct");
 
             // Context for verification
             let mut msg = Vec::new();
@@ -467,6 +465,7 @@ pub async fn verify(
     message: ProofVerifierMessage,
     proof_verifier_sender: &ProofVerifierSender,
 ) -> Result<(), VerificationError> {
+    debug!("Provided ProofVerifierMessage{:?}", message);
     let verdict = match message {
         ProofVerifierMessage::ArtUpdate { .. } => {
             trace!("Try to Verify ArtUpdate...");
