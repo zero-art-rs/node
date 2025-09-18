@@ -47,3 +47,15 @@ jobs:
       - name: Push Image (tag)
         run: |
           buildah push $IMAGE_NAME
+  
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add kubeconfig and update image
+        run: |
+          mkdir ~/.kube/
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > config
+          mv config ~/.kube/
+          kubectl set image deployment/zk-messenger-node node=$IMAGE_NAME -n zk-messenger
