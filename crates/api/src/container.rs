@@ -2,28 +2,29 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
-use ark_serialize::CanonicalDeserialize;
 use art::types::BranchChangesType;
 use axum::body::Bytes;
 use axum::http::StatusCode;
+use mongodb::ClientSession;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
-use mongodb::ClientSession;
-use tokio::sync::RwLock;
-use tracing::debug;
-use types::errors::{ARTServiceError, ServiceError};
-use types::protos::Frame;
-use types::protos::group_operation::Operation;
-use types::utils::decode_branch_changes;
-use uuid::Uuid;
 use storage::{MongoARTStorage, MongoFramesStorage, MongoKeysStorage};
+use tokio::sync::RwLock;
+use types::{
+    errors::{ARTServiceError, ServiceError},
+    protos::Frame,
+    protos::group_operation::Operation,
+    utils::decode_branch_changes,
+};
+use uuid::Uuid;
 
 pub struct Container {
     pub messenger_service: Arc<MessengerService<MongoFramesStorage, ClientSession>>,
     pub centrifugo_service: Arc<CentrifugoService>,
-    pub art_service: Arc<ARTService<MongoARTStorage, MongoFramesStorage, MongoKeysStorage, ClientSession>>,
+    pub art_service:
+        Arc<ARTService<MongoARTStorage, MongoFramesStorage, MongoKeysStorage, ClientSession>>,
 
     pub proof_verifier_sender: ProofVerifierSender,
 
@@ -73,7 +74,11 @@ impl Container {
         Ok(response)
     }
 
-    pub async fn handle_self_removal(&self, id: Uuid, index: u64) -> Result<StatusCode, ServiceError> {
+    pub async fn handle_self_removal(
+        &self,
+        id: Uuid,
+        index: u64,
+    ) -> Result<StatusCode, ServiceError> {
         self.art_service.mark_as_removed(id, index).await?;
 
         Ok(StatusCode::OK)
@@ -95,7 +100,9 @@ impl Container {
         match new_epoch {
             e if e == current_epoch => {
                 // resolve merge conflict
-                self.art_service.merge_change(id, branch_changes.clone(), new_epoch).await?;
+                self.art_service
+                    .merge_change(id, branch_changes.clone(), new_epoch)
+                    .await?;
             }
             e if e == current_epoch + 1 => {
                 // update art and increment epoch

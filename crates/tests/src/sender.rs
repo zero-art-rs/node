@@ -1,29 +1,42 @@
-use std::rc::Rc;
+use crate::utils::CentrifugoTokenResponse;
 use art::types::PublicART;
 use axum_test::{TestResponse, TestServer};
 use bytes::{Bytes, BytesMut};
 use cortado::CortadoAffine;
 use hyper::StatusCode;
 use prost::Message;
-use uuid::Uuid;
+use std::rc::Rc;
 use types::art_schemas::{ChallengeResponse, GetARTQuery, GetARTResponse};
 use types::centrifugo_schemas::AuthRequest;
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, SpFrames};
-use crate::utils::CentrifugoTokenResponse;
+use uuid::Uuid;
 
 /// Trait for Sending requests from UserTestModel
 pub(crate) trait Sender: Clone {
     /// returns response from the server and the message, which was sent
-    async fn send_frame(&self, frame: Frame, id: Uuid, check_status_code: Option<StatusCode>) -> eyre::Result<Vec<u8>>;
+    async fn send_frame(
+        &self,
+        frame: Frame,
+        id: Uuid,
+        check_status_code: Option<StatusCode>,
+    ) -> eyre::Result<Vec<u8>>;
 
-    async fn get_centrifugo_token(&self, request: AuthRequest) -> eyre::Result<CentrifugoTokenResponse>;
+    async fn get_centrifugo_token(
+        &self,
+        request: AuthRequest,
+    ) -> eyre::Result<CentrifugoTokenResponse>;
 
     async fn get_message(&self, query: GetMessageQuery, id: Uuid) -> eyre::Result<SpFrames>;
 
     async fn get_challenge(&self, id: Uuid) -> eyre::Result<Vec<u8>>;
 
-    async fn get_art(&self, query: GetARTQuery, id: Uuid, epoch: u64) -> eyre::Result<PublicART<CortadoAffine>>;
+    async fn get_art(
+        &self,
+        query: GetARTQuery,
+        id: Uuid,
+        epoch: u64,
+    ) -> eyre::Result<PublicART<CortadoAffine>>;
 }
 
 #[derive(Clone, Debug)]
@@ -34,18 +47,23 @@ pub(crate) struct TestSender {
 }
 
 impl Sender for TestSender {
-    async fn send_frame(&self, frame: Frame, id: Uuid, check_status_code: Option<StatusCode>) -> eyre::Result<Vec<u8>> {
+    async fn send_frame(
+        &self,
+        frame: Frame,
+        id: Uuid,
+        check_status_code: Option<StatusCode>,
+    ) -> eyre::Result<Vec<u8>> {
         let body = frame.encode_to_vec();
 
-        let res =
-            self.client
-                .post(format!(
-                    "{}/{}/{}/{}",
-                    self.backend_url, "v1/group", id, "frames"
-                ))
-                .body(Bytes::from(body.clone()))
-                .send()
-                .await?;
+        let res = self
+            .client
+            .post(format!(
+                "{}/{}/{}/{}",
+                self.backend_url, "v1/group", id, "frames"
+            ))
+            .body(Bytes::from(body.clone()))
+            .send()
+            .await?;
 
         match check_status_code {
             Some(status_code) => assert_eq!(res.status(), status_code),
@@ -55,14 +73,17 @@ impl Sender for TestSender {
         Ok(body)
     }
 
-    async fn get_centrifugo_token(&self, request: AuthRequest) -> eyre::Result<CentrifugoTokenResponse> {
+    async fn get_centrifugo_token(
+        &self,
+        request: AuthRequest,
+    ) -> eyre::Result<CentrifugoTokenResponse> {
         let centrifugo_token_response = self
             .client
             .post(format!("{}/{}", self.backend_url, "centrifugo/auth"))
             .json(&request)
             .send()
             .await?;
-        
+
         assert_eq!(centrifugo_token_response.status(), StatusCode::OK);
 
         let centrifugo_token_response = centrifugo_token_response
@@ -85,9 +106,7 @@ impl Sender for TestSender {
 
         assert_eq!(response.status(), StatusCode::ACCEPTED);
 
-        Ok(SpFrames::decode(BytesMut::from(
-            &*response.bytes().await?,
-        ))?)
+        Ok(SpFrames::decode(BytesMut::from(&*response.bytes().await?))?)
     }
 
     async fn get_challenge(&self, id: Uuid) -> eyre::Result<Vec<u8>> {
@@ -110,7 +129,12 @@ impl Sender for TestSender {
         Ok(challenge)
     }
 
-    async fn get_art(&self, query: GetARTQuery, id: Uuid, epoch: u64) -> eyre::Result<PublicART<CortadoAffine>> {
+    async fn get_art(
+        &self,
+        query: GetARTQuery,
+        id: Uuid,
+        epoch: u64,
+    ) -> eyre::Result<PublicART<CortadoAffine>> {
         let get_art_response = self
             .client
             .get(format!(
@@ -139,17 +163,22 @@ pub(crate) struct TestServerSender {
 }
 
 impl Sender for TestServerSender {
-    async fn send_frame(&self, frame: Frame, id: Uuid, check_status_code: Option<StatusCode>) -> eyre::Result<Vec<u8>> {
+    async fn send_frame(
+        &self,
+        frame: Frame,
+        id: Uuid,
+        check_status_code: Option<StatusCode>,
+    ) -> eyre::Result<Vec<u8>> {
         let body = frame.encode_to_vec();
 
-        let test_response =
-            self.test_server
-                .post(&format!(
-                    "{}/{}/{}/{}",
-                    self.backend_url, "v1/group", id, "frames"
-                ))
-                .bytes(Bytes::from(body.clone()))
-                .await;
+        let test_response = self
+            .test_server
+            .post(&format!(
+                "{}/{}/{}/{}",
+                self.backend_url, "v1/group", id, "frames"
+            ))
+            .bytes(Bytes::from(body.clone()))
+            .await;
 
         match check_status_code {
             Some(status_code) => test_response.assert_status(status_code),
@@ -159,16 +188,19 @@ impl Sender for TestServerSender {
         Ok(body)
     }
 
-    async fn get_centrifugo_token(&self, request: AuthRequest) -> eyre::Result<CentrifugoTokenResponse> {
+    async fn get_centrifugo_token(
+        &self,
+        request: AuthRequest,
+    ) -> eyre::Result<CentrifugoTokenResponse> {
         let centrifugo_token_response = self
             .test_server
             .post(&format!("{}/{}", self.backend_url, "centrifugo/auth"))
-            .json(&request).await;
+            .json(&request)
+            .await;
 
         centrifugo_token_response.assert_status(StatusCode::OK);
-        
-        let centrifugo_token_response = centrifugo_token_response
-            .json::<CentrifugoTokenResponse>();
+
+        let centrifugo_token_response = centrifugo_token_response.json::<CentrifugoTokenResponse>();
 
         Ok(centrifugo_token_response)
     }
@@ -184,8 +216,10 @@ impl Sender for TestServerSender {
             .await;
 
         response.assert_status(StatusCode::ACCEPTED);
-        
-        Ok(SpFrames::decode(BytesMut::from(&*response.as_bytes().to_vec()))?)
+
+        Ok(SpFrames::decode(BytesMut::from(
+            &*response.as_bytes().to_vec(),
+        ))?)
     }
 
     async fn get_challenge(&self, id: Uuid) -> eyre::Result<Vec<u8>> {
@@ -199,13 +233,17 @@ impl Sender for TestServerSender {
 
         challenge_response.assert_status(StatusCode::OK);
 
-        let challenge = challenge_response
-            .json::<ChallengeResponse>().challenge;
+        let challenge = challenge_response.json::<ChallengeResponse>().challenge;
 
         Ok(challenge)
     }
 
-    async fn get_art(&self, query: GetARTQuery, id: Uuid, epoch: u64) -> eyre::Result<PublicART<CortadoAffine>> {
+    async fn get_art(
+        &self,
+        query: GetARTQuery,
+        id: Uuid,
+        epoch: u64,
+    ) -> eyre::Result<PublicART<CortadoAffine>> {
         let get_art_response = self
             .test_server
             .get(&format!(

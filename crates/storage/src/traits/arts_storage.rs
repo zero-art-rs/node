@@ -1,12 +1,12 @@
 use uuid::Uuid;
 
-use art::types::{PublicART};
-use cortado::{CortadoAffine};
+use crate::traits::session_support::SessionSupport;
+use crate::{DataStorage, MongoARTStorage, MongoDataStorage, MongoFramesStorage};
+use art::types::PublicART;
+use cortado::CortadoAffine;
 use mongodb::{ClientSession, Collection};
 use serde::de::DeserializeOwned;
 use types::{ARTRecord, FrameRecord};
-use crate::{DataStorage, MongoARTStorage, MongoDataStorage, MongoFramesStorage};
-use crate::traits::session_support::SessionSupport;
 
 /// Trait for representing Art Storage. Is should store the full first and the latest states of
 /// the ART.
@@ -25,11 +25,13 @@ use crate::traits::session_support::SessionSupport;
 ///   A database session or transaction handle, used to group operations
 ///   into a consistent context.
 #[async_trait::async_trait]
-pub trait ARTStorage: DataStorage<Self::Data, Self::Error, Self::Session> + Send + Sync + Sized {
+pub trait ARTStorage:
+    DataStorage<Self::Data, Self::Error, Self::Session> + Send + Sync + Sized
+{
     type Data;
     type Session;
     type Error;
-    
+
     /// Creates new instance of storage, or retrieves existing one, when it is
     /// already initialized
     async fn new() -> Result<Self, Self::Error>;
@@ -50,10 +52,14 @@ pub trait ARTStorage: DataStorage<Self::Data, Self::Error, Self::Session> + Send
     ) -> Result<(), Self::Error>;
 
     /// Returns latest art
-    async fn get_art(&self, chat_id: Uuid) -> Result<Option<ARTRecord<CortadoAffine>>, Self::Error>;
+    async fn get_art(&self, chat_id: Uuid)
+        -> Result<Option<ARTRecord<CortadoAffine>>, Self::Error>;
 
     /// Returns initial art
-    async fn get_initial_art(&self, chat_id: Uuid) -> Result<Option<ARTRecord<CortadoAffine>>, Self::Error>;
+    async fn get_initial_art(
+        &self,
+        chat_id: Uuid,
+    ) -> Result<Option<ARTRecord<CortadoAffine>>, Self::Error>;
 
     // /// Drop initial_arts_collection and/or arts_collection if empty
     // async fn drop_collection_if_empty(&self) -> Result<(), Self::Error>;
@@ -67,4 +73,3 @@ pub trait ARTStorage: DataStorage<Self::Data, Self::Error, Self::Session> + Send
         new_art: ARTRecord<CortadoAffine>,
     ) -> Result<Option<ARTRecord<CortadoAffine>>, Self::Error>;
 }
-

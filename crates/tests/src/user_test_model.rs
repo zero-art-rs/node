@@ -13,6 +13,7 @@ use art::{
     types::{PrivateART, PublicART},
 };
 use axum::body::Bytes;
+use axum_test::{TestResponse, TestServer};
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
@@ -20,8 +21,8 @@ use crypto::schnorr::{sign, verify};
 use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
+use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
-use axum_test::{TestResponse, TestServer};
 use tracing::debug;
 use tracing::field::debug;
 use types::{
@@ -36,7 +37,6 @@ use types::{
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use sha3::{Digest, Sha3_256};
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
@@ -91,13 +91,9 @@ impl<'a> UserTestModel<'a> {
     }
 
     pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ARTError> {
-        Ok(NodeIndex::from(
-            self.art.get_path_to_leaf(
-                &self.art.public_key_of(
-                    &self.initial_secrets[member_id],
-                )
-            )?
-        ))
+        Ok(NodeIndex::from(self.art.get_path_to_leaf(
+            &self.art.public_key_of(&self.initial_secrets[member_id]),
+        )?))
     }
 
     /// Clone this uses, and change this user secret key to the different one
@@ -191,8 +187,12 @@ impl<'a> UserTestModel<'a> {
             protected_payload: payload.unwrap_or(vec![]),
         };
 
-        let proof_bytes =
-            self.prove_and_check_art_update(secret_key, &artefacts, &tbs_frame, &key_update_changes)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            secret_key,
+            &artefacts,
+            &tbs_frame,
+            &key_update_changes,
+        )?;
 
         let update_key_response = self
             .send_frame(Frame {
@@ -214,7 +214,8 @@ impl<'a> UserTestModel<'a> {
         // let old_tk = self.art.get_root_key()?.key;
         let old_tk = self.art.secret_key.clone();
         let new_user_secret_key = Fr::rand(&mut rng);
-        let (_, append_user_changes, artefacts) = self.art.append_or_replace_node(&new_user_secret_key)?;
+        let (_, append_user_changes, artefacts) =
+            self.art.append_or_replace_node(&new_user_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -241,7 +242,6 @@ impl<'a> UserTestModel<'a> {
 
         Ok(add_member_response)
     }
-
 
     fn sign_and_check_signature(&self, msg: &[u8], sk: Fr) -> eyre::Result<Vec<u8>> {
         let pk = self.art.public_key_of(&sk);

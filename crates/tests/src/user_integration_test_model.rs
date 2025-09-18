@@ -1,3 +1,5 @@
+use crate::sender::Sender;
+use crate::sender::{TestSender, TestServerSender};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
@@ -20,8 +22,9 @@ use crypto::schnorr::{sign, verify};
 use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
-use std::ops::Mul;
 use sha3::{Digest, Sha3_256};
+use std::ops::Mul;
+use storage::SessionSupport;
 use tracing::debug;
 use tracing::field::debug;
 use types::{
@@ -35,11 +38,8 @@ use types::{
 };
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
-use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zkp::toolbox::batch_verifier::PointVar::Static;
-use storage::SessionSupport;
-use crate::sender::Sender;
-use crate::sender::{TestSender, TestServerSender};
+use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
@@ -96,13 +96,9 @@ impl<S: Sender> UserIntegrationTestModel<S> {
     }
 
     pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ARTError> {
-        Ok(NodeIndex::from(
-            self.art.get_path_to_leaf(
-                &self.art.public_key_of(
-                    &self.initial_secrets[member_id],
-                )
-            )?
-        ))
+        Ok(NodeIndex::from(self.art.get_path_to_leaf(
+            &self.art.public_key_of(&self.initial_secrets[member_id]),
+        )?))
     }
 
     /// Clone this uses, and change this user secret key to the different one
@@ -161,7 +157,9 @@ impl<S: Sender> UserIntegrationTestModel<S> {
         };
 
         // self.send_frame(req).await
-        self.sender.send_frame(req, self.chat_uuid, Some(StatusCode::CREATED)).await
+        self.sender
+            .send_frame(req, self.chat_uuid, Some(StatusCode::CREATED))
+            .await
     }
 
     fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
@@ -174,10 +172,7 @@ impl<S: Sender> UserIntegrationTestModel<S> {
         )
     }
 
-    pub async fn update_key(
-        &mut self,
-        payload: Option<Vec<u8>>,
-    ) -> eyre::Result<Vec<u8>> {
+    pub async fn update_key(&mut self, payload: Option<Vec<u8>>) -> eyre::Result<Vec<u8>> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secret_key = self.art.secret_key.clone();
@@ -195,8 +190,12 @@ impl<S: Sender> UserIntegrationTestModel<S> {
             protected_payload: payload.unwrap_or(vec![]),
         };
 
-        let proof_bytes =
-            self.prove_and_check_art_update(secret_key, &artefacts, &tbs_frame, &key_update_changes)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            secret_key,
+            &artefacts,
+            &tbs_frame,
+            &key_update_changes,
+        )?;
 
         let update_key_response = self
             .sender
@@ -206,7 +205,7 @@ impl<S: Sender> UserIntegrationTestModel<S> {
                     proof: proof_bytes,
                 },
                 self.chat_uuid,
-                Some(StatusCode::OK)
+                Some(StatusCode::OK),
             )
             .await?;
 
@@ -222,7 +221,8 @@ impl<S: Sender> UserIntegrationTestModel<S> {
         // let old_tk = self.art.get_root_key()?.key;
         let old_tk = self.art.secret_key.clone();
         let new_user_secret_key = Fr::rand(&mut rng);
-        let (_, append_user_changes, artefacts) = self.art.append_or_replace_node(&new_user_secret_key)?;
+        let (_, append_user_changes, artefacts) =
+            self.art.append_or_replace_node(&new_user_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -254,10 +254,7 @@ impl<S: Sender> UserIntegrationTestModel<S> {
         Ok(add_member_response)
     }
 
-    pub async fn make_blank (
-        &mut self,
-        user_to_remove: &Vec<Direction>,
-    ) -> eyre::Result<Vec<u8>> {
+    pub async fn make_blank(&mut self, user_to_remove: &Vec<Direction>) -> eyre::Result<Vec<u8>> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let old_tk = match self.is_owner() {
@@ -325,8 +322,10 @@ impl<S: Sender> UserIntegrationTestModel<S> {
             nonce,
             epoch: None,
         };
-        
-        self.sender.get_message(get_message_query, self.chat_uuid).await
+
+        self.sender
+            .get_message(get_message_query, self.chat_uuid)
+            .await
     }
 
     pub async fn get_challenge(&self) -> eyre::Result<Vec<u8>> {
@@ -380,8 +379,10 @@ impl<S: Sender> UserIntegrationTestModel<S> {
             proof_mode,
             public_key: public_key_bytes,
         };
-        
-        self.sender.get_art(get_art_query, self.chat_uuid, epoch).await
+
+        self.sender
+            .get_art(get_art_query, self.chat_uuid, epoch)
+            .await
     }
 
     pub async fn _get_art_and_update(
@@ -517,7 +518,7 @@ impl<S: Sender> UserIntegrationTestModel<S> {
         let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
 
         assert!(verify(&signature, &vec![pk], &msg).is_ok());
-        
+
         let query = GetMessageQuery {
             message_sequence_number: None,
             signature,
@@ -526,7 +527,11 @@ impl<S: Sender> UserIntegrationTestModel<S> {
             nonce,
             epoch,
         };
-        let sp_frames = self.sender.get_message(query, self.chat_uuid).await?.sp_frames;
+        let sp_frames = self
+            .sender
+            .get_message(query, self.chat_uuid)
+            .await?
+            .sp_frames;
 
         let mut changes = Vec::with_capacity(sp_frames.len());
         for sp_frame in sp_frames {

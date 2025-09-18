@@ -1,11 +1,13 @@
-use crate::{ARTStorage, MongoDataStorage, MongoFramesStorage, MongoSessionSupport, SessionSupport, DATABASE};
-use crate::{StorageError};
-use art::{
-    types::{PublicART, BranchChangesType, NodeIndex},
+use crate::StorageError;
+use crate::{
+    ARTStorage, MongoDataStorage, MongoFramesStorage, MongoSessionSupport, SessionSupport, DATABASE,
 };
-use cortado::{CortadoAffine};
-use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel, error::Error};
+use art::types::{BranchChangesType, NodeIndex, PublicART};
+use cortado::CortadoAffine;
 use mongodb::options::ClientOptions;
+use mongodb::{
+    bson::doc, error::Error, options::IndexOptions, ClientSession, Collection, IndexModel,
+};
 use tracing::{debug, error, warn};
 use types::{ARTRecord, FrameRecord};
 use uuid::Uuid;
@@ -25,11 +27,11 @@ impl ARTStorage for MongoARTStorage {
     type Data = ARTRecord<CortadoAffine>;
     type Session = ClientSession;
     type Error = Error;
-    
+
     async fn new() -> Result<Self, Error> {
-        let db = DATABASE.get().ok_or_else(|| {
-            Error::from(std::io::Error::other("DATABASE is not initialized"))
-        })?;
+        let db = DATABASE
+            .get()
+            .ok_or_else(|| Error::from(std::io::Error::other("DATABASE is not initialized")))?;
 
         let arts_collection = db.collection(ARTS_COLLECTION_NAME);
         let initial_arts_collection = db.collection(INITIAL_ARTS_COLLECTION_NAME);
@@ -77,11 +79,7 @@ impl ARTStorage for MongoARTStorage {
         Ok(())
     }
 
-    async fn delete_group(
-        &self,
-        session: &mut ClientSession,
-        chat_id: Uuid,
-    ) -> Result<(), Error> {
+    async fn delete_group(&self, session: &mut ClientSession, chat_id: Uuid) -> Result<(), Error> {
         let filter = doc! { "chat_id": chat_id };
 
         debug!("Deleting art for chat: {chat_id}");
@@ -102,17 +100,18 @@ impl ARTStorage for MongoARTStorage {
     /// Return the latest art.
     async fn get_art(&self, chat_id: Uuid) -> Result<Option<ARTRecord<CortadoAffine>>, Error> {
         debug!("Retrieving latest art for chat: {chat_id}");
-        self
-            .arts_collection
+        self.arts_collection
             .find_one(doc! {"chat_id": chat_id})
             .await
     }
 
     /// Return the first art state in the chat.
-    async fn get_initial_art(&self, chat_id: Uuid) -> Result<Option<ARTRecord<CortadoAffine>>, Error> {
+    async fn get_initial_art(
+        &self,
+        chat_id: Uuid,
+    ) -> Result<Option<ARTRecord<CortadoAffine>>, Error> {
         debug!("Retrieving initial art for chat: {chat_id}");
-        self
-            .initial_arts_collection
+        self.initial_arts_collection
             .find_one(doc! {"chat_id": chat_id})
             .await
     }
@@ -153,8 +152,7 @@ impl ARTStorage for MongoARTStorage {
         new_art_record: ARTRecord<CortadoAffine>,
     ) -> Result<Option<ARTRecord<CortadoAffine>>, Error> {
         debug!("Retrieving latest art for chat: {}", id);
-        self
-            .arts_collection
+        self.arts_collection
             .find_one_and_replace(doc! {"chat_id": id}, new_art_record)
             .await
     }
@@ -165,11 +163,11 @@ impl ARTStorage for MongoARTStorage {
 //     async fn start_session(&self) -> Result<ClientSession, Error> {
 //         self.arts_collection.client().start_session().await
 //     }
-// 
+//
 //     async fn start_transaction(session: &mut ClientSession) -> Result<(), Error> {
 //         session.start_transaction().await
 //     }
-// 
+//
 //     async fn commit_transaction(session: &mut ClientSession) -> Result<(), Error> {
 //         session.commit_transaction().await
 //     }

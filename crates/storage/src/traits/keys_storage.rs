@@ -11,7 +11,9 @@ use crate::DataStorage;
 ///   A database session or transaction handle, used to group operations
 ///   into a consistent context.
 #[async_trait::async_trait]
-pub trait KeyStorage: DataStorage<Self::Data, Self::Error, Self::Session> + Send + Sync + Sized {
+pub trait KeyStorage:
+    DataStorage<Self::Data, Self::Error, Self::Session> + Send + Sync + Sized
+{
     type Data;
     type Session;
     type Error;

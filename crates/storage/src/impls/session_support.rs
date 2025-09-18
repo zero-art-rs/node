@@ -1,6 +1,6 @@
-use mongodb::ClientSession;
-use mongodb::error::Error;
 use crate::{MongoSessionSupport, SessionSupport};
+use mongodb::error::Error;
+use mongodb::ClientSession;
 
 #[async_trait::async_trait]
 impl<M> SessionSupport<Error, ClientSession> for M

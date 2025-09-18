@@ -38,10 +38,7 @@ pub async fn get_art(
     payload.validate()?;
 
     trace!("retrieve art_record");
-    let art_record = state
-        .art_service
-        .get_art(chat_id, Some(epoch))
-        .await?;
+    let art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
 
     Ok(Json(GetARTResponse::try_from(art_record)?))
 }

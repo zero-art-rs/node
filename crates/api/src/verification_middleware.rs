@@ -14,6 +14,7 @@ use cortado::CortadoAffine;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
+use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage};
 use tracing::{debug, error, trace};
@@ -29,7 +30,6 @@ use types::{
     errors::{ApiError, VerificationError},
 };
 use uuid::Uuid;
-use sha3::{Digest, Sha3_256};
 
 pub async fn verification_middleware(
     state: State<Arc<Container>>,
@@ -230,7 +230,6 @@ async fn verification_middleware_inner(
             tbs_frame.encode(&mut buf).unwrap();
             let associated_data = Sha3_256::digest(buf.to_vec()).to_vec();
 
-
             let operation = match &tbs_frame.group_operation {
                 None => None,
                 Some(val) => val.operation.as_ref(),
@@ -241,7 +240,8 @@ async fn verification_middleware_inner(
             let current_epoch = MongoARTStorage::new()
                 .await?
                 .get_current_epoch(&id)
-                .await.unwrap_or(0);
+                .await
+                .unwrap_or(0);
             trace!("Epoch received successfully");
 
             if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
@@ -340,22 +340,20 @@ pub async fn get_opcode_and_input_for_art_update(
             VerificationOpcode::KeyUpdate,
             vec![art.get_node(&branch_changes.node_index)?.public_key],
         ),
-        BranchChangesType::AppendNode => {
-            (
-                VerificationOpcode::AddMember,
-                vec![get_left_most_leaf_public_key(state, id).await?],
-            )
-        }
+        BranchChangesType::AppendNode => (
+            VerificationOpcode::AddMember,
+            vec![get_left_most_leaf_public_key(state, id).await?],
+        ),
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
                 true => {
                     debug!("Use root public key for verification");
                     art.root.public_key
-                },
+                }
                 false => {
                     debug!("Use left most leaf public key for \"remove member\" verification.");
                     get_left_most_leaf_public_key(state, id).await?
-                },
+                }
             };
 
             debug!("aux_public_key.x: {}", aux_public_key.x);
@@ -461,7 +459,6 @@ pub async fn get_opcode_and_input_for_leave_group(
         },
     ))
 }
-
 
 pub async fn verify(
     message: ProofVerifierMessage,

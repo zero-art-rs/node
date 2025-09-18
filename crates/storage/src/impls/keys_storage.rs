@@ -1,8 +1,8 @@
-use crate::{KeyStorage, MongoFramesStorage, MongoSessionSupport, DATABASE};
-use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
-use mongodb::error::Error;
-use types::{KeyRecord};
 use crate::impls::data_storage::MongoDataStorage;
+use crate::{KeyStorage, MongoFramesStorage, MongoSessionSupport, DATABASE};
+use mongodb::error::Error;
+use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
+use types::KeyRecord;
 
 /// Collection to store owner public key for every chat.
 pub struct MongoKeysStorage {

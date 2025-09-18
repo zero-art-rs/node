@@ -1,25 +1,23 @@
 use art::traits::ARTPublicAPI;
-use art::types::{BranchChanges, BranchChangesType,NodeIndex, PublicART};
+use art::types::{BranchChanges, BranchChangesType, NodeIndex, PublicART};
 use bytes::{BufMut, BytesMut};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
 use storage::{
-    ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
-    MongoKeysStorage, StorageError, KeyStorage, SessionSupport
+    ARTStorage, FrameStorage, KeyStorage, MongoFramesStorage, MongoKeysStorage, SessionSupport,
+    StorageError,
 };
-use types::{ARTRecord, KeyRecord, protos, FrameRecord};
 use tracing::{debug, error, trace};
+use types::{ARTRecord, FrameRecord, KeyRecord, protos};
 use uuid::Uuid;
 
-use types::errors::{ARTServiceError, MessageServiceError};
-use types::utils::{decode_art, decode_branch_changes};
+use types::errors::ARTServiceError;
+use types::utils::decode_art;
 
-use crate::MessengerService;
 #[cfg(not(feature = "art_modifications"))]
 use art::types::ARTNode;
-use mongodb::error::Error;
 use prost::Message;
 use types::protos::Frame;
 
@@ -50,7 +48,8 @@ impl<A, F, K, S> Default for ARTService<A, F, K, S> {
 impl<A, F, K, S> ARTService<A, F, K, S>
 where
     A: ARTStorage<Data = ARTRecord<CortadoAffine>, Session = S> + SessionSupport<A::Error, S>,
-    F: FrameStorage<Data = FrameRecord, Error = A::Error, Session = S> + SessionSupport<A::Error, S>,
+    F: FrameStorage<Data = FrameRecord, Error = A::Error, Session = S>
+        + SessionSupport<A::Error, S>,
     K: KeyStorage<Data = KeyRecord, Error = A::Error, Session = S> + SessionSupport<A::Error, S>,
     ARTServiceError: From<A::Error>,
     ARTServiceError: From<F::Error>,
@@ -74,9 +73,7 @@ where
         Ok(record)
     }
 
-    pub fn extract_branch_changes(
-        messages: &FrameRecord,
-    ) -> Result<Frame, ARTServiceError> {
+    pub fn extract_branch_changes(messages: &FrameRecord) -> Result<Frame, ARTServiceError> {
         let mut buf = BytesMut::new();
         buf.put(messages.content.as_slice());
         let frame = Frame::decode(buf)?;
@@ -84,7 +81,11 @@ where
         Ok(frame)
     }
 
-    pub async fn get_all_epoch_changes(&self, id: Uuid, epoch: u64) -> Result<Vec<BranchChanges<CortadoAffine>>, ARTServiceError> {
+    pub async fn get_all_epoch_changes(
+        &self,
+        id: Uuid,
+        epoch: u64,
+    ) -> Result<Vec<BranchChanges<CortadoAffine>>, ARTServiceError> {
         let limit = types::DEFAULT_LIMIT;
         let mut skip = 0;
 
@@ -96,9 +97,9 @@ where
         let mut changes = Vec::new();
         while !records.is_empty() {
             for record in &records {
-                if let Some(branch_changes) = types::utils::extract_branch_changes(
-                    &Self::extract_branch_changes(record)?
-                )? {
+                if let Some(branch_changes) =
+                    types::utils::extract_branch_changes(&Self::extract_branch_changes(record)?)?
+                {
                     changes.push(branch_changes);
                 }
             }
@@ -108,7 +109,6 @@ where
                 .await?
                 .list(doc! {"epoch": epoch as i64}, None, limit, skip)
                 .await?;
-
         }
 
         Ok(changes)
@@ -133,7 +133,10 @@ where
         }
 
         art_record.epoch = epoch;
-        debug!("Successfully recomputed {} state of art, with PK.x: {}", epoch, art_record.art.root.public_key.x);
+        debug!(
+            "Successfully recomputed {} state of art, with PK.x: {}",
+            epoch, art_record.art.root.public_key.x
+        );
 
         Ok(art_record)
     }
@@ -148,10 +151,7 @@ where
         let art_record = self.get_initial_art(id).await?;
         let mut initial_art = art_record.art;
 
-        debug!(
-            "Recomputing {} state of the art in the chat: {}",
-            epoch, id
-        );
+        debug!("Recomputing {} state of the art in the chat: {}", epoch, id);
         let filter = doc! { "epoch": { "$lte": epoch as i64 } };
         // let sort_options = Some(doc! { "sequence_number": 1 });
         let sort_options = None;
@@ -174,11 +174,10 @@ where
                 break;
             }
 
-
             for message in &messages {
-                if let Some(branch_changes) = types::utils::extract_branch_changes(
-                    &Self::extract_branch_changes(message)?
-                )? {
+                if let Some(branch_changes) =
+                    types::utils::extract_branch_changes(&Self::extract_branch_changes(message)?)?
+                {
                     changes.push(branch_changes);
                 }
             }
@@ -223,7 +222,7 @@ where
             None => {
                 error!("Failed to retrieve initial art");
                 Err(ARTServiceError::NotFound)
-            },
+            }
         }
     }
 
@@ -285,12 +284,10 @@ where
         let arts_storage = A::new().await?;
         K::new()
             .await?
-            .insert_one(
-                KeyRecord {
-                    owner_public_key: owner_id_pub_key,
-                    chat_id: id,
-                },
-            )
+            .insert_one(KeyRecord {
+                owner_public_key: owner_id_pub_key,
+                chat_id: id,
+            })
             .await?;
 
         debug!("Check if ART for group {} already exists...", id);
@@ -319,7 +316,10 @@ where
     ) -> Result<(), ARTServiceError> {
         let arts_storage = A::new().await?;
 
-        let latest_art = arts_storage.get_art(chat_id).await?.ok_or(ARTServiceError::NotFound)?;
+        let latest_art = arts_storage
+            .get_art(chat_id)
+            .await?
+            .ok_or(ARTServiceError::NotFound)?;
         if latest_art.is_private {
             match changes.change_type {
                 BranchChangesType::UpdateKey => {}
@@ -329,8 +329,7 @@ where
 
         let mut session = arts_storage.start_session().await?;
         A::start_transaction(&mut session).await?;
-        self
-            .update_art_in_session(&mut session, changes.clone(), chat_id)
+        self.update_art_in_session(&mut session, changes.clone(), chat_id)
             .await?;
         A::commit_transaction(&mut session).await?;
 
@@ -339,7 +338,7 @@ where
 
     pub async fn mark_as_removed(&self, id: Uuid, index: u64) -> Result<(), ARTServiceError> {
         let arts_storage = A::new().await?;
-        
+
         let mut art_record = arts_storage
             .get_art(id)
             .await?
@@ -351,9 +350,7 @@ where
 
         // art_record.epoch += 1;
 
-        debug!(
-            "User with index {index} marked himself as removed",
-        );
+        debug!("User with index {index} marked himself as removed",);
         arts_storage.replace_art(id, art_record).await?;
 
         Ok(())
@@ -371,9 +368,7 @@ where
 
         debug!("Updating art for chat: {}", chat_id);
         if let Some(mut art_record) = arts_storage.find_one(filter.clone()).await? {
-            art_record
-                .art
-                .update_public_art(&changes)?;
+            art_record.art.update_public_art(&changes)?;
 
             art_record.epoch += 1;
 
@@ -433,12 +428,9 @@ where
 
         // let latest_art = arts_storage.get_art(id).await?;
         let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
-        let mut target_changes = self
-            .get_all_epoch_changes(id, new_epoch)
-            .await?;
+        let mut target_changes = self.get_all_epoch_changes(id, new_epoch).await?;
 
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
-
 
         target_changes.push(change);
         latest_art

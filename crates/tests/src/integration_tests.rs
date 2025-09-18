@@ -1,47 +1,44 @@
-use std::collections::HashSet;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::{thread, time};
-use std::time::Duration;
-use crate::{
-    user_integration_test_model::UserIntegrationTestModel,
-    init_tracing_for_test
-};
+use crate::sender::{Sender, TestSender, TestServerSender};
+use crate::utils::{CentrifugoEvent, CentrifugoTokenResponse};
+use crate::{init_tracing_for_test, user_integration_test_model::UserIntegrationTestModel};
+use api::{ARTService, CentrifugoService, Container, MessengerService};
+use api::{art_transport, centrifugo_transport, messenger_transport};
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
 use art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
 use art::types::{PrivateART, PublicART};
-use axum::http::StatusCode;
 use axum::Router;
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum_test::TestServer;
 use bytes::{Bytes, BytesMut};
 use cortado::CortadoAffine;
 use crypto::schnorr::{sign, verify};
 use eventsource_stream::Eventsource;
+use futures_util::StreamExt;
+use mongodb::Client;
+use mongodb::bson::doc;
+use mongodb::options::ClientOptions;
+use proof_verifier::ProofVerifierSender;
 use prost::Message;
-use tracing::{debug, info};
+use sha3::{Digest, Sha3_256};
+use std::collections::HashSet;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
+use std::{thread, time};
+use storage::DATABASE;
+use tokio::sync::{RwLock, mpsc};
 use tracing::field::debug;
-use crate::utils::{CentrifugoTokenResponse, CentrifugoEvent};
+use tracing::{debug, info};
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::centrifugo_schemas::AuthRequest;
 use types::protos;
 use types::protos::{Frame, SpFrames};
-use futures_util::StreamExt;
-use mongodb::bson::doc;
-use mongodb::Client;
-use mongodb::options::ClientOptions;
-use sha3::{Sha3_256, Digest};
-use tokio::sync::{mpsc, RwLock};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
-use api::{ARTService, CentrifugoService, Container, MessengerService};
-use proof_verifier::ProofVerifierSender;
-use crate::sender::{Sender, TestSender, TestServerSender};
-use api::{centrifugo_transport, art_transport, messenger_transport};
-use storage::DATABASE;
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
@@ -49,7 +46,6 @@ const CENTRIFUGO_URL: &str = "http://localhost:8000";
 const TEST_REPEATS: usize = 4;
 const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
 const DEFAULT_GROUP_SIZE: u64 = 10;
-
 
 fn get_test_sender() -> TestSender {
     TestSender {
@@ -74,39 +70,51 @@ pub fn build_test_server(container: Arc<Container>) -> TestServer {
 
     //Messages:
     let list_messages_route: Router = Router::new()
-        .route("/v1/group/{id}/frames", get(messenger_transport::list_messages))
+        .route(
+            "/v1/group/{id}/frames",
+            get(messenger_transport::list_messages),
+        )
         .with_state(container.clone());
-        // .with_verification(container.clone())
-        // .with_route_id("list_messages");
+    // .with_verification(container.clone())
+    // .with_route_id("list_messages");
 
     let count_messages_route = OpenApiRouter::new()
-        .route("/v1/group/{id}/frames/count", get(messenger_transport::count_messages))
+        .route(
+            "/v1/group/{id}/frames/count",
+            get(messenger_transport::count_messages),
+        )
         .with_state(container.clone());
-        // .with_verification(container.clone())
-        // .with_route_id("count_messages");
+    // .with_verification(container.clone())
+    // .with_route_id("count_messages");
 
     // Centrifugo:
     let authenticate_route = OpenApiRouter::new()
         .route("/centrifugo/auth", post(centrifugo_transport::authenticate))
         .with_state(container.clone());
-        // .with_verification(container.clone())
-        // .with_route_id("authenticate");
+    // .with_verification(container.clone())
+    // .with_route_id("authenticate");
 
     // Group management:
     let send_frame_route = OpenApiRouter::new()
-        .route("/v1/group/{id}/frames", post(messenger_transport::send_frame))
+        .route(
+            "/v1/group/{id}/frames",
+            post(messenger_transport::send_frame),
+        )
         .with_state(container.clone());
-        // .with_verification(container.clone())
-        // .with_route_id("send_frame");
+    // .with_verification(container.clone())
+    // .with_route_id("send_frame");
 
     let get_art_route = OpenApiRouter::new()
         .route("/v1/group/{id}/{epoch}", get(art_transport::get_art))
         .with_state(container.clone());
-        // .with_verification(container.clone())
-        // .with_route_id("get_art");
+    // .with_verification(container.clone())
+    // .with_route_id("get_art");
 
     let get_challenge_route = OpenApiRouter::new()
-        .route("/v1/group/{id}/challenge", get(art_transport::get_challenge))
+        .route(
+            "/v1/group/{id}/challenge",
+            get(art_transport::get_challenge),
+        )
         .with_state(container.clone());
 
     // Combine routers in one OpenApiRouter
@@ -136,12 +144,11 @@ async fn get_test_server() -> Rc<TestServer> {
     let client_options = ClientOptions::parse(uri).await.unwrap();
     let client = Client::with_options(client_options).unwrap();
 
-    match DATABASE
-        .set(
-            client
-                .default_database()
-                .unwrap_or(client.database(&database_name)),
-        ) {
+    match DATABASE.set(
+        client
+            .default_database()
+            .unwrap_or(client.database(&database_name)),
+    ) {
         Ok(_) => debug!("Database set successfully"),
         Err(_) => debug!("Database is already set"),
     };
@@ -153,17 +160,19 @@ async fn get_test_server() -> Rc<TestServer> {
         .get()
         .unwrap()
         .run_command(doc! { "ping": 1 })
-        .await.unwrap();
+        .await
+        .unwrap();
     info!("Connected to database {}", database_name);
 
     let messenger_service = MessengerService::new();
     let centrifugo_service = CentrifugoService::new(
-        String::from("tkE0hTS953BL3ETHeFyHGY3cAl78xyGCdPCtsGIX-oiyJ_Suz_ui_j3Gjrp8JP62Lq8tHCoih6rBMeUvfGPOvw"),
+        String::from(
+            "tkE0hTS953BL3ETHeFyHGY3cAl78xyGCdPCtsGIX-oiyJ_Suz_ui_j3Gjrp8JP62Lq8tHCoih6rBMeUvfGPOvw",
+        ),
         Duration::new(86400, 0),
         vec![String::from("personal")],
     );
     let art_service = ARTService::new();
-
 
     let container = Arc::new(Container {
         messenger_service: Arc::new(messenger_service),
@@ -203,10 +212,7 @@ async fn test_send_message() -> eyre::Result<()> {
 
     let sender = get_test_sender();
 
-    let (context, init_message) = UserIntegrationTestModel::new(
-        DEFAULT_GROUP_SIZE,
-        sender
-    ).await;
+    let (context, init_message) = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, sender).await;
 
     let challenge = Sha3_256::digest(context.get_challenge().await?).to_vec();
 
@@ -228,10 +234,7 @@ async fn test_send_message() -> eyre::Result<()> {
         epochs: vec![0],
     };
 
-    let centrifugo_token_response = context
-        .sender
-        .get_centrifugo_token(auth_request)
-        .await?;
+    let centrifugo_token_response = context.sender.get_centrifugo_token(auth_request).await?;
 
     let url = format!(
         "{}/{}",
@@ -316,7 +319,10 @@ async fn test_send_message() -> eyre::Result<()> {
         }
     });
 
-    context.sender.send_frame(req, context.chat_uuid, None).await?;
+    context
+        .sender
+        .send_frame(req, context.chat_uuid, None)
+        .await?;
 
     let result = tokio::time::timeout(Duration::from_secs(5), handle).await?;
 
@@ -331,10 +337,8 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let (mut context, _) = UserIntegrationTestModel::new(
-        DEFAULT_GROUP_SIZE,
-        get_sender().await,
-    ).await;
+    let (mut context, _) =
+        UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await).await;
     let test_context = context.derive_new(2)?;
 
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
@@ -357,7 +361,9 @@ async fn test_get_message() -> eyre::Result<()> {
 async fn test_init_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await.0;
+    UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await)
+        .await
+        .0;
 
     Ok(())
 }
@@ -366,7 +372,9 @@ async fn test_init_group() -> eyre::Result<()> {
 async fn test_add_member() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await.0;
+    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await)
+        .await
+        .0;
     for _ in 0..TEST_REPEATS {
         context.add_member().await?;
     }
@@ -378,7 +386,9 @@ async fn test_add_member() -> eyre::Result<()> {
 async fn test_add_member_after_removal() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await.0;
+    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await)
+        .await
+        .0;
 
     for i in 0..TEST_REPEATS {
         let path = context.index_of(i + 1).unwrap().get_path().unwrap();
@@ -393,7 +403,9 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 async fn test_remove_member() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await.0;
+    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await)
+        .await
+        .0;
     let mut retrieval_context = context.derive_new(1)?;
 
     // skip the root node
@@ -431,7 +443,9 @@ async fn test_remove_member() -> eyre::Result<()> {
 async fn test_get_art() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await.0;
+    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await)
+        .await
+        .0;
     let mut retrieval_context = context.derive_new(2)?;
     let mut art_roots = vec![context.art.root.public_key];
 
@@ -464,7 +478,8 @@ async fn test_epoch_merge() -> eyre::Result<()> {
         .take(DEFAULT_NONCE_LENGTH as usize)
         .collect::<Vec<u8>>();
 
-    let (mut user0, _) = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await;
+    let (mut user0, _) =
+        UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await).await;
     let mut user1 = user0.derive_new(1)?;
     let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(5)?;
@@ -519,11 +534,15 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     // let payload = UserIntegrationTestModel::new_nonce();
 
-    let (mut user0, _) = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await,).await;
+    let (mut user0, _) =
+        UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await).await;
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(1)?;
-    debug!("User0 sk: {}", user0.art.public_key_of(&user0.art.get_secret_key()).x);
+    debug!(
+        "User0 sk: {}",
+        user0.art.public_key_of(&user0.art.get_secret_key()).x
+    );
 
     // sanity check
     assert_eq!(user2.art.get_root(), user0.art.get_root());
@@ -549,7 +568,10 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     user1.make_blank(&target_node_path).await?;
     debug!("User1 TK_x: {}", user1.art.root.public_key.x);
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
-    assert_eq!(user1.art.public_key_of(&user1.art.get_root_key()?.key), user1.art.get_root().public_key);
+    assert_eq!(
+        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+        user1.art.get_root().public_key
+    );
 
     debug!("User 2 receive changes ...");
     let blank_user_1 = user2.get_changes(20, 0, None).await?;
@@ -573,7 +595,10 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         user2.art.public_key_of(&user2.art.get_root_key()?.key),
         user1.art.public_key_of(&user1.art.get_root_key()?.key),
     );
-    assert_eq!(user2.art.public_key_of(&user2.art.get_root_key()?.key), user1.art.get_root().public_key);
+    assert_eq!(
+        user2.art.public_key_of(&user2.art.get_root_key()?.key),
+        user1.art.get_root().public_key
+    );
 
     debug!("User 2 update key ...");
     user2.update_key(None).await?;
@@ -585,7 +610,9 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 async fn test_delete_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await).await.0;
+    let mut context = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, get_sender().await)
+        .await
+        .0;
 
     context.delete_group().await?;
     Ok(())

@@ -1,8 +1,8 @@
 use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
-use mongodb::{bson::Document, ClientSession, Collection};
 use mongodb::error::Error;
+use mongodb::{bson::Document, ClientSession, Collection};
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::debug;
 
@@ -27,7 +27,12 @@ pub trait DataStorage<D, E, S>: Send + Sync {
 
     async fn find_one(&self, filter: Document) -> Result<Option<D>, E>;
 
-    async fn find_one_and_replace(&self, filter: Document, replacement: D, session: Option<&mut S>) -> Result<Option<D>, E>;
+    async fn find_one_and_replace(
+        &self,
+        filter: Document,
+        replacement: D,
+        session: Option<&mut S>,
+    ) -> Result<Option<D>, E>;
 
     async fn insert_one(&self, record: D) -> Result<(), E>;
 
@@ -41,10 +46,7 @@ pub trait DataStorage<D, E, S>: Send + Sync {
 
     async fn drop_collection(&self) -> Result<(), E>;
 
-    async fn drop_collection_in_session(
-        &self,
-        sesion: &mut S,
-    ) -> Result<(), E>;
+    async fn drop_collection_in_session(&self, sesion: &mut S) -> Result<(), E>;
 
     async fn drop_collection_if_empty(&self) -> Result<(), E>;
 }

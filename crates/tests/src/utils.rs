@@ -1,9 +1,8 @@
-
 #[cfg(feature = "integration_tests")]
 use {
-    std::collections::HashMap,
     serde::Deserialize,
-    serde_with::{serde_as,  base64::Base64},
+    serde_with::{base64::Base64, serde_as},
+    std::collections::HashMap,
 };
 
 #[cfg(feature = "integration_tests")]

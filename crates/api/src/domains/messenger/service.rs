@@ -1,18 +1,18 @@
-use std::marker::PhantomData;
 use bytes::{BufMut, BytesMut};
-use cortado::CortadoAffine;
 use mongodb::bson::Document;
 use prost::Message;
-use storage::{ARTStorage, DataStorage, FrameStorage, KeyStorage, MongoFramesStorage, SessionSupport};
+use std::marker::PhantomData;
+use storage::{FrameStorage, SessionSupport};
 use tracing::{debug, trace};
-use types::{FrameRecord, errors::MessageServiceError, protos::{Frame, SpFrame, SpFrames}, ARTRecord, KeyRecord};
+use types::{
+    FrameRecord, KeyRecord,
+    errors::MessageServiceError,
+    protos::{Frame, SpFrame, SpFrames},
+};
 use uuid::Uuid;
-use types::errors::ARTServiceError;
 
 pub struct MessengerService<F, S> {
-    // art_storage_type: PhantomData<A>,
     frame_storage_type: PhantomData<F>,
-    // key_storage_type: PhantomData<K>,
     session_type: PhantomData<S>,
 }
 
@@ -33,11 +33,7 @@ impl<F, S> Default for MessengerService<F, S> {
 
 impl<F, S> MessengerService<F, S>
 where
-    // A: ARTStorage<Data = ARTRecord<CortadoAffine>, Session = S> + SessionSupport<A::Error, S>,
     F: FrameStorage<Data = FrameRecord, Session = S> + SessionSupport<F::Error, S>,
-    // K: KeyStorage<Data = KeyRecord, Error = A::Error, Session = S> + SessionSupport<A::Error, S>,
-    // ARTServiceError: From<A::Error>,
-    // ARTServiceError: From<F::Error>,
     MessageServiceError: From<F::Error>,
 {
     pub async fn send_message(
@@ -109,10 +105,7 @@ where
         limit: i64,
         skip: i64,
     ) -> Result<u64, MessageServiceError> {
-        Ok(F::new(*id)
-            .await?
-            .count(filter, limit, skip)
-            .await?)
+        Ok(F::new(*id).await?.count(filter, limit, skip).await?)
     }
 
     pub async fn delete_messages(

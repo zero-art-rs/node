@@ -1,11 +1,11 @@
 pub(crate) use crate::{DataStorage, MongoDataStorage};
 use bson::doc;
 use futures_util::TryStreamExt;
-use mongodb::{bson::Document, ClientSession};
-use serde::{Serialize};
-use tracing::debug;
 use mongodb::error::Error;
+use mongodb::{bson::Document, ClientSession};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
+use tracing::debug;
 
 #[async_trait::async_trait]
 impl<M, D> DataStorage<D, Error, ClientSession> for M
@@ -54,12 +54,20 @@ where
         Ok(cursor)
     }
 
-    async fn find_one_and_replace(&self, filter: Document, replacement: D, session: Option<&mut ClientSession>) -> Result<Option<D>, Error> {
-        let cursor = self.get_collection().await.find_one_and_replace(filter, replacement);
-        
+    async fn find_one_and_replace(
+        &self,
+        filter: Document,
+        replacement: D,
+        session: Option<&mut ClientSession>,
+    ) -> Result<Option<D>, Error> {
+        let cursor = self
+            .get_collection()
+            .await
+            .find_one_and_replace(filter, replacement);
+
         let cursor = match session {
             Some(session) => cursor.session(session).await?,
-            None => cursor.await?, 
+            None => cursor.await?,
         };
 
         Ok(cursor)
@@ -91,7 +99,11 @@ where
         Ok(records)
     }
 
-    async fn delete_one(&self, filter: Document, session: Option<&mut ClientSession>) -> Result<(), Error> {
+    async fn delete_one(
+        &self,
+        filter: Document,
+        session: Option<&mut ClientSession>,
+    ) -> Result<(), Error> {
         let delete_one_request = self.get_collection().await.delete_one(filter);
 
         match session {
@@ -119,10 +131,7 @@ where
         Ok(())
     }
 
-    async fn drop_collection_in_session(
-        &self,
-        sesion: &mut ClientSession,
-    ) -> Result<(), Error> {
+    async fn drop_collection_in_session(&self, sesion: &mut ClientSession) -> Result<(), Error> {
         self.get_collection().await.drop().session(sesion).await?;
         Ok(())
     }
@@ -136,4 +145,3 @@ where
         Ok(())
     }
 }
-

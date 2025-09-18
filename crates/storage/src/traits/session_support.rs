@@ -13,7 +13,6 @@ pub trait SessionSupport<E, S>: Send + Sync + Sized {
     async fn start_transaction(session: &mut S) -> Result<(), E>;
 
     async fn commit_transaction(session: &mut S) -> Result<(), E>;
-
 }
 
 /// A specialized trait for backends that provide MongoDB session support.
@@ -27,5 +26,3 @@ pub trait SessionSupport<E, S>: Send + Sync + Sized {
 pub trait MongoSessionSupport<E, S> {
     async fn start_session(&self) -> Result<S, E>;
 }
-
-

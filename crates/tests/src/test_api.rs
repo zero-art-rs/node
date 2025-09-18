@@ -1,29 +1,31 @@
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::{init_tracing_for_test, user_test_model::UserTestModel};
+use api::{
+    ARTService, CentrifugoService, Container, MessengerService, art_transport,
+    centrifugo_transport, messenger_transport,
+};
 use axum::Router;
 use axum::routing::{get, post};
 use axum_test::TestServer;
-use mongodb::bson::doc;
 use mongodb::Client;
+use mongodb::bson::doc;
 use mongodb::options::ClientOptions;
-use tokio::sync::{mpsc, RwLock};
+use proof_verifier::ProofVerifierSender;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+use storage::DATABASE;
+use tokio::sync::{RwLock, mpsc};
 use tracing::debug;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
-use api::{messenger_transport, art_transport, centrifugo_transport, Container, MessengerService, CentrifugoService, ARTService};
-use proof_verifier::ProofVerifierSender;
-use storage::DATABASE;
-use crate::{
-    user_test_model::UserTestModel,
-    init_tracing_for_test
-};
 
 pub(crate) fn get_container(proof_verifier_sender: ProofVerifierSender) -> Container {
     let messenger_service = MessengerService::new();
     let centrifugo_service = CentrifugoService::new(
-        String::from("tkE0hTS953BL3ETHeFyHGY3cAl78xyGCdPCtsGIX-oiyJ_Suz_ui_j3Gjrp8JP62Lq8tHCoih6rBMeUvfGPOvw"),
+        String::from(
+            "tkE0hTS953BL3ETHeFyHGY3cAl78xyGCdPCtsGIX-oiyJ_Suz_ui_j3Gjrp8JP62Lq8tHCoih6rBMeUvfGPOvw",
+        ),
         Duration::new(86400, 0),
         vec![String::from("personal")],
     );
@@ -97,7 +99,10 @@ async fn test_init_group_endpoint() {
     let container = Arc::new(get_container(proof_verifier_tx));
 
     let router = Router::new()
-        .route("/v1/group/{id}/frames", post(messenger_transport::send_frame))
+        .route(
+            "/v1/group/{id}/frames",
+            post(messenger_transport::send_frame),
+        )
         .with_state(container);
 
     let test_server = TestServer::new(router).unwrap();
