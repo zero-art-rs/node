@@ -21,6 +21,7 @@ use types::centrifugo_schemas::AuthRequest;
 use types::protos;
 use types::protos::{Frame, SpFrames};
 use futures_util::StreamExt;
+use sha3::{Sha3_256, Digest};
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
@@ -29,13 +30,14 @@ const TEST_REPEATS: usize = 4;
 const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
 const DEFAULT_GROUP_SIZE: u64 = 100;
 
+
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let (context, init_message) = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE).await;
 
-    let challenge = context.get_challenge().await?;
+    let challenge = Sha3_256::digest(context.get_challenge().await?).to_vec();
 
     let nonce = UserIntegrationTestModel::new_nonce();
 
@@ -95,14 +97,13 @@ async fn test_send_message() -> eyre::Result<()> {
         group_operation: None,
         protected_payload: "zk messenger is the best".as_bytes().to_vec(),
     };
-    let mut buf = BytesMut::new();
-    tbs_frame.encode(&mut buf)?;
 
+    let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
     let tk = context.art.get_root_key()?.key;
     let pk = vec![context.art.root.public_key];
 
-    let signature = sign(&vec![tk], &pk, &buf)?;
-    let verification_result = verify(&signature, &pk, &buf);
+    let signature = sign(&vec![tk], &pk, &msg)?;
+    let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
 
     let req = protos::Frame {
@@ -195,7 +196,7 @@ async fn test_get_message() -> eyre::Result<()> {
 async fn test_init_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE).await.0;
 
     Ok(())
 }

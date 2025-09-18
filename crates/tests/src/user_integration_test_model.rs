@@ -21,6 +21,7 @@ use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
 use std::ops::Mul;
+use sha3::{Digest, Sha3_256};
 use tracing::debug;
 use tracing::field::debug;
 use types::{
@@ -141,8 +142,7 @@ impl UserIntegrationTestModel {
             protected_payload: vec![],
         };
 
-        let mut msg = BytesMut::new();
-        tbs_frame.encode(&mut msg)?;
+        let msg = Sha3_256::digest(tbs_frame.encode_to_vec());
 
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
         let verification_result = verify(&signature, &vec![pk], &msg);
@@ -299,6 +299,8 @@ impl UserIntegrationTestModel {
         msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&nonce);
 
+        let msg = Sha3_256::digest(&msg).to_vec();
+
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
         let verification_result = verify(&signature, &vec![pk], &msg);
         assert!(verification_result.is_ok());
@@ -375,6 +377,8 @@ impl UserIntegrationTestModel {
         msg.extend(&challenge);
         msg.extend(epoch.to_be_bytes());
 
+        let msg = Sha3_256::digest(&msg).to_vec();
+
         let sk = match secret_key_to_use {
             Some(secret_key) => secret_key,
             None => self.art.secret_key,
@@ -414,7 +418,7 @@ impl UserIntegrationTestModel {
         Ok(received_art)
     }
 
-    pub async fn get_art_and_update(
+    pub async fn _get_art_and_update(
         &mut self,
         epoch: u64,
         secret_key_to_use: Option<Fr>,
@@ -444,9 +448,7 @@ impl UserIntegrationTestModel {
             protected_payload: vec![],
         };
 
-        let mut buf = BytesMut::new();
-        tbs_frame.encode(&mut buf).unwrap();
-        let msg = &*buf;
+        let msg = &*Sha3_256::digest(tbs_frame.encode_to_vec());
 
         let pk = vec![self.art.public_key_of(&self.art.secret_key)];
         let signature = sign(&vec![self.art.secret_key], &pk, msg).unwrap();
@@ -483,9 +485,7 @@ impl UserIntegrationTestModel {
         tbs_frame: &FrameTbs,
         changes: &BranchChanges<CortadoAffine>,
     ) -> eyre::Result<Vec<u8>> {
-        let mut buf = BytesMut::new();
-        tbs_frame.encode(&mut buf)?;
-        let associated_data = &*buf;
+        let associated_data = &*Sha3_256::digest(tbs_frame.encode_to_vec());
 
         let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
             .map(|_| Scalar::random(&mut thread_rng()))
@@ -539,6 +539,8 @@ impl UserIntegrationTestModel {
             .collect::<Vec<u8>>();
         msg.extend_from_slice(self.chat_uuid.as_bytes());
         msg.extend(&nonce);
+
+        let msg = Sha3_256::digest(&msg).to_vec();
 
         debug!("Using {} for verification.", pk.x);
 

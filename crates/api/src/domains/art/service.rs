@@ -339,7 +339,11 @@ where
 
     pub async fn mark_as_removed(&self, id: Uuid, index: u64) -> Result<(), ARTServiceError> {
         let arts_storage = A::new().await?;
-        let mut art_record = arts_storage.get_art(id).await?;
+        
+        let mut art_record = arts_storage
+            .get_art(id)
+            .await?
+            .ok_or(ARTServiceError::NotFound)?;
         art_record
             .art
             .get_mut_node(&NodeIndex::from(index))?
