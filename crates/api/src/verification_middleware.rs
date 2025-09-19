@@ -190,7 +190,19 @@ async fn verification_middleware_inner(
                 }
             }
 
+
+
             // Context for verification
+            debug!("chat_id: {:?}", chat_id);
+            debug!("chat_id.as_bytes(): {:?}", chat_id.as_bytes());
+
+            debug!("&payload.nonce: {:?}", &payload.nonce);
+
+            debug!("payload.challenge: {:?}", &payload.challenge);
+
+            debug!("epoch: {:?}", epoch);
+            debug!("epoch.to_be_bytes(): {:?}", epoch.to_be_bytes());
+
             let mut msg = Vec::new();
             msg.extend_from_slice(chat_id.as_bytes());
             msg.extend(&payload.nonce);

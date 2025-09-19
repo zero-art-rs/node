@@ -121,6 +121,37 @@ async fn test_remove_member() -> eyre::Result<()> {
 }
 
 #[tokio::test]
+async fn test_get_once_art() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut context = UserTestModel::new(1).await.0;
+    let mut retrieval_context = context.derive_new(0)?;
+    let mut art_roots = vec![context.art.root.public_key];
+
+    // update art several times, so we can retrieve them
+    for _ in 0..1 {
+        context.update_key(None).await?;
+        art_roots.push(context.art.root.public_key);
+    }
+
+    // Test if retrieval is correct
+    for i in 0..1 {
+        let received_art = retrieval_context
+            .get_art_testing(i as u64, None, ProofMode::UseLeafKey.to_string())
+            .await?;
+
+        assert_eq!(received_art.root.public_key, art_roots[i]);
+
+        retrieval_context.art =
+            PrivateART::from_public_art(received_art, retrieval_context.initial_secrets[0])?;
+    }
+
+    use regex::Regex;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
     init_tracing_for_test();
 
