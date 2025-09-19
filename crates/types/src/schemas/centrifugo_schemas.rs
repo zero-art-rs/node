@@ -3,7 +3,7 @@ use serde_with::{base64::{Base64, UrlSafe}, serde_as};
 use uuid::Uuid;
 
 #[serde_as]
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema, Debug)]
 pub struct AuthRequest {
     /// Server provided challenge.
     #[schema(value_type = String, content_encoding = "Base64")]

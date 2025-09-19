@@ -8,7 +8,7 @@ use storage::{
     ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
     MongoKeysStorage, StorageError,
 };
-use tracing::{debug, error, trace};
+use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord, protos};
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ impl ARTService {
         id: Uuid,
         epoch: Option<u64>,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        trace!("Create MongoARTStorage");
+        debug!("Create MongoARTStorage");
         let arts_storage = MongoARTStorage::new().await?;
         let record = match epoch {
             Some(epoch) => self.get_art_by_epoch(id, epoch).await?,
@@ -63,7 +63,6 @@ impl ARTService {
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
         let mut art_record = self.get_initial_art(&id).await?;
-        // debug!("initial art TK_x = {}", art_record.art.root.public_key.x);
         for i in 1..=epoch {
             let epoch_changes = frame_storage.get_epoch_changes(id, i).await?;
 
@@ -75,7 +74,11 @@ impl ARTService {
         }
 
         art_record.epoch = epoch;
-        debug!("Successfully recomputed {} state of art, with PK.x: {}", epoch, art_record.art.root.public_key.x);
+        debug!(
+            "Successfully recomputed {} state of art. It has the next root PK: {}",
+            epoch,
+            art_record.art.root.public_key
+        );
 
         Ok(art_record)
     }
@@ -339,8 +342,8 @@ impl ARTService {
             art_record.epoch += 1;
 
             debug!(
-                "Updated art. New TK_x: {}",
-                &art_record.art.root.public_key.x
+                "Updated art. New root PK is: {}",
+                &art_record.art.root.public_key
             );
 
             arts_storage.arts_collection
@@ -409,7 +412,10 @@ impl ARTService {
             // .merge_with_skip(&applied_changes, &vec![change.clone()])?;
             .merge(&target_changes)?;
 
-        debug!("Merged art. New TK_x: {}", latest_art.art.root.public_key.x);
+        debug!(
+            "Finished to merge art. New root PK is: {}",
+            latest_art.art.root.public_key
+        );
 
         arts_storage.replace_art(id, latest_art).await?;
 

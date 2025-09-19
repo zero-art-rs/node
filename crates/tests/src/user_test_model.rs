@@ -421,65 +421,6 @@ impl UserTestModel {
         Ok(received_art)
     }
 
-    pub async fn get_art_testing(
-        &self,
-        epoch: u64,
-        secret_key_to_use: Option<Fr>,
-        proof_mode: String,
-    ) -> eyre::Result<PublicART<CortadoAffine>> {
-        // Get challenge for proof
-        let challenge = self.get_challenge().await?;
-
-        // Create signature
-        let nonce = Self::new_nonce();
-
-        let mut msg = Vec::new();
-        msg.extend_from_slice(self.chat_uuid.as_bytes());
-        msg.extend(&nonce);
-        msg.extend(&challenge);
-        msg.extend(epoch.to_be_bytes());
-
-        let msg = Sha3_256::digest(&msg).to_vec();
-
-        let sk = match secret_key_to_use {
-            Some(secret_key) => secret_key,
-            None => self.art.secret_key,
-        };
-
-        let pk = self.art.public_key_of(&sk);
-
-        let signature = sign(&vec![sk], &vec![pk], &msg).unwrap();
-        let verification_result = verify(&signature, &vec![pk], &msg);
-        assert!(verification_result.is_ok());
-
-        let mut public_key_bytes = Vec::new();
-        pk.serialize_uncompressed(&mut public_key_bytes).unwrap();
-
-        let get_art_response = self
-            .client
-            .get(format!(
-                "{}/{}/{}/{}",
-                BACKEND_URL, "v1/group", self.chat_uuid, epoch
-            ))
-            .query(&GetARTQuery {
-                signature,
-                nonce,
-                challenge,
-                proof_mode,
-                public_key: public_key_bytes,
-            })
-            .send()
-            .await?;
-
-        assert_eq!(get_art_response.status(), StatusCode::OK);
-
-        let received_art = PublicART::<CortadoAffine>::deserialize(
-            &get_art_response.json::<GetARTResponse>().await?.art,
-        )?;
-
-        Ok(received_art)
-    }
-
     pub async fn get_art_and_update(
         &mut self,
         epoch: u64,
@@ -559,7 +500,7 @@ impl UserTestModel {
 
         let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
 
-        debug!("Using public_key.x: {} for proof creation.", &public_key.x);
+        debug!("Using public_key: {} for proof creation.", &public_key);
 
         let proof = art_prove(
             Self::get_pedersen_basis(),
@@ -608,7 +549,7 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        debug!("Using {} for verification.", pk.x);
+        debug!("Using {} for verification.", pk);
 
         let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
 

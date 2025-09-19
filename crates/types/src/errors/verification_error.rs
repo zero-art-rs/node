@@ -25,8 +25,8 @@ pub enum VerificationError {
     InvalidProof,
     #[error("Failed to send message to proof verifier: {0}")]
     FailedToSendProof(Report),
-    #[error("No challenge requested. Use get_challenge endpoint")]
-    NoChallenge,
+    #[error("Challenge not found: it may have already been removed")]
+    WrongChallenge,
     #[error("ART operation isn't supported")]
     UnsupportedOperation,
     #[error("Serialization error: {0}")]

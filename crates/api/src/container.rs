@@ -18,6 +18,8 @@ use types::protos::group_operation::Operation;
 use types::utils::decode_branch_changes;
 use uuid::Uuid;
 
+const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
+
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
     pub centrifugo_service: Arc<CentrifugoService>,
@@ -110,5 +112,39 @@ impl Container {
             BranchChangesType::MakeBlank => Ok(StatusCode::NO_CONTENT),
             _ => Ok(StatusCode::NOT_IMPLEMENTED),
         }
+    }
+
+    // Check if provided correct challenge
+    pub async fn contains_challenge(&self, challenge: &Vec<u8>) -> bool {
+        debug!("Create read lock for challenges.");
+        let lock = self.challenges.read().await;
+ 
+        if !lock.contains(challenge) {
+            drop(lock);
+            debug!("Lock for challenges is dropped.");
+ 
+            debug!("Provided challenge isn't in the state.");
+            return false;
+        }
+
+        drop(lock);
+        debug!("Lock for challenges is dropped.");
+        
+        true
+    }
+
+    pub async fn new_challenge(&self) -> Vec<u8> {
+        debug!("Create a write lock on challenges and create new challenge...");
+        let mut lock = self.challenges.write().await;
+
+        let challenge = (0..DEFAULT_CHALLENGE_LENGTH)
+            .map(|_| rand::random::<u8>())
+            .collect::<Vec<u8>>();
+
+        lock.insert(challenge.clone());
+        drop(lock);
+        debug!("Challenge created and lock is dropped");
+
+        challenge
     }
 }

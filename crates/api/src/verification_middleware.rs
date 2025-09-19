@@ -80,8 +80,16 @@ async fn verification_middleware_inner(
     debug!("Match route_id");
     let verification_req = match route_id {
         "authenticate" => {
+            debug!("Now on authenticate route");
             debug!("Retrieve payload from bytes...");
             let Json(payload) = Json::<AuthRequest>::from_bytes(&bytes)?;
+
+            debug!("Received AuthRequest: {:?}", payload);
+
+            debug!("Check if provided challenge is correct.");
+            if !state.contains_challenge(&payload.challenge).await {
+                return Err(VerificationError::WrongChallenge);
+            }
 
             if payload.chat_ids.len() != payload.epochs.len() {
                 error!(
@@ -113,6 +121,7 @@ async fn verification_middleware_inner(
             })
         }
         "list_messages" | "count_messages" => {
+            debug!("Now on list_messages | count_messages route");
             debug!("Try to retrieve query...");
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
@@ -121,6 +130,8 @@ async fn verification_middleware_inner(
                 Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
             debug!("Try to get payload...");
             let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
+
+            debug!("Received GetMessageQuery: {:?}.", payload);
 
             debug!("Try to get art...");
             let art = state
@@ -147,6 +158,7 @@ async fn verification_middleware_inner(
             })
         }
         "get_art" => {
+            debug!("Now on get_art route.");
             debug!("Try to retrieve query...");
             let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
@@ -157,7 +169,7 @@ async fn verification_middleware_inner(
             debug!("Try to get payload...");
             let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
-            debug!("Received GetArtQuery: {:?}", payload);
+            debug!("Received GetArtQuery: {:?}.", payload);
 
             debug!("Try to get art...");
             let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
@@ -177,32 +189,32 @@ async fn verification_middleware_inner(
 
                     if public_key_is_wrong {
                         error!(
-                            "Provided public key isn't correct, or the corresponding node is nor leaf, not root"
+                            "Provided public key isn't correct, or the corresponding node is nor leaf, not root."
                         );
                         return Err(VerificationError::InvalidInput);
                     }
                 }
                 ProofMode::UseRootKey => {
                     if art.get_root().public_key != public_key {
-                        error!("Provided public key mismatch with root key");
+                        error!("Provided public key mismatch with root key.");
                         return Err(VerificationError::InvalidInput);
                     }
                 }
             }
 
+            debug!("Check if provided challenge is correct.");
+            if !state.contains_challenge(&payload.challenge).await {
+                return Err(VerificationError::WrongChallenge);
+            }
 
-
-            // Context for verification
             debug!("chat_id: {:?}", chat_id);
             debug!("chat_id.as_bytes(): {:?}", chat_id.as_bytes());
-
             debug!("&payload.nonce: {:?}", &payload.nonce);
-
             debug!("payload.challenge: {:?}", &payload.challenge);
-
             debug!("epoch: {:?}", epoch);
             debug!("epoch.to_be_bytes(): {:?}", epoch.to_be_bytes());
 
+            // Context for verification
             let mut msg = Vec::new();
             msg.extend_from_slice(chat_id.as_bytes());
             msg.extend(&payload.nonce);
@@ -223,6 +235,7 @@ async fn verification_middleware_inner(
             })
         }
         "send_frame" => {
+            debug!("Now on send_frame route");
             debug!("Try to retrieve path data...");
             let Path(id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
 
@@ -243,7 +256,6 @@ async fn verification_middleware_inner(
             let mut buf = BytesMut::new();
             tbs_frame.encode(&mut buf).unwrap();
             let associated_data = Sha3_256::digest(buf.to_vec()).to_vec();
-
 
             let operation = match &tbs_frame.group_operation {
                 None => None,
@@ -372,7 +384,7 @@ pub async fn get_opcode_and_input_for_art_update(
                 },
             };
 
-            debug!("aux_public_key.x: {}", aux_public_key.x);
+            debug!("aux_public_key: {}", aux_public_key);
 
             (VerificationOpcode::RemoveMember, vec![aux_public_key])
         }

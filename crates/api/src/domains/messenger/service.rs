@@ -2,7 +2,7 @@ use bytes::{BufMut, BytesMut};
 use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
-use tracing::{debug, trace};
+use tracing::{debug};
 use types::{
     FrameRecord,
     errors::MessageServiceError,
@@ -48,7 +48,7 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        trace!("List messages...");
+        debug!("List messages...");
         let frame_records = MongoFramesStorage::new(chat_id)
             .await?
             .list(filter.clone(), None, limit, skip)
@@ -65,7 +65,7 @@ impl MessengerService {
         }
 
         let mut sp_frames = SpFrames { sp_frames: vec![] };
-        trace!("Retrieve sp_frames from frame_records");
+        debug!("Retrieve sp_frames from frame_records");
         for message in &frame_records {
             let mut frame_buf = BytesMut::new();
             frame_buf.put(&*message.content);
@@ -81,7 +81,7 @@ impl MessengerService {
         }
 
         let mut sp_frames_buf = BytesMut::new();
-        trace!("Encode sp_frames...");
+        debug!("Encode sp_frames...");
         sp_frames.encode(&mut sp_frames_buf)?;
 
         Ok(sp_frames_buf)

@@ -121,37 +121,6 @@ async fn test_remove_member() -> eyre::Result<()> {
 }
 
 #[tokio::test]
-async fn test_get_once_art() -> eyre::Result<()> {
-    init_tracing_for_test();
-
-    let mut context = UserTestModel::new(1).await.0;
-    let mut retrieval_context = context.derive_new(0)?;
-    let mut art_roots = vec![context.art.root.public_key];
-
-    // update art several times, so we can retrieve them
-    for _ in 0..1 {
-        context.update_key(None).await?;
-        art_roots.push(context.art.root.public_key);
-    }
-
-    // Test if retrieval is correct
-    for i in 0..1 {
-        let received_art = retrieval_context
-            .get_art_testing(i as u64, None, ProofMode::UseLeafKey.to_string())
-            .await?;
-
-        assert_eq!(received_art.root.public_key, art_roots[i]);
-
-        retrieval_context.art =
-            PrivateART::from_public_art(received_art, retrieval_context.initial_secrets[0])?;
-    }
-
-    use regex::Regex;
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_get_art() -> eyre::Result<()> {
     init_tracing_for_test();
 
@@ -199,15 +168,15 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     debug!("User 0 update key ...");
     user0.add_member().await?;
     // user0.update_key(None).await?;
-    debug!("User0 TK_x: {}", user0.art.root.public_key.x);
+    debug!("User0 TK: {}", user0.art.root.public_key);
 
     debug!("User 1 update key ...");
     user1.update_key(Some(payload.clone())).await?;
-    debug!("User1 TK_x: {}", user1.art.root.public_key.x);
+    debug!("User1 TK: {}", user1.art.root.public_key);
 
     debug!("User 3 add member ...");
     user3.update_key(Some(payload.clone())).await?;
-    debug!("User3 TK_x: {}", user3.art.root.public_key.x);
+    debug!("User3 TK: {}", user3.art.root.public_key);
 
     let changes = user2.get_changes(20, 0, None).await?;
 
@@ -218,7 +187,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
         .unwrap();
     user2.art.merge(&changes)?;
     user2.epoch += 1;
-    debug!("User2 MTK_x: {}", user2.art.root.public_key.x);
+    debug!("User2 MTK_x: {}", user2.art.root.public_key);
 
     assert_eq!(
         user2
@@ -230,7 +199,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
 
     debug!("User 2 update and send update request with merge resolved");
     user2.update_key(Some(payload.clone())).await?;
-    debug!("User2 TK_x: {}", user2.art.root.public_key.x);
+    debug!("User2 TK_x: {}", user2.art.root.public_key);
 
     Ok(())
 }
@@ -245,7 +214,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(1)?;
-    debug!("User0 sk: {}", user0.art.public_key_of(&user0.art.get_secret_key()).x);
+    debug!("User0 pk: {}", user0.art.public_key_of(&user0.art.get_secret_key()));
 
     // sanity check
     assert_eq!(user2.art.get_root(), user0.art.get_root());
@@ -257,7 +226,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     debug!("User 0 update key ...");
     user0.make_blank(&target_node_path).await?;
     // user0.update_key(None).await?;
-    debug!("User0 TK_x: {}", user0.art.root.public_key.x);
+    debug!("User0 TK: {}", user0.art.root.public_key);
     debug!("User0 tk: {}", user0.art.get_root_key().unwrap().key);
 
     debug!("User1 receive changes ..");
@@ -269,7 +238,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     debug!("User 1 update key ...");
     user1.make_blank(&target_node_path).await?;
-    debug!("User1 TK_x: {}", user1.art.root.public_key.x);
+    debug!("User1 TK: {}", user1.art.root.public_key);
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
     assert_eq!(user1.art.public_key_of(&user1.art.get_root_key()?.key), user1.art.get_root().public_key);
 
@@ -299,7 +268,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     debug!("User 2 update key ...");
     user2.update_key(None).await?;
-    debug!("New TK.x: {}", user2.art.root.public_key.x);
+    debug!("New TK: {}", user2.art.root.public_key);
     Ok(())
 }
 
