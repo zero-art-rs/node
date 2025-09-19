@@ -2,7 +2,7 @@ use bytes::{BufMut, BytesMut};
 use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
-use tracing::{debug};
+use tracing::debug;
 use types::{
     FrameRecord,
     errors::MessageServiceError,

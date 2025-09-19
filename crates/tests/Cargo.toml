@@ -3,6 +3,9 @@ name = "tests"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+integration_tests = []
+
 [lib]
 path = "src/lib.rs"
 

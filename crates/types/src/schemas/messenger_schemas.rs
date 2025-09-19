@@ -1,7 +1,10 @@
 use crate::{default_limit, default_skip};
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
-use serde_with::{base64::{Base64, UrlSafe}, serde_as};
+use serde_with::{
+    base64::{Base64, UrlSafe},
+    serde_as,
+};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 

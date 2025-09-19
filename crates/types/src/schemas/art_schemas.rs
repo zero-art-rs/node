@@ -4,12 +4,14 @@ use ark_ff::PrimeField;
 use art::errors::ARTError;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
-use serde_with::{base64::{UrlSafe, Base64}, serde_as};
+use serde_with::{
+    base64::{Base64, UrlSafe},
+    serde_as,
+};
 use sha3::{Digest, Sha3_256};
 use std::fmt::Display;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
-
 
 pub const USE_ROOT_KEY: &str = "use_root_key";
 pub const USE_LEAF_KEY: &str = "use_leaf_key";
@@ -18,7 +20,6 @@ pub enum ProofMode {
     UseRootKey,
     UseLeafKey,
 }
-
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]

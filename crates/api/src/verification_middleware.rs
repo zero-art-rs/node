@@ -24,7 +24,6 @@ use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
-
 pub async fn authenticate(
     State(state): State<Arc<Container>>,
     request: Request,
@@ -75,7 +74,7 @@ pub async fn authenticate(
             public_inputs: PublicInputs::Signature {
                 public_keys: root_keys,
             },
-            context: auth_request.challenge,
+            context: Sha3_256::digest(auth_request.challenge).to_vec(),
         },
     };
 
@@ -395,16 +394,16 @@ pub async fn get_opcode_and_input_for_art_update(
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
                 true => {
-                    debug!("Use root public key for verification");
+                    debug!("Use root public key for remove_member verification.");
                     art.root.public_key
                 }
                 false => {
-                    debug!("Use left most leaf public key for \"remove member\" verification.");
+                    debug!("Use left most leaf public key for remove_member verification.");
                     get_left_most_leaf_public_key(state, id).await?
                 }
             };
 
-            debug!("aux_public_key: {}", aux_public_key);
+            debug!("aux_public_key: {}.", aux_public_key);
             (VerificationOpcode::RemoveMember, vec![aux_public_key])
         }
         _ => return Err(VerificationError::UnsupportedOperation),

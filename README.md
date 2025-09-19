@@ -33,7 +33,9 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 * `api` features
   * **api/art_modifications** - Enable art modification endpoints for use
   * **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
-  * **api/integration-tests** - Enables integration tests.
+
+* `tests` feature
+  * **tests/integration_tests** - Enables integration tests.
 
 ### Run 
 
@@ -47,9 +49,9 @@ cargo run -p zk-messenger-node --no-default-features --release -- run --config c
 ### Unit tests
 
 ### Integration tests
-To test the node api, one should prepare the environment. Firstly raise the infrastructure in docker. Node can be run in docker or locally. Then one can run tests with feature `integration-tests` like the next:
+To test the node api, one should prepare the environment. Firstly raise the infrastructure in docker. Node can be run in docker or locally. Then one can run tests with feature `integration_tests` like the next:
 ```shell
-cargo test -p api --features integration-tests --release
+cargo test -p tests --features integration_tests
 ```
 
 

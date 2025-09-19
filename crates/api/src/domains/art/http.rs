@@ -36,10 +36,7 @@ pub async fn get_art(
     payload.validate()?;
 
     debug!("retrieve art_record");
-    let art_record = state
-        .art_service
-        .get_art(chat_id, Some(epoch))
-        .await?;
+    let art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
 
     Ok(Json(GetARTResponse::try_from(art_record)?))
 }
@@ -60,5 +57,7 @@ pub async fn get_challenge(
 ) -> Result<Json<ChallengeResponse>, ApiError> {
     // let challenge = state.new_challenge().await;
 
-    Ok(Json(ChallengeResponse { challenge: state.new_challenge().await }))
+    Ok(Json(ChallengeResponse {
+        challenge: state.new_challenge().await,
+    }))
 }

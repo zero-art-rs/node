@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use bytes::{Bytes, BytesMut};
 use mongodb::bson::doc;
 use std::sync::Arc;
-use tracing::{instrument, debug};
+use tracing::{debug, instrument};
 use types::errors::ApiError;
 use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery};
 use types::protos::{Frame, SpFrames};

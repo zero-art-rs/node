@@ -76,8 +76,7 @@ impl ARTService {
         art_record.epoch = epoch;
         debug!(
             "Successfully recomputed {} state of art. It has the next root PK: {}",
-            epoch,
-            art_record.art.root.public_key
+            epoch, art_record.art.root.public_key
         );
 
         Ok(art_record)
@@ -238,21 +237,19 @@ impl ARTService {
 
         let arts_storage = MongoARTStorage::new().await?;
 
-        MongoKeysStorage::new()
-            .await?
-            .insert_one(
-                KeyRecord {
-                    owner_public_key: owner_id_pub_key,
-                    chat_id: id,
-                },
-            )
-            .await?;
-
         debug!("Check if ART for group {} already exists...", id);
         if arts_storage.get_art(id).await.is_ok() {
             return Err(ARTServiceError::AlreadyExists);
         }
         debug!("Group {} isn't created yet.", id);
+
+        MongoKeysStorage::new()
+            .await?
+            .insert_one(KeyRecord {
+                owner_public_key: owner_id_pub_key,
+                chat_id: id,
+            })
+            .await?;
 
         let mut session = DATABASE
             .get()
@@ -296,8 +293,7 @@ impl ARTService {
 
         session.start_transaction().await?;
 
-        self
-            .update_art_in_session(&mut session, changes.clone(), chat_id)
+        self.update_art_in_session(&mut session, changes.clone(), chat_id)
             .await?;
 
         session.commit_transaction().await?;
@@ -315,9 +311,7 @@ impl ARTService {
 
         // art_record.epoch += 1;
 
-        debug!(
-            "User with index {index} marked himself as removed",
-        );
+        debug!("User with index {index} marked himself as removed",);
         arts_storage.replace_art(id, art_record).await?;
 
         Ok(())
@@ -334,10 +328,12 @@ impl ARTService {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
 
         debug!("Updating art for chat: {}", chat_id);
-        if let Some(mut art_record) = arts_storage.arts_collection.find_one(filter.clone()).await? {
-            art_record
-                .art
-                .update_public_art(&changes)?;
+        if let Some(mut art_record) = arts_storage
+            .arts_collection
+            .find_one(filter.clone())
+            .await?
+        {
+            art_record.art.update_public_art(&changes)?;
 
             art_record.epoch += 1;
 
@@ -346,7 +342,8 @@ impl ARTService {
                 &art_record.art.root.public_key
             );
 
-            arts_storage.arts_collection
+            arts_storage
+                .arts_collection
                 .find_one_and_replace(filter, art_record)
                 .session(session)
                 .await?;
@@ -399,12 +396,9 @@ impl ARTService {
 
         // let latest_art = arts_storage.get_art(id).await?;
         let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
-        let mut target_changes = frames_storage
-            .get_epoch_changes(id, new_epoch)
-            .await?;
+        let mut target_changes = frames_storage.get_epoch_changes(id, new_epoch).await?;
 
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
-
 
         target_changes.push(change);
         latest_art

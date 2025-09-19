@@ -1,4 +1,9 @@
-use crate::user_test_model::UserTestModel;
+use std::time::Duration;
+use crate::{
+    user_test_model::UserTestModel,
+    utils::*,
+};
+use types::centrifugo_schemas::AuthRequest;
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
 use art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
@@ -7,12 +12,15 @@ use axum::http::StatusCode;
 use bytes::{Bytes, BytesMut};
 use cortado::CortadoAffine;
 use crypto::schnorr::{sign, verify};
+use eventsource_stream::Eventsource;
 use prost::Message;
 use tracing::debug;
 use tracing::field::debug;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::protos;
 use types::protos::{Frame, SpFrames};
+use sha3::{Sha3_256, Digest};
+use futures::StreamExt;
 
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
@@ -20,6 +28,132 @@ const CENTRIFUGO_URL: &str = "http://localhost:8000";
 const TEST_REPEATS: usize = 1;
 const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
 const DEFAULT_GROUP_SIZE: u64 = 100;
+
+#[tokio::test]
+async fn test_send_message() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    // let sender = get_integration_test_sender();
+
+    let (context, init_message) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
+
+    let challenge = context.get_challenge().await?;
+
+    let nonce = std::iter::repeat(rand::random::<u8>())
+        .take(DEFAULT_NONCE_LENGTH as usize)
+        .collect::<Vec<u8>>();
+
+    let tk = context.art.get_root_key().unwrap().key;
+    let pk = context.art.get_root().public_key;
+
+    let signature = sign(&vec![tk], &vec![pk], &*Sha3_256::digest(&challenge)).unwrap();
+
+    // Get Centrifugo auth token
+    let auth_request = AuthRequest {
+        chat_ids: vec![context.chat_uuid],
+        proof: signature,
+        nonce,
+        challenge,
+        epochs: vec![0],
+    };
+
+    let centrifugo_token_response = context.get_centrifugo_token(auth_request).await?;
+
+    let url = format!(
+        "{}/{}",
+        CENTRIFUGO_URL,
+        "connection/uni_sse?cf_connect={\"token\":\"".to_owned()
+            + &centrifugo_token_response.token
+            + "\"}"
+    );
+
+    let response = context.client.get(&url).send().await?;
+
+    let mut stream = response
+        .bytes_stream()
+        .eventsource()
+        .map(|event| match event {
+            Ok(event) => {
+                let data = event.data;
+                match serde_json::from_str::<CentrifugoEvent>(&data) {
+                    Ok(event) => Ok(event),
+                    Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send>),
+                }
+            }
+            Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send>),
+        });
+
+    let tbs_frame = protos::FrameTbs {
+        group_id: context.chat_uuid.to_string(),
+        epoch: 0,
+        nonce: (0..DEFAULT_NONCE_LENGTH)
+            .map(|_| rand::random::<u8>())
+            .collect::<Vec<u8>>(),
+        group_operation: None,
+        protected_payload: "zk messenger is the best".as_bytes().to_vec(),
+    };
+
+    let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
+    let tk = context.art.get_root_key()?.key;
+    let pk = vec![context.art.root.public_key];
+
+    let signature = sign(&vec![tk], &pk, &msg)?;
+    let verification_result = verify(&signature, &pk, &msg);
+    assert!(verification_result.is_ok());
+
+    let req = protos::Frame {
+        frame: Some(tbs_frame),
+        proof: signature,
+    };
+
+    let mut req_buf = BytesMut::new();
+    req.encode(&mut req_buf)?;
+    let test_message = req_buf.to_vec();
+
+    let handle = tokio::spawn(async move {
+        while let Some(event_result) = stream.next().await {
+            match event_result {
+                Ok(centrifugo_event) => {
+                    match centrifugo_event {
+                        CentrifugoEvent::Connect(_connect_msg) => {
+                            // Connection established, continue waiting for messages
+                            debug!(
+                                "send_message: Connection established, continue waiting for messages"
+                            );
+                            // debug!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
+                        }
+                        CentrifugoEvent::ChannelMessage(channel_msg) => {
+                            let content_string = channel_msg.publication.data.content;
+
+                            if content_string.eq(&init_message.to_vec()) {
+                                // skip accidental init group message
+                                continue;
+                            }
+
+                            assert_eq!(content_string, test_message);
+                            break;
+                        }
+                    }
+                }
+                Err(_e) => {
+                    continue;
+                }
+            }
+        }
+    });
+
+    context
+        .send_frame(req)
+        .await?;
+
+    let result = tokio::time::timeout(Duration::from_secs(5), handle).await?;
+
+    if let Err(e) = result {
+        panic!("Error: {:?}", e);
+    }
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn test_get_message() -> eyre::Result<()> {
@@ -214,7 +348,10 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(1)?;
-    debug!("User0 pk: {}", user0.art.public_key_of(&user0.art.get_secret_key()));
+    debug!(
+        "User0 pk: {}",
+        user0.art.public_key_of(&user0.art.get_secret_key())
+    );
 
     // sanity check
     assert_eq!(user2.art.get_root(), user0.art.get_root());
@@ -240,7 +377,10 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     user1.make_blank(&target_node_path).await?;
     debug!("User1 TK: {}", user1.art.root.public_key);
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
-    assert_eq!(user1.art.public_key_of(&user1.art.get_root_key()?.key), user1.art.get_root().public_key);
+    assert_eq!(
+        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+        user1.art.get_root().public_key
+    );
 
     debug!("User 2 receive changes ...");
     let blank_user_1 = user2.get_changes(20, 0, None).await?;
@@ -264,7 +404,10 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         user2.art.public_key_of(&user2.art.get_root_key()?.key),
         user1.art.public_key_of(&user1.art.get_root_key()?.key),
     );
-    assert_eq!(user2.art.public_key_of(&user2.art.get_root_key()?.key), user1.art.get_root().public_key);
+    assert_eq!(
+        user2.art.public_key_of(&user2.art.get_root_key()?.key),
+        user1.art.get_root().public_key
+    );
 
     debug!("User 2 update key ...");
     user2.update_key(None).await?;
@@ -280,11 +423,4 @@ async fn test_delete_group() -> eyre::Result<()> {
 
     context.delete_group().await?;
     Ok(())
-}
-
-fn init_tracing_for_test() {
-    _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(false)
-        .try_init();
 }

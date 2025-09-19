@@ -2,7 +2,6 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
-use ark_serialize::CanonicalDeserialize;
 use art::types::BranchChangesType;
 use axum::body::Bytes;
 use axum::http::StatusCode;
@@ -11,7 +10,7 @@ use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, warn};
 use types::errors::{ARTServiceError, ServiceError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
@@ -73,7 +72,11 @@ impl Container {
         Ok(response)
     }
 
-    pub async fn handle_self_removal(&self, id: Uuid, index: u64) -> Result<StatusCode, ServiceError> {
+    pub async fn handle_self_removal(
+        &self,
+        id: Uuid,
+        index: u64,
+    ) -> Result<StatusCode, ServiceError> {
         self.art_service.mark_as_removed(id, index).await?;
 
         Ok(StatusCode::OK)
@@ -95,7 +98,9 @@ impl Container {
         match new_epoch {
             e if e == current_epoch => {
                 // resolve merge conflict
-                self.art_service.merge_change(id, branch_changes.clone(), new_epoch).await?;
+                self.art_service
+                    .merge_change(id, branch_changes.clone(), new_epoch)
+                    .await?;
             }
             e if e == current_epoch + 1 => {
                 // update art and increment epoch
@@ -118,18 +123,18 @@ impl Container {
     pub async fn contains_challenge(&self, challenge: &Vec<u8>) -> bool {
         debug!("Create read lock for challenges.");
         let lock = self.challenges.read().await;
- 
+
         if !lock.contains(challenge) {
             drop(lock);
             debug!("Lock for challenges is dropped.");
- 
-            debug!("Provided challenge isn't in the state.");
+
+            warn!("Provided challenge isn't in the state.");
             return false;
         }
 
         drop(lock);
         debug!("Lock for challenges is dropped.");
-        
+
         true
     }
 
