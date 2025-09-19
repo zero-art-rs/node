@@ -75,6 +75,8 @@ async fn verification_middleware_inner(
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
     let query = parts.uri.query();
 
+    debug!("Received query: {:?}", query);
+
     trace!("Match route_id");
     let verification_req = match route_id {
         "authenticate" => {

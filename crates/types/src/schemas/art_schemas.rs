@@ -53,18 +53,20 @@ pub struct GetARTQuery {
 #[serde(rename_all = "camelCase")]
 pub struct GetARTResponse {
     /// Serialized art structure
-    #[schema(value_type = Option<String>, content_encoding = "UrlSafe")]
-    #[serde_as(as = "Base64<UrlSafe>")]
+    #[schema(value_type = Option<String>, content_encoding = "Base64")]
+    #[serde_as(as = "Base64")]
     pub art: Vec<u8>,
 
     /// Defines whether the group is private or not
     pub is_private: bool,
 }
 
+#[serde_as]
 #[derive(Serialize, ToSchema, Deserialize)]
 pub struct ChallengeResponse {
     /// Server provided challenge
-    #[schema(value_type = String, content_encoding = "UrlSafe")]
+    #[schema(value_type = String, content_encoding = "Base64")]
+    #[serde_as(as = "Base64")]
     pub challenge: Vec<u8>,
 }
 

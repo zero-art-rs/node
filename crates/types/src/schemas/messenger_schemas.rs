@@ -1,7 +1,7 @@
 use crate::{default_limit, default_skip};
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, serde_as};
+use serde_with::{base64::{Base64, UrlSafe}, serde_as};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
@@ -24,12 +24,12 @@ pub struct GetMessageQuery {
 
     /// Serialized signature.
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub nonce: Vec<u8>,
 
     /// Sequence number of the art used in proof and the . Default is 0.
@@ -55,12 +55,12 @@ pub struct CountMessagesQuery {
 
     /// Serialized signature.
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub nonce: Vec<u8>,
 
     /// Sequence number of the art used in proof. Default is 0.
