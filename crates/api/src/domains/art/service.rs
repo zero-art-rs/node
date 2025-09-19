@@ -91,7 +91,7 @@ where
 
         let mut records = F::new(id)
             .await?
-            .list(doc! {"epoch": epoch as i64}, None, limit, skip)
+            .list(doc! {"epoch": epoch as i64}, limit, skip, None)
             .await?;
 
         let mut changes = Vec::new();
@@ -107,7 +107,7 @@ where
 
             records = F::new(id)
                 .await?
-                .list(doc! {"epoch": epoch as i64}, None, limit, skip)
+                .list(doc! {"epoch": epoch as i64}, limit, skip, None)
                 .await?;
         }
 
@@ -153,8 +153,6 @@ where
 
         debug!("Recomputing {} state of the art in the chat: {}", epoch, id);
         let filter = doc! { "epoch": { "$lte": epoch as i64 } };
-        // let sort_options = Some(doc! { "sequence_number": 1 });
-        let sort_options = None;
 
         let mut changes = Vec::with_capacity(epoch as usize);
 
@@ -163,9 +161,9 @@ where
             let messages = message_storage
                 .list(
                     filter.clone(),
-                    sort_options.clone(),
                     types::DEFAULT_LIMIT,
                     skip,
+                    None
                 )
                 .await?;
             skip += types::DEFAULT_LIMIT;
@@ -247,8 +245,8 @@ where
 
         A::commit_transaction(&mut session).await?;
 
-        arts_storage.drop_collection_if_empty().await?;
-        frame_storage.drop_collection_if_empty().await?;
+        arts_storage.drop_collection_if_empty(None).await?;
+        frame_storage.drop_collection_if_empty(None).await?;
 
         debug!("Deletion is successful");
 
@@ -284,10 +282,13 @@ where
         let arts_storage = A::new().await?;
         K::new()
             .await?
-            .insert_one(KeyRecord {
-                owner_public_key: owner_id_pub_key,
-                chat_id: id,
-            })
+            .insert_one(
+                KeyRecord {
+                    owner_public_key: owner_id_pub_key,
+                    chat_id: id,
+                },
+                None,
+            )
             .await?;
 
         debug!("Check if ART for group {} already exists...", id);
@@ -367,7 +368,7 @@ where
         let arts_storage = A::new().await?;
 
         debug!("Updating art for chat: {}", chat_id);
-        if let Some(mut art_record) = arts_storage.find_one(filter.clone()).await? {
+        if let Some(mut art_record) = arts_storage.find_one(filter.clone(), None).await? {
             art_record.art.update_public_art(&changes)?;
 
             art_record.epoch += 1;

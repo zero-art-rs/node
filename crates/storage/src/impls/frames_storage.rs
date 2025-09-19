@@ -5,7 +5,7 @@ use crate::{
 use art::types::BranchChanges;
 use bytes::{BufMut, BytesMut};
 use cortado::CortadoAffine;
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use mongodb::{
     bson::doc,
     change_stream::{event::ChangeStreamEvent, ChangeStream},
@@ -14,7 +14,7 @@ use mongodb::{
     ClientSession, Collection, IndexModel,
 };
 use prost::Message;
-use tracing::debug;
+use tracing::{debug, error, warn};
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
 use types::utils::decode_branch_changes;
@@ -36,9 +36,9 @@ impl FrameStorage for MongoFramesStorage {
     type Session = ClientSession;
     type Error = Error;
 
-    async fn new(id: Uuid) -> Result<Self, Self::Error> {
+    async fn new(id: Uuid) -> Result<Self, Error> {
         let db = DATABASE.get().ok_or_else(|| {
-            Self::Error::from(std::io::Error::other("DATABASE is not initialized"))
+            Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
         let messages_collection_name = format!("{GROUP_COLLECTION_NAME}/{id}");
@@ -63,27 +63,56 @@ impl FrameStorage for MongoFramesStorage {
 
     async fn stream_messages(
         &self,
-    ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, Self::Error> {
+    ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, Error> {
         let change_stream = self.messages_collection.watch().await?;
 
         Ok(change_stream)
     }
 
-    async fn next_sequence_number(&self) -> Result<u64, Self::Error> {
+    async fn next_sequence_number(
+        &self,
+        session: Option<&mut Self::Session>,
+    ) -> Result<u64, Self::Error> {
         let message_collection = &self.messages_collection;
 
-        let mut cursor = message_collection
-            .find(doc! {})
-            .sort(doc! { "sequence_number": -1 })
-            .limit(1)
-            .await?;
+        let pipeline = vec![doc! { "$group": {
+            "_id": null,
+            "max_sequence_number": { "$max": "$sequence_number" }
+        }}];
 
-        let next_sequence_number = match cursor.try_next().await? {
-            Some(result) => result.sequence_number + 1,
-            None => 0,
+        let mut cursor = message_collection.aggregate(pipeline);
+        let search_result = match session {
+            Some(session) => {
+                cursor
+                    .session(&mut *session)
+                    .await?
+                    .next(&mut *session)
+                    .await
+            }
+            None => cursor.await?.next().await,
         };
 
-        Ok(next_sequence_number)
+        if let Some(result) = search_result {
+            let doc = result?;
+
+            return if let Some(max_value) = doc.get_i64("max_sequence_number").ok() {
+                if max_value.is_negative() {
+                    error!("Max sequence number is negative");
+                    return Err(Self::Error::from(std::io::Error::other(
+                        "Max sequence number is negative",
+                    )));
+                }
+
+                Ok(max_value as u64)
+            } else {
+                error!("There is no sequence number in the query");
+                Err(Self::Error::from(std::io::Error::other(
+                    "There is no sequence number in the query",
+                )))
+            };
+        }
+
+        Ok(0)
     }
 
     async fn store_message(
@@ -91,19 +120,35 @@ impl FrameStorage for MongoFramesStorage {
         content: Vec<u8>,
         epoch: i64,
         outbox_only: bool,
+        session: Option<&mut Self::Session>,
     ) -> Result<(), Self::Error> {
         let message_collection = &self.messages_collection;
 
-        let next_sequence_number = self.next_sequence_number().await?;
+        // let inner_session;
+        // let next_sequence_number;
+        // let use_inner_session;
+
+        let (inner_session, next_sequence_number, use_inner_session) = match session {
+            Some(session) => {
+                let seq = self.next_sequence_number(Some(&mut *session)).await?;
+                (&mut *session, seq, false)
+            }
+            None => {
+                let seq = self.next_sequence_number(None).await?;
+                (&mut self.start_session().await?, seq, false)
+            }
+        };
 
         let mut message = FrameRecord::new(content, next_sequence_number, None, epoch);
-        let mut session = self.messages_collection.client().start_session().await?;
-        session.start_transaction().await?;
+
+        if use_inner_session {
+            inner_session.start_transaction().await?;
+        }
 
         if !outbox_only {
             message_collection
                 .insert_one(message.clone())
-                .session(&mut session)
+                .session(&mut *inner_session)
                 .await?;
         }
 
@@ -112,75 +157,25 @@ impl FrameStorage for MongoFramesStorage {
 
         self.messages_outbox_collection
             .insert_one(message)
-            .session(&mut session)
+            .session(&mut *inner_session)
             .await?;
 
-        session.commit_transaction().await?;
+        if use_inner_session {
+            inner_session.commit_transaction().await?;
+        }
 
         Ok(())
     }
 
-    async fn store_message_in_session(
+    async fn drop_in_session(
         &self,
-        session: &mut ClientSession,
-        content: Vec<u8>,
-        epoch: i64,
+        session: Option<&mut Self::Session>,
     ) -> Result<(), Self::Error> {
-        let message_collection = &self.messages_collection;
-
-        let mut cursor = message_collection
-            .find(doc! {})
-            .sort(doc! { "sequence_number": -1 })
-            .limit(1)
-            .await?;
-
-        let next_sequence_number = match cursor.try_next().await? {
-            Some(result) => result.sequence_number + 1,
-            None => 0,
-        };
-        debug!(
-            "Store message with sequence number {}",
-            next_sequence_number
-        );
-
-        let mut message = FrameRecord::new(content, next_sequence_number, None, epoch);
-
-        message_collection
-            .insert_one(message.clone())
-            .session(&mut *session)
-            .await?;
-
-        // change message for outbox_collection
-        message.chat_id = Some(self.id);
-
-        self.messages_outbox_collection
-            .insert_one(message)
-            .session(&mut *session)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn get_existing_collection(chat_id: Uuid) -> Result<Self, Self::Error> {
-        let db = DATABASE.get().ok_or_else(|| {
-            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
-        })?;
-
-        let messages_collection = db.collection(&format!("{GROUP_COLLECTION_NAME}/{}", &chat_id));
-        let messages_outbox_collection = db.collection(OUTBOX_COLLECTION_NAME);
-
-        Ok(Self {
-            messages_collection,
-            messages_outbox_collection,
-            id: chat_id,
-        })
-    }
-
-    async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), Self::Error> {
-        self.messages_collection
-            .drop()
-            .session(&mut *session)
-            .await?;
+        let drop_request = self.messages_collection.drop();
+        match session {
+            Some(session) => drop_request.session(&mut *session).await?,
+            None => drop_request.await?,
+        }
 
         Ok(())
     }

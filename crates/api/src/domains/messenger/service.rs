@@ -46,7 +46,7 @@ where
         debug!("Store and send new message");
         F::new(*id)
             .await?
-            .store_message(message, epoch, outbox_only)
+            .store_message(message, epoch, outbox_only, None)
             .await?;
         debug!("Message sent");
         Ok(())
@@ -62,7 +62,7 @@ where
         trace!("List messages...");
         let frame_records = F::new(*id)
             .await?
-            .list(filter.clone(), None, limit, skip)
+            .list(filter.clone(), limit, skip, None)
             .await?;
 
         if frame_records.is_empty() {
@@ -105,15 +105,15 @@ where
         limit: i64,
         skip: i64,
     ) -> Result<u64, MessageServiceError> {
-        Ok(F::new(*id).await?.count(filter, limit, skip).await?)
+        Ok(F::new(*id).await?.count(filter, limit, skip, None).await?)
     }
 
     pub async fn delete_messages(
         &self,
         id: &Uuid,
         filter: Document,
-    ) -> Result<Vec<FrameRecord>, MessageServiceError> {
-        let result = F::new(*id).await?.delete(filter).await?;
-        Ok(result)
+    ) -> Result<(), MessageServiceError> {
+        F::new(*id).await?.delete(filter, None).await?;
+        Ok(())
     }
 }

@@ -41,23 +41,19 @@ pub trait FrameStorage:
         &self,
     ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, Self::Error>;
 
-    async fn next_sequence_number(&self) -> Result<u64, Self::Error>;
+    async fn next_sequence_number(
+        &self,
+        session: Option<&mut Self::Session>,
+    ) -> Result<u64, Self::Error>;
 
     async fn store_message(
         &self,
         content: Vec<u8>,
         epoch: i64,
         outbox_only: bool,
+        session: Option<&mut Self::Session>,
     ) -> Result<(), Self::Error>;
 
-    async fn store_message_in_session(
-        &self,
-        session: &mut Self::Session,
-        content: Vec<u8>,
-        epoch: i64,
-    ) -> Result<(), Self::Error>;
-
-    async fn get_existing_collection(chat_id: Uuid) -> Result<Self, Self::Error>;
-
-    async fn drop_in_session(&self, session: &mut Self::Session) -> Result<(), Self::Error>;
+    async fn drop_in_session(&self, session: Option<&mut Self::Session>)
+        -> Result<(), Self::Error>;
 }

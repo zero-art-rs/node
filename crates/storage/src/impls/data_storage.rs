@@ -1,11 +1,12 @@
 pub(crate) use crate::{DataStorage, MongoDataStorage};
 use bson::doc;
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use mongodb::error::Error;
 use mongodb::{bson::Document, ClientSession};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::debug;
+use crate::SessionSupport;
 
 #[async_trait::async_trait]
 impl<M, D> DataStorage<D, Error, ClientSession> for M
@@ -16,40 +17,60 @@ where
     async fn list(
         &self,
         filter: Document,
-        _sort_option: Option<Document>,
         limit: i64,
         skip: i64,
+        session: Option<&mut ClientSession>,
     ) -> Result<Vec<D>, Error> {
-        let mut cursor = self
+        let mut find_request = self
             .get_collection()
             .await
             .find(filter)
-            // .sort(sort_option.unwrap_or_default())
             .skip(skip as u64)
-            .limit(limit as i64)
-            .await?;
+            .limit(limit as i64);
 
         let mut records = Vec::new();
-        while cursor.advance().await? {
-            records.push(cursor.deserialize_current()?);
+        match session {
+            Some(session) => {
+                let mut cursor = find_request.session(&mut *session).await?;
+                while let Some(record) = cursor.next(&mut *session).await {
+                    records.push(record?);
+                }
+            },
+            None => {
+                let mut cursor = find_request.await?;
+                while let Some(record) = cursor.next().await {
+                    records.push(record?);
+                }
+            },
         }
 
         Ok(records)
     }
 
-    async fn count(&self, filter: Document, limit: i64, skip: i64) -> Result<u64, Error> {
-        Ok(self
+    async fn count(&self, filter: Document, limit: i64, skip: i64, session: Option<&mut ClientSession>) -> Result<u64, Error> {
+        let count_request = self
             .get_collection()
             .await
             .count_documents(filter)
-            // .find(filter)
             .skip(skip as u64)
-            .limit(limit as u64)
-            .await?)
+            .limit(limit as u64);
+
+        let count = match session {
+            Some(session) => count_request.session(&mut *session).await?,
+            None => count_request.await?,
+
+        };
+
+        Ok(count)
     }
 
-    async fn find_one(&self, filter: Document) -> Result<Option<D>, Error> {
-        let cursor = self.get_collection().await.find_one(filter).await?;
+    async fn find_one(&self, filter: Document, session: Option<&mut ClientSession>) -> Result<Option<D>, Error> {
+        let find_request = self.get_collection().await.find_one(filter);
+
+        let cursor = match session {
+            Some(session) => find_request.session(&mut *session).await?,
+            None => find_request.await?,
+        };
 
         Ok(cursor)
     }
@@ -60,43 +81,52 @@ where
         replacement: D,
         session: Option<&mut ClientSession>,
     ) -> Result<Option<D>, Error> {
-        let cursor = self
+        let find_request = self
             .get_collection()
             .await
             .find_one_and_replace(filter, replacement);
 
         let cursor = match session {
-            Some(session) => cursor.session(session).await?,
-            None => cursor.await?,
+            Some(session) => find_request.session(session).await?,
+            None => find_request.await?,
         };
 
         Ok(cursor)
     }
 
-    async fn insert_one(&self, record: D) -> Result<(), Error> {
-        self.get_collection().await.insert_one(record).await?;
+    async fn insert_one(&self, record: D, session: Option<&mut ClientSession>) -> Result<(), Error> {
+        let insert_request = self.get_collection().await.insert_one(record);
+
+        match session {
+            Some(session) => insert_request.session(&mut *session).await?,
+            None => insert_request.await?,
+        };
 
         Ok(())
     }
 
-    async fn insert_many(&self, records: Vec<D>) -> Result<(), Error> {
-        self.get_collection().await.insert_many(records).await?;
+    async fn insert_many(&self, records: Vec<D>, session: Option<&mut ClientSession>) -> Result<(), Error> {
+        let insert_request = self.get_collection().await.insert_many(records);
+
+        match session {
+            Some(session) => insert_request.session(&mut *session).await?,
+            None => insert_request.await?,
+        };
 
         Ok(())
     }
 
-    async fn delete(&self, filter: Document) -> Result<Vec<D>, Error> {
+    async fn delete(&self, filter: Document, session: Option<&mut ClientSession>) -> Result<(), Error> {
         let collection = &self.get_collection().await;
-        let mut collection_cursor = collection.find(filter.clone()).await?;
-        let mut records = Vec::new();
 
-        while let Some(message) = collection_cursor.try_next().await? {
-            records.push(message);
-        }
+        let delete_request = collection.delete_many(filter);
 
-        collection.delete_many(filter).await?;
+        match session {
+            Some(session) => delete_request.session(&mut *session).await?,
+            None => delete_request.await?,
+        };
 
-        Ok(records)
+        Ok(())
     }
 
     async fn delete_one(
@@ -104,43 +134,59 @@ where
         filter: Document,
         session: Option<&mut ClientSession>,
     ) -> Result<(), Error> {
-        let delete_one_request = self.get_collection().await.delete_one(filter);
+        let delete_request = self.get_collection().await.delete_one(filter);
 
         match session {
-            Some(session) => delete_one_request.session(session).await?,
-            None => delete_one_request.await?,
+            Some(session) => delete_request.session(session).await?,
+            None => delete_request.await?,
         };
 
         Ok(())
     }
 
-    async fn clear(&self, session: &mut ClientSession) -> Result<(), Error> {
-        debug!("Clear message collection ...");
-        self.get_collection()
+    async fn clear(&self, session: Option<&mut ClientSession>) -> Result<(), Error> {
+        let delete_request = self.get_collection()
             .await
-            .delete_many(doc! {})
-            .session(session)
-            .await?;
+            .delete_many(doc! {});
 
-        debug!("Message collection cleared successfully");
+        match session {
+            Some(session) => delete_request.session(session).await?,
+            None => delete_request.await?,
+        };
+
         Ok(())
     }
 
-    async fn drop_collection(&self) -> Result<(), Error> {
+    async fn drop_collection(&self, session: Option<&mut ClientSession>) -> Result<(), Error> {
+        let drop_request = self.get_collection().await.drop();
+
+        match session {
+            Some(session) => drop_request.session(&mut *session).await?,
+            None => drop_request.await?,
+        };
+
         self.get_collection().await.drop().await?;
         Ok(())
     }
 
-    async fn drop_collection_in_session(&self, sesion: &mut ClientSession) -> Result<(), Error> {
-        self.get_collection().await.drop().session(sesion).await?;
-        Ok(())
-    }
-
-    async fn drop_collection_if_empty(&self) -> Result<(), Error> {
+    async fn drop_collection_if_empty(&self, session: Option<&mut ClientSession>) -> Result<(), Error> {
         let collection = self.get_collection().await;
-        if collection.find_one(doc! {}).await?.is_none() {
-            collection.drop().await?;
+
+        if let Some(session) = session {
+            if collection.find_one(doc! {}).await?.is_none() {
+                collection.drop().await?;
+            }
+        } else {
+            let mut session = self.get_collection().await.client().start_session().await?;
+            session.start_transaction().await?;
+
+            if collection.find_one(doc! {}).session(&mut session).await?.is_none() {
+                collection.drop().session(&mut session).await?;
+            }
+
+            session.commit_transaction().await?;
         }
+
 
         Ok(())
     }

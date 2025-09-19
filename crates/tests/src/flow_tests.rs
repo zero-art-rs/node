@@ -1,6 +1,5 @@
 use crate::sender::{Sender, TestSender, TestServerSender};
-use crate::utils::{CentrifugoEvent, CentrifugoTokenResponse};
-use crate::{init_tracing_for_test, user_integration_test_model::UserIntegrationTestModel};
+use crate::{init_tracing_for_test, user_test_model::UserIntegrationTestModel};
 use api::{ARTService, CentrifugoService, Container, MessengerService};
 use api::{art_transport, centrifugo_transport, messenger_transport};
 use ark_std::rand::SeedableRng;
@@ -40,6 +39,9 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
+#[cfg(feature = "integration_tests")]
+use crate::utils::{CentrifugoEvent, CentrifugoTokenResponse};
+
 const BACKEND_URL: &str = "http://localhost:8080";
 const CENTRIFUGO_URL: &str = "http://localhost:8000";
 // used for tests, which can be repeated
@@ -47,7 +49,7 @@ const TEST_REPEATS: usize = 4;
 const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
 const DEFAULT_GROUP_SIZE: u64 = 10;
 
-fn get_test_sender() -> TestSender {
+fn get_integration_test_sender() -> TestSender {
     TestSender {
         backend_url: BACKEND_URL.to_string(),
         centrifugo_url: CENTRIFUGO_URL.to_string(),
@@ -200,17 +202,20 @@ async fn get_test_server_sender() -> TestServerSender {
 }
 
 async fn get_sender() -> impl Sender {
-    // let sender = get_test_server_sender().await;
-    let sender = get_test_sender();
+    #[cfg(not(feature = "integration_tests"))]
+    let sender = get_test_server_sender().await;
+    #[cfg(feature = "integration_tests")]
+    let sender = get_integration_test_sender();
 
     return sender;
 }
 
+#[cfg(feature = "integration_tests")]
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let sender = get_test_sender();
+    let sender = get_integration_test_sender();
 
     let (context, init_message) = UserIntegrationTestModel::new(DEFAULT_GROUP_SIZE, sender).await;
 

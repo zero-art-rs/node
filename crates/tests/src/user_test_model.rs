@@ -1,3 +1,5 @@
+use crate::sender::Sender;
+use crate::sender::{TestSender, TestServerSender};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
@@ -13,7 +15,6 @@ use art::{
     types::{PrivateART, PublicART},
 };
 use axum::body::Bytes;
-use axum_test::{TestResponse, TestServer};
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
@@ -23,6 +24,7 @@ use prost::Message;
 use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
+use storage::SessionSupport;
 use tracing::debug;
 use tracing::field::debug;
 use types::{
@@ -36,6 +38,7 @@ use types::{
 };
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
+use zkp::toolbox::batch_verifier::PointVar::Static;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
 const BACKEND_URL: &str = "http://localhost:8080";
@@ -45,18 +48,20 @@ const TEST_REPEATS: usize = 4;
 const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
 const DEFAULT_GROUP_SIZE: u64 = 10;
 
-#[derive(Debug)]
-pub(crate) struct UserTestModel<'a> {
-    pub test_server: &'a TestServer,
+#[derive(Clone, Debug)]
+pub(crate) struct UserIntegrationTestModel<S> {
+    pub client: reqwest::Client,
     pub art: PrivateART<CortadoAffine>,
     pub initial_secrets: Vec<Fr>,
     pub chat_uuid: Uuid,
     pub epoch: u64,
     pub owner_id_key: Option<Fr>,
+
+    pub sender: S,
 }
 
-impl<'a> UserTestModel<'a> {
-    pub async fn new(test_server: &'a TestServer, size: u64) -> (Self, BytesMut) {
+impl<S: Sender> UserIntegrationTestModel<S> {
+    pub async fn new(size: u64, sender: S) -> (Self, Vec<u8>) {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect();
@@ -67,16 +72,17 @@ impl<'a> UserTestModel<'a> {
         let id = Uuid::now_v7();
 
         let mut user = Self {
-            test_server,
+            client: reqwest::Client::new(),
             art,
             initial_secrets: secrets,
             chat_uuid: id,
             epoch: 0, // init request is already one epoch
             owner_id_key: Some(owner_id_key),
+            sender,
         };
 
         // Create new_group for testing
-        let (response, init_message) = user
+        let body = user
             .create_new_chat(
                 PublicART::new_art_from_secrets(&user.initial_secrets, &CortadoAffine::generator())
                     .unwrap()
@@ -85,9 +91,8 @@ impl<'a> UserTestModel<'a> {
             )
             .await
             .unwrap();
-        response.assert_status(StatusCode::CREATED);
 
-        (user, init_message)
+        (user, body)
     }
 
     pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ARTError> {
@@ -104,12 +109,13 @@ impl<'a> UserTestModel<'a> {
         art.update_node_index()?;
 
         Ok(Self {
-            test_server: self.test_server,
+            client: reqwest::Client::new(),
             art,
             initial_secrets: self.initial_secrets.clone(),
             chat_uuid: self.chat_uuid,
             epoch: self.epoch,
             owner_id_key: None,
+            sender: self.sender.clone(),
         })
     }
 
@@ -124,7 +130,7 @@ impl<'a> UserTestModel<'a> {
         &self,
         art: PublicART<CortadoAffine>,
         sk: Fr,
-    ) -> eyre::Result<(TestResponse, BytesMut)> {
+    ) -> eyre::Result<Vec<u8>> {
         let pk = art.public_key_of(&sk);
         let mut serialized_pk = Vec::new();
         pk.serialize_uncompressed(&mut serialized_pk)?;
@@ -139,10 +145,7 @@ impl<'a> UserTestModel<'a> {
             protected_payload: vec![],
         };
 
-        let mut msg = BytesMut::new();
-        tbs_frame.encode(&mut msg)?;
-
-        let msg = Sha3_256::digest(msg.to_vec());
+        let msg = Sha3_256::digest(tbs_frame.encode_to_vec());
 
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
         let verification_result = verify(&signature, &vec![pk], &msg);
@@ -153,7 +156,10 @@ impl<'a> UserTestModel<'a> {
             proof: signature,
         };
 
-        self.send_frame(req).await
+        // self.send_frame(req).await
+        self.sender
+            .send_frame(req, self.chat_uuid, Some(StatusCode::CREATED))
+            .await
     }
 
     fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
@@ -166,10 +172,7 @@ impl<'a> UserTestModel<'a> {
         )
     }
 
-    pub async fn update_key(
-        &mut self,
-        payload: Option<Vec<u8>>,
-    ) -> eyre::Result<(TestResponse, BytesMut)> {
+    pub async fn update_key(&mut self, payload: Option<Vec<u8>>) -> eyre::Result<Vec<u8>> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secret_key = self.art.secret_key.clone();
@@ -195,20 +198,24 @@ impl<'a> UserTestModel<'a> {
         )?;
 
         let update_key_response = self
-            .send_frame(Frame {
-                frame: Some(tbs_frame),
-                proof: proof_bytes,
-            })
+            .sender
+            .send_frame(
+                Frame {
+                    frame: Some(tbs_frame),
+                    proof: proof_bytes,
+                },
+                self.chat_uuid,
+                Some(StatusCode::OK),
+            )
             .await?;
 
-        update_key_response.0.assert_status(StatusCode::OK);
-
         self.epoch += 1;
+
         Ok(update_key_response)
     }
 
     // add node to the art, and send updates to the chat
-    pub async fn add_member(&mut self) -> eyre::Result<(TestResponse, BytesMut)> {
+    pub async fn add_member(&mut self) -> eyre::Result<Vec<u8>> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         // let old_tk = self.art.get_root_key()?.key;
@@ -231,16 +238,205 @@ impl<'a> UserTestModel<'a> {
             self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &append_user_changes)?;
 
         let add_member_response = self
-            .send_frame(Frame {
-                frame: Some(tbs_frame),
-                proof: proof_bytes,
-            })
+            .sender
+            .send_frame(
+                Frame {
+                    frame: Some(tbs_frame),
+                    proof: proof_bytes,
+                },
+                self.chat_uuid,
+                Some(StatusCode::OK),
+            )
             .await?;
 
-        add_member_response.0.assert_status(StatusCode::OK);
         self.epoch += 1;
 
         Ok(add_member_response)
+    }
+
+    pub async fn make_blank(&mut self, user_to_remove: &Vec<Direction>) -> eyre::Result<Vec<u8>> {
+        let mut rng = StdRng::seed_from_u64(rand::random());
+
+        let old_tk = match self.is_owner() {
+            true => self.art.secret_key.clone(),
+            false => self.art.get_root_key()?.key,
+        };
+
+        let temporary_secret_key = Fr::rand(&mut rng);
+        debug!("temporary_secret_key: {}", temporary_secret_key);
+        let (_, remove_user_changes, artefacts) = self
+            .art
+            .make_blank(&user_to_remove, &temporary_secret_key)?;
+
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch + 1,
+            nonce: vec![],
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::RemoveMember(remove_user_changes.serialze()?)),
+            }),
+            protected_payload: vec![],
+        };
+
+        let proof_bytes =
+            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &remove_user_changes)?;
+
+        let make_blank_result = self
+            .sender
+            .send_frame(
+                Frame {
+                    frame: Some(tbs_frame),
+                    proof: proof_bytes,
+                },
+                self.chat_uuid,
+                Some(StatusCode::NO_CONTENT),
+            )
+            .await?;
+
+        self.epoch += 1;
+
+        Ok(make_blank_result)
+    }
+
+    pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
+        let sk = self.art.get_root_key()?.key;
+        let pk = self.art.public_key_of(&sk);
+
+        let nonce = Self::new_nonce();
+
+        let mut msg = Vec::new();
+        msg.extend_from_slice(self.chat_uuid.as_bytes());
+        msg.extend(&nonce);
+
+        let msg = Sha3_256::digest(&msg).to_vec();
+
+        let signature = sign(&vec![sk], &vec![pk], &msg)?;
+        let verification_result = verify(&signature, &vec![pk], &msg);
+        assert!(verification_result.is_ok());
+
+        let get_message_query = GetMessageQuery {
+            message_sequence_number: None,
+            limit,
+            skip,
+            signature,
+            nonce,
+            epoch: None,
+        };
+
+        self.sender
+            .get_message(get_message_query, self.chat_uuid)
+            .await
+    }
+
+    pub async fn get_challenge(&self) -> eyre::Result<Vec<u8>> {
+        let mut serialized_public_key = Vec::new();
+        self.art
+            .public_key_of(&self.art.secret_key)
+            .serialize_uncompressed(&mut serialized_public_key)
+            .unwrap();
+
+        self.sender.get_challenge(self.chat_uuid).await
+    }
+
+    pub async fn get_art(
+        &self,
+        epoch: u64,
+        secret_key_to_use: Option<Fr>,
+        proof_mode: String,
+    ) -> eyre::Result<PublicART<CortadoAffine>> {
+        // Get challenge for proof
+        let challenge = self.get_challenge().await?;
+
+        // Create signature
+        let nonce = Self::new_nonce();
+
+        let mut msg = Vec::new();
+        msg.extend_from_slice(self.chat_uuid.as_bytes());
+        msg.extend(&nonce);
+        msg.extend(&challenge);
+        msg.extend(epoch.to_be_bytes());
+
+        let msg = Sha3_256::digest(&msg).to_vec();
+
+        let sk = match secret_key_to_use {
+            Some(secret_key) => secret_key,
+            None => self.art.secret_key,
+        };
+
+        let pk = self.art.public_key_of(&sk);
+
+        let signature = sign(&vec![sk], &vec![pk], &msg).unwrap();
+        let verification_result = verify(&signature, &vec![pk], &msg);
+        assert!(verification_result.is_ok());
+
+        let mut public_key_bytes = Vec::new();
+        pk.serialize_uncompressed(&mut public_key_bytes).unwrap();
+
+        let get_art_query = GetARTQuery {
+            signature,
+            nonce,
+            challenge,
+            proof_mode,
+            public_key: public_key_bytes,
+        };
+
+        self.sender
+            .get_art(get_art_query, self.chat_uuid, epoch)
+            .await
+    }
+
+    pub async fn _get_art_and_update(
+        &mut self,
+        epoch: u64,
+        secret_key_to_use: Option<Fr>,
+        proof_mode: String,
+    ) -> eyre::Result<()> {
+        let art = self
+            .get_art(epoch, secret_key_to_use, proof_mode.clone())
+            .await?;
+        self.art = PrivateART::from_public_art(art, self.art.secret_key)?;
+        self.epoch = epoch;
+
+        Ok(())
+    }
+
+    pub async fn delete_group(&mut self) -> eyre::Result<Vec<u8>> {
+        let nonce = Self::new_nonce();
+
+        let challenge = self.get_challenge().await?;
+
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch + 1,
+            nonce,
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::DropGroup(challenge)),
+            }),
+            protected_payload: vec![],
+        };
+
+        let msg = &*Sha3_256::digest(tbs_frame.encode_to_vec());
+
+        let pk = vec![self.art.public_key_of(&self.art.secret_key)];
+        let signature = sign(&vec![self.art.secret_key], &pk, msg).unwrap();
+        let verification_result = verify(&signature, &pk, msg);
+        assert!(verification_result.is_ok());
+
+        let delete_response = self
+            .sender
+            .send_frame(
+                Frame {
+                    frame: Some(tbs_frame),
+                    proof: signature,
+                },
+                self.chat_uuid,
+                Some(StatusCode::NO_CONTENT),
+            )
+            .await?;
+
+        self.epoch += 1;
+
+        Ok(delete_response)
     }
 
     fn sign_and_check_signature(&self, msg: &[u8], sk: Fr) -> eyre::Result<Vec<u8>> {
@@ -260,9 +456,7 @@ impl<'a> UserTestModel<'a> {
         tbs_frame: &FrameTbs,
         changes: &BranchChanges<CortadoAffine>,
     ) -> eyre::Result<Vec<u8>> {
-        let mut buf = BytesMut::new();
-        tbs_frame.encode(&mut buf)?;
-        let associated_data = &*Sha3_256::digest(&buf).to_vec();
+        let associated_data = &*Sha3_256::digest(tbs_frame.encode_to_vec());
 
         let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
             .map(|_| Scalar::random(&mut thread_rng()))
@@ -301,85 +495,62 @@ impl<'a> UserTestModel<'a> {
         Ok(proof_bytes)
     }
 
-    // pub async fn get_changes(
-    //     &self,
-    //     limit: i64,
-    //     skip: i64,
-    //     epoch: Option<u64>,
-    // ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
-    //     let tk = self.art.get_root_key()?.key;
-    //     let pk = self.art.root.public_key;
-    //
-    //     let mut msg = Vec::new();
-    //     let nonce = (0..DEFAULT_NONCE_LENGTH)
-    //         .map(|_| rand::random::<u8>())
-    //         .collect::<Vec<u8>>();
-    //     msg.extend_from_slice(self.chat_uuid.as_bytes());
-    //     msg.extend(&nonce);
-    //
-    //     debug!("Using {} for verification.", pk.x);
-    //
-    //     let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
-    //
-    //     assert!(verify(&signature, &vec![pk], &msg).is_ok());
-    //
-    //     let changes_response = self
-    //         .client
-    //         .get(format!(
-    //             "{}/{}/{}/{}",
-    //             BACKEND_URL, "v1/group", self.chat_uuid, "frames"
-    //         ))
-    //         .query(&GetMessageQuery {
-    //             message_sequence_number: None,
-    //             signature,
-    //             limit,
-    //             skip,
-    //             nonce,
-    //             epoch,
-    //         })
-    //         .send()
-    //         .await?;
-    //
-    //     assert_eq!(changes_response.status(), StatusCode::ACCEPTED);
-    //
-    //     let buf = BytesMut::from(&*changes_response.bytes().await?);
-    //     let sp_frames = SpFrames::decode(buf)?.sp_frames;
-    //
-    //     let mut changes = Vec::with_capacity(sp_frames.len());
-    //     for sp_frame in sp_frames {
-    //         let frame = match sp_frame.frame {
-    //             Some(frame) => frame,
-    //             None => continue,
-    //         };
-    //
-    //         if let Some(frame_change) = extract_branch_changes(&frame)? {
-    //             changes.push(frame_change);
-    //         }
-    //     }
-    //
-    //     Ok(changes)
-    // }
+    pub async fn get_changes(
+        &self,
+        limit: i64,
+        skip: i64,
+        epoch: Option<u64>,
+    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+        let tk = self.art.get_root_key()?.key;
+        let pk = self.art.root.public_key;
+
+        let mut msg = Vec::new();
+        let nonce = (0..DEFAULT_NONCE_LENGTH)
+            .map(|_| rand::random::<u8>())
+            .collect::<Vec<u8>>();
+        msg.extend_from_slice(self.chat_uuid.as_bytes());
+        msg.extend(&nonce);
+
+        let msg = Sha3_256::digest(&msg).to_vec();
+
+        debug!("Using {} for verification.", pk.x);
+
+        let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
+
+        assert!(verify(&signature, &vec![pk], &msg).is_ok());
+
+        let query = GetMessageQuery {
+            message_sequence_number: None,
+            signature,
+            limit,
+            skip,
+            nonce,
+            epoch,
+        };
+        let sp_frames = self
+            .sender
+            .get_message(query, self.chat_uuid)
+            .await?
+            .sp_frames;
+
+        let mut changes = Vec::with_capacity(sp_frames.len());
+        for sp_frame in sp_frames {
+            let frame = match sp_frame.frame {
+                Some(frame) => frame,
+                None => continue,
+            };
+
+            if let Some(frame_change) = extract_branch_changes(&frame)? {
+                changes.push(frame_change);
+            }
+        }
+
+        Ok(changes)
+    }
 
     pub fn new_nonce() -> Vec<u8> {
         std::iter::repeat(rand::random::<u8>())
             .take(DEFAULT_NONCE_LENGTH as usize)
             .collect::<Vec<u8>>()
-    }
-
-    /// returns response from the server and the message, which was sent
-    pub async fn send_frame(&self, frame: Frame) -> eyre::Result<(TestResponse, BytesMut)> {
-        let mut buf = BytesMut::new();
-        frame.encode(&mut buf).unwrap();
-
-        Ok((
-            self.test_server
-                .post(&format!(
-                    "{}/{}/{}/{}",
-                    BACKEND_URL, "v1/group", self.chat_uuid, "frames"
-                ))
-                .bytes(Bytes::from(buf.clone()))
-                .await,
-            buf,
-        ))
     }
 }

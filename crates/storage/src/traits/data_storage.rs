@@ -18,14 +18,20 @@ pub trait DataStorage<D, E, S>: Send + Sync {
     async fn list(
         &self,
         filter: Document,
-        sort_option: Option<Document>,
         limit: i64,
         skip: i64,
+        session: Option<&mut S>,
     ) -> Result<Vec<D>, E>;
 
-    async fn count(&self, filter: Document, limit: i64, skip: i64) -> Result<u64, E>;
+    async fn count(
+        &self,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+        session: Option<&mut S>,
+    ) -> Result<u64, E>;
 
-    async fn find_one(&self, filter: Document) -> Result<Option<D>, E>;
+    async fn find_one(&self, filter: Document, session: Option<&mut S>) -> Result<Option<D>, E>;
 
     async fn find_one_and_replace(
         &self,
@@ -34,21 +40,19 @@ pub trait DataStorage<D, E, S>: Send + Sync {
         session: Option<&mut S>,
     ) -> Result<Option<D>, E>;
 
-    async fn insert_one(&self, record: D) -> Result<(), E>;
+    async fn insert_one(&self, record: D, session: Option<&mut S>) -> Result<(), E>;
 
-    async fn insert_many(&self, records: Vec<D>) -> Result<(), E>;
+    async fn insert_many(&self, records: Vec<D>, session: Option<&mut S>) -> Result<(), E>;
 
-    async fn delete(&self, filter: Document) -> Result<Vec<D>, E>;
+    async fn delete(&self, filter: Document, session: Option<&mut S>) -> Result<(), E>;
 
     async fn delete_one(&self, filter: Document, session: Option<&mut S>) -> Result<(), Error>;
 
-    async fn clear(&self, session: &mut S) -> Result<(), E>;
+    async fn clear(&self, session: Option<&mut S>) -> Result<(), E>;
 
-    async fn drop_collection(&self) -> Result<(), E>;
+    async fn drop_collection(&self, session: Option<&mut S>) -> Result<(), E>;
 
-    async fn drop_collection_in_session(&self, sesion: &mut S) -> Result<(), E>;
-
-    async fn drop_collection_if_empty(&self) -> Result<(), E>;
+    async fn drop_collection_if_empty(&self, session: Option<&mut S>) -> Result<(), E>;
 }
 
 /// It is a generic abstraction for MongoDB-backed storage of typed data. It

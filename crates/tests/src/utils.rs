@@ -1,17 +1,14 @@
-#[cfg(feature = "integration_tests")]
 use {
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     std::collections::HashMap,
 };
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 pub(crate) struct CentrifugoTokenResponse {
     pub(crate) token: String,
 }
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum CentrifugoEvent {
@@ -19,14 +16,12 @@ pub(crate) enum CentrifugoEvent {
     ChannelMessage(CentrifugoMessage),
 }
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct ConnectMessage {
     connect: ConnectData,
 }
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct ConnectData {
@@ -39,7 +34,6 @@ pub(crate) struct ConnectData {
     session: String,
 }
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct SubscriptionInfo {
@@ -49,21 +43,18 @@ pub(crate) struct SubscriptionInfo {
     positioned: bool,
 }
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 pub(crate) struct CentrifugoMessage {
     #[serde(rename = "pub")]
     pub(crate) publication: CentrifugoPub,
 }
 
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 pub(crate) struct CentrifugoPub {
     pub(crate) data: MessageData,
 }
 
 #[serde_as]
-#[cfg(feature = "integration_tests")]
 #[derive(Debug, Deserialize)]
 pub(crate) struct MessageData {
     #[serde_as(as = "Base64")]
