@@ -9,7 +9,7 @@ use validator::Validate;
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMessageQuery {
-    // Unique sequence number of the first message. Default is 0.
+    /// Unique sequence number of the first message. Default is 0.
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
@@ -22,7 +22,7 @@ pub struct GetMessageQuery {
     #[serde(default = "default_skip")]
     pub skip: i64,
 
-    /// Serialized signature.
+    /// Root signed Schnorr signature of the message: (chat_id.as_bytes() || nonce).
     #[param(value_type = String)]
     #[serde_as(as = "Base64<UrlSafe>")]
     pub signature: Vec<u8>,
@@ -40,7 +40,7 @@ pub struct GetMessageQuery {
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct CountMessagesQuery {
-    // Unique sequence number of the message. Default is 0.
+    /// Unique sequence number of the message. Default is 0.
     pub message_sequence_number: Option<i64>,
 
     /// Number of results to be returned
@@ -53,7 +53,7 @@ pub struct CountMessagesQuery {
     #[serde(default = "default_skip")]
     pub skip: i64,
 
-    /// Serialized signature.
+    /// Root signed Schnorr signature of the message: (chat_id.as_bytes() || nonce).
     #[param(value_type = String)]
     #[serde_as(as = "Base64<UrlSafe>")]
     pub signature: Vec<u8>,

@@ -10,7 +10,7 @@ pub struct AuthRequest {
     #[serde_as(as = "Base64")]
     pub challenge: Vec<u8>,
 
-    // User provided nonce.
+    /// User provided nonce.
     #[schema(value_type = String, content_encoding = "Base64")]
     #[serde_as(as = "Base64")]
     pub nonce: Vec<u8>,
@@ -21,7 +21,7 @@ pub struct AuthRequest {
     /// Epochs which are known to user for each group id. Default is 0.
     pub epochs: Vec<u64>,
 
-    /// Proof of art root secret key knowledge for each group id.
+    /// Signature of server provided challenge with root secret keys from all requested groups.
     #[schema(value_type = String, content_encoding = "Base64")]
     #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
