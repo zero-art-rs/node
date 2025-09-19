@@ -1,4 +1,4 @@
-use crate::errors::{ARTServiceError, StorageError};
+use crate::errors::{ARTServiceError, StorageError, ApiError};
 use art::errors::ARTError;
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
@@ -65,5 +65,11 @@ impl From<Report> for VerificationError {
     fn from(report: Report) -> Self {
         error!("Failed to send message to proof verifier: {}", report);
         VerificationError::FailedToSendProof(report)
+    }
+}
+
+impl IntoResponse for VerificationError {
+    fn into_response(self) -> axum::response::Response {
+        ApiError::from(self).into_response()
     }
 }

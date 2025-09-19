@@ -1,9 +1,8 @@
 use crate::container::Container;
-use crate::verification_middleware::verification_middleware;
+use crate::verification_middleware;
 use crate::{art_transport, centrifugo_transport, messenger_transport};
 use axum::{Router, middleware};
 use std::sync::Arc;
-use types::add_route_id;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -32,67 +31,46 @@ async fn get_health_handler() -> &'static str {
 )]
 struct PublicApiDoc;
 
-trait VerificationLayer {
-    fn with_verification(self, container: Arc<Container>) -> Self;
-}
-
-impl<S> VerificationLayer for OpenApiRouter<S>
-where
-    S: Send + Sync + Clone + 'static,
-{
-    fn with_verification(self, container: Arc<Container>) -> Self {
-        self.route_layer(middleware::from_fn_with_state(
-            container,
-            verification_middleware,
-        ))
-    }
-}
-
-trait RouteIdLayer {
-    fn with_route_id(self, id: &'static str) -> Self;
-}
-
-impl<S> RouteIdLayer for OpenApiRouter<S>
-where
-    S: Send + Sync + Clone + 'static,
-{
-    fn with_route_id(self, id: &'static str) -> Self {
-        self.route_layer(middleware::from_fn(move |req, next| {
-            add_route_id(id, req, next)
-        }))
-    }
-}
-
 pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
     let health_handler_route = OpenApiRouter::new().routes(routes![get_health_handler]);
 
     //Messages:
     let list_messages_route = OpenApiRouter::new()
         .routes(routes![messenger_transport::list_messages])
-        .with_verification(container.clone())
-        .with_route_id("list_messages");
+        .route_layer(middleware::from_fn_with_state(
+            container.clone(),
+            verification_middleware::list_messages,
+        ));
 
     let count_messages_route = OpenApiRouter::new()
         .routes(routes![messenger_transport::count_messages])
-        .with_verification(container.clone())
-        .with_route_id("count_messages");
+        .route_layer(middleware::from_fn_with_state(
+            container.clone(),
+            verification_middleware::list_messages,
+        ));
 
     // Centrifugo:
     let authenticate_route = OpenApiRouter::new()
         .routes(routes![centrifugo_transport::authenticate])
-        .with_verification(container.clone())
-        .with_route_id("authenticate");
+        .route_layer(middleware::from_fn_with_state(
+            container.clone(),
+            verification_middleware::authenticate,
+        ));
 
     // Group management:
     let send_frame_route = OpenApiRouter::new()
         .routes(routes![messenger_transport::send_frame])
-        .with_verification(container.clone())
-        .with_route_id("send_frame");
+        .route_layer(middleware::from_fn_with_state(
+            container.clone(),
+            verification_middleware::send_frame,
+        ));
 
     let get_art_route = OpenApiRouter::new()
         .routes(routes![art_transport::get_art])
-        .with_verification(container.clone())
-        .with_route_id("get_art");
+        .route_layer(middleware::from_fn_with_state(
+            container.clone(),
+            verification_middleware::get_art,
+        ));
 
     let get_challenge_route = OpenApiRouter::new().routes(routes![art_transport::get_challenge]);
 

@@ -1,329 +1,351 @@
 use crate::Container;
 use ark_serialize::CanonicalDeserialize;
 use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, LeafIterWithPath, NodeIndex};
+use art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, NodeIndex};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::middleware::Next;
 use axum_core::body::Body;
 use axum_core::extract::{FromRequestParts, Request};
-use axum_core::response::{IntoResponse, Response};
-use bytes::BytesMut;
+use axum_core::response::Response;
 use callbacks::callback;
 use cortado::CortadoAffine;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
+use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage};
 use tracing::{debug, error};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
-use types::errors::{ARTServiceError, StorageError};
+use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
-use types::protos::group_operation::Operation;
-use types::protos::{Frame, FrameTbs};
-use types::{
-    RouteId,
-    errors::{ApiError, VerificationError},
-};
+use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
-use sha3::{Digest, Sha3_256};
 
-pub async fn verification_middleware(
-    state: State<Arc<Container>>,
-    request: Request,
-    next: Next,
-) -> Response {
-    #[cfg(not(feature = "verification"))]
-    {
-        // warn!("Verification middleware is disabled.");
-        return next.run(request).await;
-    }
-    #[cfg(feature = "verification")]
-    {
-        verification_middleware_inner(state, request, next)
-            .await
-            .unwrap_or_else(|error| {
-                error!("{}", error);
-                ApiError::from(error).into_response()
-            })
-    }
-}
-
-async fn verification_middleware_inner(
+pub async fn authenticate(
     State(state): State<Arc<Container>>,
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
-    let route_id = request
-        .extensions()
-        .get::<RouteId>()
-        .map(|id| id.0)
-        .ok_or(VerificationError::UnknownEndpoint)?;
-
     debug!(
-        "Incoming verification request: {} {}, handled by route {}",
+        "Incoming authenticate verification request: {} {}.",
         request.method(),
         request.uri(),
-        route_id,
+    );
+
+    let (parts, body) = request.into_parts();
+    debug!("Try to parse bytes in body...");
+    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+
+    debug!("Parse AuthRequest from the body...");
+    let Json(auth_request) = Json::<AuthRequest>::from_bytes(&bytes)?;
+    debug!("Received AuthRequest: {:?}", auth_request);
+
+    debug!("Check if provided challenge is correct.");
+    if !state.contains_challenge(&auth_request.challenge).await {
+        return Err(VerificationError::WrongChallenge);
+    }
+
+    if auth_request.chat_ids.len() != auth_request.epochs.len() {
+        error!(
+            "The len of ids and epochs must be the same, but provided {} and {}.",
+            auth_request.chat_ids.len(),
+            auth_request.epochs.len()
+        );
+        return Err(VerificationError::InvalidInput);
+    }
+
+    let mut root_keys = Vec::new();
+    debug!("Retrieve root keys for requested arts...");
+    for (chat_id, epoch) in auth_request.chat_ids.iter().zip(auth_request.epochs.iter()) {
+        let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
+
+        root_keys.push(art.get_root().public_key);
+    }
+
+    debug!("Successfully retrieved {} root keys.", root_keys.len());
+
+    let verification_req = VerificationRequest {
+        opcode: VerificationOpcode::AuthRequest,
+        data: VerifierData {
+            proof: auth_request.proof,
+            public_inputs: PublicInputs::Signature {
+                public_keys: root_keys,
+            },
+            context: auth_request.challenge,
+        },
+    };
+
+    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
+
+    Ok(next
+        .run(Request::from_parts(
+            parts.clone(),
+            Body::from(bytes.clone()),
+        ))
+        .await)
+}
+
+pub async fn list_messages(
+    State(state): State<Arc<Container>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, VerificationError> {
+    debug!(
+        "Incoming verification request: {} {}.",
+        request.method(),
+        request.uri(),
     );
 
     let (parts, body) = request.into_parts();
     debug!("Try to parse bytes into body...");
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
     let query = parts.uri.query();
-
     debug!("Received query: {:?}", query);
 
-    debug!("Match route_id");
-    let verification_req = match route_id {
-        "authenticate" => {
-            debug!("Now on authenticate route");
-            debug!("Retrieve payload from bytes...");
-            let Json(payload) = Json::<AuthRequest>::from_bytes(&bytes)?;
+    debug!("Try to retrieve query...");
+    let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
 
-            debug!("Received AuthRequest: {:?}", payload);
+    debug!("Try to parse path parameters...");
+    let Path(chat_id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+    debug!("Try to get payload...");
+    let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
 
-            debug!("Check if provided challenge is correct.");
-            if !state.contains_challenge(&payload.challenge).await {
-                return Err(VerificationError::WrongChallenge);
-            }
+    debug!("Received GetMessageQuery: {:?}.", payload);
 
-            if payload.chat_ids.len() != payload.epochs.len() {
-                error!(
-                    "The len of ids and epochs must be the same, but provided {} and {}",
-                    payload.chat_ids.len(),
-                    payload.epochs.len()
-                );
-                return Err(VerificationError::InvalidInput);
-            }
+    debug!("Try to get art...");
+    let art = state
+        .art_service
+        .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
+        .await?
+        .art;
 
-            let mut root_keys = Vec::new();
-            debug!("Retrieve root keys for requested arts");
-            for (chat_id, epoch) in payload.chat_ids.iter().zip(payload.epochs.iter()) {
-                let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
+    let mut msg = Vec::new();
+    msg.extend_from_slice(chat_id.as_bytes());
+    msg.extend(&payload.nonce);
 
-                root_keys.push(art.get_root().public_key);
-            }
-            debug!("Successfully retrieved {} root keys", root_keys.len());
+    let msg = Sha3_256::digest(&msg).to_vec();
 
-            Some(VerificationRequest {
-                opcode: VerificationOpcode::AuthRequest,
-                data: VerifierData {
-                    proof: payload.proof,
-                    public_inputs: PublicInputs::Signature {
-                        public_keys: root_keys,
-                    },
-                    context: payload.challenge,
-                },
-            })
-        }
-        "list_messages" | "count_messages" => {
-            debug!("Now on list_messages | count_messages route");
-            debug!("Try to retrieve query...");
-            let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
-
-            debug!("Try to parse path parameters...");
-            let Path(chat_id) =
-                Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
-            debug!("Try to get payload...");
-            let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
-
-            debug!("Received GetMessageQuery: {:?}.", payload);
-
-            debug!("Try to get art...");
-            let art = state
-                .art_service
-                .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
-                .await?
-                .art;
-
-            let mut msg = Vec::new();
-            msg.extend_from_slice(chat_id.as_bytes());
-            msg.extend(&payload.nonce);
-
-            let msg = Sha3_256::digest(&msg).to_vec();
-
-            Some(VerificationRequest {
-                opcode: VerificationOpcode::GetMessages,
-                data: VerifierData {
-                    proof: payload.signature.clone(),
-                    public_inputs: PublicInputs::Signature {
-                        public_keys: vec![art.root.public_key],
-                    },
-                    context: msg,
-                },
-            })
-        }
-        "get_art" => {
-            debug!("Now on get_art route.");
-            debug!("Try to retrieve query...");
-            let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
-
-            debug!("Try to parse path parameters...");
-            let Path((chat_id, epoch)) =
-                Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
-
-            debug!("Try to get payload...");
-            let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
-
-            debug!("Received GetArtQuery: {:?}.", payload);
-
-            debug!("Try to get art...");
-            let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
-
-            debug!("Try to deserialize public key...");
-            let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)?;
-
-            debug!("Check if provided public key is in art...");
-            match ProofMode::try_from(payload.proof_mode.as_str())? {
-                ProofMode::UseLeafKey => {
-                    let mut public_key_is_wrong = true;
-                    for node in LeafIter::new(art.get_root()) {
-                        if node.public_key.eq(&public_key) {
-                            public_key_is_wrong = false;
-                        }
-                    }
-
-                    if public_key_is_wrong {
-                        error!(
-                            "Provided public key isn't correct, or the corresponding node is nor leaf, not root."
-                        );
-                        return Err(VerificationError::InvalidInput);
-                    }
-                }
-                ProofMode::UseRootKey => {
-                    if art.get_root().public_key != public_key {
-                        error!("Provided public key mismatch with root key.");
-                        return Err(VerificationError::InvalidInput);
-                    }
-                }
-            }
-
-            debug!("Check if provided challenge is correct.");
-            if !state.contains_challenge(&payload.challenge).await {
-                return Err(VerificationError::WrongChallenge);
-            }
-
-            debug!("chat_id: {:?}", chat_id);
-            debug!("chat_id.as_bytes(): {:?}", chat_id.as_bytes());
-            debug!("&payload.nonce: {:?}", &payload.nonce);
-            debug!("payload.challenge: {:?}", &payload.challenge);
-            debug!("epoch: {:?}", epoch);
-            debug!("epoch.to_be_bytes(): {:?}", epoch.to_be_bytes());
-
-            // Context for verification
-            let mut msg = Vec::new();
-            msg.extend_from_slice(chat_id.as_bytes());
-            msg.extend(&payload.nonce);
-            msg.extend(payload.challenge);
-            msg.extend(epoch.to_be_bytes());
-
-            let msg = Sha3_256::digest(&msg).to_vec();
-
-            Some(VerificationRequest {
-                opcode: VerificationOpcode::GetMessages,
-                data: VerifierData {
-                    proof: payload.signature.clone(),
-                    public_inputs: PublicInputs::Signature {
-                        public_keys: vec![public_key],
-                    },
-                    context: msg,
-                },
-            })
-        }
-        "send_frame" => {
-            debug!("Now on send_frame route");
-            debug!("Try to retrieve path data...");
-            let Path(id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
-
-            debug!("Try to decode frame...");
-            let frame = Frame::decode(bytes.clone())?;
-            debug!("Successfully decoded frame");
-
-            debug!("Try to take tbs_frame...");
-            let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
-            debug!("Successfully took tbs_frame");
-
-            if tbs_frame.group_id != id.to_string() {
-                error!("Group ID mismatch");
-                return Err(VerificationError::InvalidInput);
-            }
-
-            debug!("Compute associated_data...");
-            let mut buf = BytesMut::new();
-            tbs_frame.encode(&mut buf).unwrap();
-            let associated_data = Sha3_256::digest(buf.to_vec()).to_vec();
-
-            let operation = match &tbs_frame.group_operation {
-                None => None,
-                Some(val) => val.operation.as_ref(),
-            };
-
-            debug!("try to get_epoch ...");
-            // Check if epoch is nor decreasing nor to big
-            let current_epoch = MongoARTStorage::new()
-                .await?
-                .get_current_epoch(&id)
-                .await.unwrap_or(0);
-            debug!("Epoch received successfully");
-
-            if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
-                error!(
-                    "Invalid epoch provided ({}), while the current one is {}",
-                    tbs_frame.epoch, current_epoch
-                );
-                return Err(VerificationError::InvalidEpoch {
-                    current: current_epoch,
-                    provided: tbs_frame.epoch,
-                });
-            }
-
-            debug!("Retreive operation_data...");
-            let (opcode, public_inputs) = match &operation {
-                None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
-                Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
-                Some(Operation::AddMember(branch_changes_bytes))
-                | Some(Operation::RemoveMember(branch_changes_bytes))
-                | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
-                    get_opcode_and_input_for_art_update(
-                        state.clone(),
-                        id,
-                        branch_changes_bytes,
-                        Some(tbs_frame.epoch - 1),
-                    )
-                    .await?
-                }
-                Some(Operation::LeaveGroup(index)) => {
-                    get_opcode_and_input_for_leave_group(state.clone(), id, *index).await?
-                }
-                Some(Operation::DropGroup(_)) => {
-                    get_opcode_and_input_for_drop_group(state.clone(), id).await?
-                }
-            };
-            debug!("opcode and public_inputs retrieved successfully");
-
-            Some(VerificationRequest {
-                opcode,
-                data: VerifierData {
-                    proof: frame.proof,
-                    public_inputs,
-                    context: associated_data,
-                },
-            })
-        }
-        _ => return Err(VerificationError::UnknownEndpoint),
+    let verification_req = VerificationRequest {
+        opcode: VerificationOpcode::GetMessages,
+        data: VerifierData {
+            proof: payload.signature.clone(),
+            public_inputs: PublicInputs::Signature {
+                public_keys: vec![art.root.public_key],
+            },
+            context: msg,
+        },
     };
 
-    debug!("send verification request to proof verifier ...");
+    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
 
-    if let Some(verification_req) = verification_req {
-        verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
+    Ok(next
+        .run(Request::from_parts(
+            parts.clone(),
+            Body::from(bytes.clone()),
+        ))
+        .await)
+}
+
+pub async fn get_art(
+    State(state): State<Arc<Container>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, VerificationError> {
+    debug!(
+        "Incoming verification request: {} {}.",
+        request.method(),
+        request.uri(),
+    );
+
+    let (parts, body) = request.into_parts();
+    debug!("Try to parse bytes into body...");
+    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+
+    let query = parts.uri.query();
+    debug!("Received query: {:?}", query);
+
+    debug!("Try to retrieve query...");
+    let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
+
+    debug!("Try to parse path parameters...");
+    let Path((chat_id, epoch)) =
+        Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
+
+    debug!("Try to parse GetARTQuery...");
+    let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
+    debug!("Received GetArtQuery: {:?}.", payload);
+
+    debug!("Try to get art for id: {}, epoch: {}...", chat_id, epoch);
+    let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
+
+    debug!("Try to deserialize public key...");
+    let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)?;
+
+    match ProofMode::try_from(payload.proof_mode.as_str())? {
+        ProofMode::UseLeafKey => {
+            debug!("Check if provided leaf public key is in art...");
+            let mut public_key_is_wrong = true;
+            for node in LeafIter::new(art.get_root()) {
+                if node.public_key.eq(&public_key) {
+                    public_key_is_wrong = false;
+                }
+            }
+
+            if public_key_is_wrong {
+                error!(
+                    "Provided public key isn't correct, or the corresponding node is nor leaf, not root."
+                );
+                return Err(VerificationError::InvalidInput);
+            }
+        }
+        ProofMode::UseRootKey => {
+            debug!("Check if provided root public key is in art...");
+
+            if art.get_root().public_key != public_key {
+                error!("Provided public key mismatch with root key.");
+                return Err(VerificationError::InvalidInput);
+            }
+        }
     }
 
-    debug!("Verification completed successfully. Run next layer...");
+    debug!("Check if provided challenge is correct...");
+    if !state.contains_challenge(&payload.challenge).await {
+        return Err(VerificationError::WrongChallenge);
+    }
+
+    debug!("chat_id: {:?}", chat_id);
+    debug!("chat_id.as_bytes(): {:?}", chat_id.as_bytes());
+    debug!("&payload.nonce: {:?}", &payload.nonce);
+    debug!("payload.challenge: {:?}", &payload.challenge);
+    debug!("epoch: {:?}", epoch);
+    debug!("epoch.to_be_bytes(): {:?}", epoch.to_be_bytes());
+
+    // Context for verification
+    let mut msg = Vec::new();
+    msg.extend_from_slice(chat_id.as_bytes());
+    msg.extend(&payload.nonce);
+    msg.extend(payload.challenge);
+    msg.extend(epoch.to_be_bytes());
+    debug!("The computed raw message to sign is {:?}", msg);
+
+    let msg = Sha3_256::digest(&msg).to_vec();
+    debug!("The computed digest of the message is {:?}", msg);
+
+    let verification_req = VerificationRequest {
+        opcode: VerificationOpcode::GetArt,
+        data: VerifierData {
+            proof: payload.signature.clone(),
+            public_inputs: PublicInputs::Signature {
+                public_keys: vec![public_key],
+            },
+            context: msg,
+        },
+    };
+
+    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
+
+    Ok(next
+        .run(Request::from_parts(
+            parts.clone(),
+            Body::from(bytes.clone()),
+        ))
+        .await)
+}
+
+pub async fn send_frame(
+    State(state): State<Arc<Container>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, VerificationError> {
+    debug!(
+        "Incoming verification request: {} {}.",
+        request.method(),
+        request.uri(),
+    );
+
+    let (parts, body) = request.into_parts();
+    debug!("Try to parse bytes into body...");
+    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+
+    debug!("Try to retrieve path data...");
+    let Path(id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+
+    debug!("Try to decode frame...");
+    let frame = Frame::decode(bytes.clone())?;
+
+    debug!("Try to retrieve tbs_frame...");
+    let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
+
+    debug!("Check id mismatch...");
+    if tbs_frame.group_id != id.to_string() {
+        error!("Group ID mismatch");
+        return Err(VerificationError::InvalidInput);
+    }
+
+    debug!("Compute associated_data...");
+    let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
+
+    let operation = match &tbs_frame.group_operation {
+        None => None,
+        Some(val) => val.operation.as_ref(),
+    };
+
+    debug!("Try to get current epoch...");
+    let current_epoch = MongoARTStorage::new()
+        .await?
+        .get_current_epoch(&id)
+        .await
+        .unwrap_or(0);
+
+    debug!("Check if epoch is nor decreasing nor to big");
+    if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
+        error!(
+            "Invalid epoch provided ({}), while the current one is {}",
+            tbs_frame.epoch, current_epoch
+        );
+        return Err(VerificationError::InvalidEpoch {
+            current: current_epoch,
+            provided: tbs_frame.epoch,
+        });
+    }
+
+    debug!("Retreive operation_data...");
+    let (opcode, public_inputs) = match &operation {
+        None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
+        Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
+        Some(Operation::AddMember(branch_changes_bytes))
+        | Some(Operation::RemoveMember(branch_changes_bytes))
+        | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
+            get_opcode_and_input_for_art_update(
+                state.clone(),
+                id,
+                branch_changes_bytes,
+                Some(tbs_frame.epoch - 1),
+            )
+            .await?
+        }
+        Some(Operation::LeaveGroup(index)) => {
+            get_opcode_and_input_for_leave_group(state.clone(), id, *index).await?
+        }
+        Some(Operation::DropGroup(_)) => {
+            get_opcode_and_input_for_drop_group(state.clone(), id).await?
+        }
+    };
+
+    let verification_req = VerificationRequest {
+        opcode,
+        data: VerifierData {
+            proof: frame.proof,
+            public_inputs,
+            context: associated_data,
+        },
+    };
+
+    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
 
     Ok(next
         .run(Request::from_parts(
@@ -366,26 +388,23 @@ pub async fn get_opcode_and_input_for_art_update(
             VerificationOpcode::KeyUpdate,
             vec![art.get_node(&branch_changes.node_index)?.public_key],
         ),
-        BranchChangesType::AppendNode => {
-            (
-                VerificationOpcode::AddMember,
-                vec![get_left_most_leaf_public_key(state, id).await?],
-            )
-        }
+        BranchChangesType::AppendNode => (
+            VerificationOpcode::AddMember,
+            vec![get_left_most_leaf_public_key(state, id).await?],
+        ),
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
                 true => {
                     debug!("Use root public key for verification");
                     art.root.public_key
-                },
+                }
                 false => {
                     debug!("Use left most leaf public key for \"remove member\" verification.");
                     get_left_most_leaf_public_key(state, id).await?
-                },
+                }
             };
 
             debug!("aux_public_key: {}", aux_public_key);
-
             (VerificationOpcode::RemoveMember, vec![aux_public_key])
         }
         _ => return Err(VerificationError::UnsupportedOperation),
@@ -468,7 +487,6 @@ pub async fn get_opcode_and_input_for_leave_group(
 
     debug!("Try to get ART from storage...");
     let art = state.art_service.get_art(id, None).await?.art;
-    debug!("ART retrieved");
 
     debug!("Try to get leaf in art...");
     let leaf = art.get_node(&NodeIndex::from(user_index))?;
@@ -488,15 +506,19 @@ pub async fn get_opcode_and_input_for_leave_group(
     ))
 }
 
-
 pub async fn verify(
     message: ProofVerifierMessage,
     proof_verifier_sender: &ProofVerifierSender,
 ) -> Result<(), VerificationError> {
-    debug!("Provided ProofVerifierMessage{:?}", message);
+    debug!(
+        "Send ProofVerifierMessage: {:?} to the verifier...",
+        message
+    );
+
     let verdict = match message {
         ProofVerifierMessage::ArtUpdate { .. } => {
             debug!("Try to Verify ArtUpdate...");
+
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::ArtUpdate { verdict } => verdict,
                 _ => return Err(VerificationError::InvalidResultMessage),
@@ -504,6 +526,7 @@ pub async fn verify(
         }
         ProofVerifierMessage::SchnorrSignature { .. } => {
             debug!("try to Verify SchnorrSignature...");
+
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::SchnorrSignature { verdict } => verdict,
                 _ => return Err(VerificationError::InvalidResultMessage),
@@ -512,7 +535,10 @@ pub async fn verify(
     };
 
     match verdict {
-        true => Ok(()),
+        true => {
+            debug!("Verification successful");
+            Ok(())
+        }
         false => Err(VerificationError::InvalidProof),
     }
 }

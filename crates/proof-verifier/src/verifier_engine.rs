@@ -21,6 +21,7 @@ pub enum VerificationOpcode {
     SendMessage,
     GetMessages,
     GetChanges,
+    GetArt,
     AuthRequest,
     DeleteChat,
 }
@@ -52,6 +53,8 @@ pub struct VerificationRequest {
 
 impl VerificationRequest {
     pub fn to_message(self) -> Result<ProofVerifierMessage, VerificationError> {
+        debug!("Try to convert VerificationRequest to ProofVerifierMessage...");
+
         match self.opcode {
             VerificationOpcode::KeyUpdate
             | VerificationOpcode::AddMember
