@@ -283,6 +283,7 @@ async fn test_get_art() -> eyre::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "merge_changes")]
 #[tokio::test]
 async fn test_epoch_merge() -> eyre::Result<()> {
     init_tracing_for_test();

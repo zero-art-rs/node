@@ -8,9 +8,10 @@ name = "zk-messenger-node"
 path = "src/main.rs"
 
 [features]
-default = ["verification"]
 art_modifications = ["api/art_modifications"]
 verification = ["api/verification"]
+merge_changes = ["api/merge_changes"]
+default = ["verification"]
 
 [dependencies]
 api = { path = "../../crates/api" }

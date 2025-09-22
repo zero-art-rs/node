@@ -24,6 +24,8 @@ use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
+
+/// Handle authentication request verification.
 pub async fn authenticate(
     State(state): State<Arc<Container>>,
     request: Request,
@@ -88,6 +90,7 @@ pub async fn authenticate(
         .await)
 }
 
+/// Handle list messages request verification
 pub async fn list_messages(
     State(state): State<Arc<Container>>,
     request: Request,
@@ -149,6 +152,7 @@ pub async fn list_messages(
         .await)
 }
 
+/// Handle get_art request verification.
 pub async fn get_art(
     State(state): State<Arc<Container>>,
     request: Request,
@@ -255,6 +259,7 @@ pub async fn get_art(
         .await)
 }
 
+/// Handle send_frame verification
 pub async fn send_frame(
     State(state): State<Arc<Container>>,
     request: Request,
@@ -310,6 +315,26 @@ pub async fn send_frame(
             current: current_epoch,
             provided: tbs_frame.epoch,
         });
+    }
+
+    // If merge_changes feature is disabled, allow only frames, with epoch following the current one.
+    #[cfg(not(feature = "merge_changes"))]
+    match &operation {
+        Some(Operation::AddMember(branch_changes_bytes))
+        | Some(Operation::RemoveMember(branch_changes_bytes))
+        | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
+            if tbs_frame.epoch != current_epoch + 1 {
+                error!(
+                    "Epoch {} is invalid, as the current one is {}",
+                    tbs_frame.epoch, current_epoch
+                );
+                return Err(VerificationError::InvalidEpoch {
+                    current: current_epoch,
+                    provided: tbs_frame.epoch,
+                });
+            }
+        },
+        _ => {}
     }
 
     debug!("Retreive operation_data...");

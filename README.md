@@ -26,20 +26,23 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 ## Build
 
 * `node` features
-  * **default** - Enables verification feature. To run the node without default features, run the node with `--no-default-features` command line option.
+  * **default** - Enables `verification` feature. To run the node without default features, use `--no-default-features` command line option.
   * **art_modifications** - Enable `api/art_modifications` feature
   * **verification** - Enable `api/verification` feature.
+  * **merge_changes** - Enable `api/merge_changes` feature
 
 * `api` features
   * **api/art_modifications** - Enable art modification endpoints for use
   * **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
+  * **api/merge_changes** - Enable merge of ART updates for epoch. Doesn't affect merge for removing member.
 
 * `tests` feature
   * **tests/integration_tests** - Enables integration tests.
+  * **tests/merge_changes** - Enable tests, which require ronde with `api/merge_changes` feature enabled
 
 ### Run 
 
-To run the node without features run it with `--no-default-features`.
+To run the node without features use `--no-default-features` option.
 ```shell
 cargo run -p zk-messenger-node --no-default-features --release -- run --config config.toml
 ```
@@ -49,9 +52,9 @@ cargo run -p zk-messenger-node --no-default-features --release -- run --config c
 ### Unit tests
 
 ### Integration tests
-To test the node api, one should prepare the environment. Firstly raise the infrastructure in docker. Node can be run in docker or locally. Then one can run tests with feature `integration_tests` like the next:
+To test the node api, one should prepare the environment. Firstly raise the infrastructure in docker. Node can be run in docker or locally. Then one can run tests with `integration_tests` and or `merge_changes` features like the next:
 ```shell
-cargo test -p tests --features integration_tests
+cargo test -p tests --features integration_tests,merge_changes
 ```
 
 

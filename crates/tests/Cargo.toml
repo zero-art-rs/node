@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 integration_tests = []
+merge_changes = []
 
 [lib]
 path = "src/lib.rs"
