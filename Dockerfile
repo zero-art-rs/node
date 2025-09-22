@@ -10,16 +10,16 @@ WORKDIR /opt
 COPY Cargo.lock .
 COPY Cargo.toml .
 
-COPY apps/node/Cargo.toml ./apps/node/Cargo.toml
-COPY crates/api/Cargo.toml ./crates/api/Cargo.toml
-COPY crates/callback/Cargo.toml ./crates/callback/Cargo.toml
-COPY crates/proof-verifier/Cargo.toml ./crates/proof-verifier/Cargo.toml
-COPY crates/storage/Cargo.toml ./crates/storage/Cargo.toml
-COPY crates/tests/Cargo.toml ./crates/tests/Cargo.toml
-COPY crates/types/Cargo.toml ./crates/types/Cargo.toml
+# COPY apps/node/Cargo.toml ./apps/node/Cargo.toml
+# COPY crates/api/Cargo.toml ./crates/api/Cargo.toml
+# COPY crates/callback/Cargo.toml ./crates/callback/Cargo.toml
+# COPY crates/proof-verifier/Cargo.toml ./crates/proof-verifier/Cargo.toml
+# COPY crates/storage/Cargo.toml ./crates/storage/Cargo.toml
+# COPY crates/tests/Cargo.toml ./crates/tests/Cargo.toml
+# COPY crates/types/Cargo.toml ./crates/types/Cargo.toml
 
 
-RUN --mount=type=ssh cargo build --release || true
+# RUN --mount=type=ssh cargo build --release || true
 
 COPY crates crates/
 COPY apps apps/
