@@ -9,6 +9,7 @@ use {
     serde_with::{base64::Base64, serde_as},
     std::collections::HashMap,
 };
+use types::FrameRecord;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CentrifugoTokenResponse {
@@ -55,16 +56,11 @@ pub(crate) struct CentrifugoMessage {
     pub(crate) publication: CentrifugoPub,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct CentrifugoPub {
-    pub(crate) data: MessageData,
-}
-
 #[serde_as]
 #[derive(Debug, Deserialize)]
-pub(crate) struct MessageData {
+pub(crate) struct CentrifugoPub {
     #[serde_as(as = "Base64")]
-    pub(crate) content: Vec<u8>,
+    pub(crate) data: Vec<u8>,
 }
 
 pub(crate) struct LocalTimer;

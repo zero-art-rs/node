@@ -11,6 +11,8 @@ use ark_std::rand::prelude::StdRng;
 use art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
 use art::types::{PrivateART, PublicART};
 use axum::http::StatusCode;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use bytes::{Bytes, BytesMut};
 use cortado::CortadoAffine;
 use crypto::schnorr::{sign, verify};
@@ -20,7 +22,7 @@ use tracing::debug;
 use tracing::field::debug;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::protos;
-use types::protos::{Frame, SpFrames};
+use types::protos::{Frame, SpFrame, SpFrames};
 use sha3::{Sha3_256, Digest};
 use futures::StreamExt;
 
@@ -125,7 +127,10 @@ async fn test_send_message() -> eyre::Result<()> {
                             // debug!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
                         }
                         CentrifugoEvent::ChannelMessage(channel_msg) => {
-                            let content_string = channel_msg.publication.data.content;
+                            let sp_frame = SpFrame::decode(&*channel_msg.publication.data).unwrap();
+                            debug!("sp_frame.frame: {:?}", sp_frame.frame);
+
+                            let content_string = sp_frame.frame.unwrap().encode_to_vec();
 
                             if content_string.eq(&init_message.to_vec()) {
                                 // skip accidental init group message
