@@ -27,7 +27,7 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["full"] }
 eyre = { workspace = true }
-tower-http = { version = "0.6.2", features = ["fs", "trace", "cors"] }
+tower-http = { workspace = true, features = ["fs", "trace", "cors"] }
 jsonwebtoken = { workspace = true }
 mongodb = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }

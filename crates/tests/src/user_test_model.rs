@@ -38,12 +38,13 @@ use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use crate::utils::CentrifugoTokenResponse;
 
-const BACKEND_URL: &str = "http://localhost:8080";
-const CENTRIFUGO_URL: &str = "http://localhost:8000";
-// used for tests, which can be repeated
-const TEST_REPEATS: usize = 4;
-const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
-const DEFAULT_GROUP_SIZE: u64 = 10;
+use crate::{
+    BACKEND_URL,
+    CENTRIFUGO_URL,
+    TEST_REPEATS,
+    DEFAULT_NONCE_LENGTH,
+    GROUP_SIZE,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct UserTestModel {
@@ -127,7 +128,7 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let pk = art.public_key_of(&sk);
         let mut serialized_pk = Vec::new();
-        pk.serialize_uncompressed(&mut serialized_pk)?;
+        pk.serialize_compressed(&mut serialized_pk)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -342,7 +343,7 @@ impl UserTestModel {
         let mut serialized_public_key = Vec::new();
         self.art
             .public_key_of(&self.art.secret_key)
-            .serialize_uncompressed(&mut serialized_public_key)
+            .serialize_compressed(&mut serialized_public_key)
             .unwrap();
 
         let challenge_response = self
@@ -396,7 +397,7 @@ impl UserTestModel {
         assert!(verification_result.is_ok());
 
         let mut public_key_bytes = Vec::new();
-        pk.serialize_uncompressed(&mut public_key_bytes).unwrap();
+        pk.serialize_compressed(&mut public_key_bytes).unwrap();
 
         let get_art_response = self
             .client
@@ -528,7 +529,7 @@ impl UserTestModel {
         assert_eq!(verification_result, true);
 
         let mut proof_bytes = Vec::new();
-        proof.serialize_uncompressed(&mut proof_bytes)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
 
         Ok(proof_bytes)
     }

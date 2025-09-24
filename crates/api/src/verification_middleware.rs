@@ -186,7 +186,7 @@ pub async fn get_art(
     let art = state.art_service.get_art(chat_id, Some(epoch)).await?.art;
 
     debug!("Try to deserialize public key...");
-    let public_key = CortadoAffine::deserialize_uncompressed(&*payload.public_key)?;
+    let public_key = CortadoAffine::deserialize_compressed(&*payload.public_key)?;
 
     match ProofMode::try_from(payload.proof_mode.as_str())? {
         ProofMode::UseLeafKey => {
@@ -383,7 +383,7 @@ pub fn get_opcode_and_input_for_init_group(
     tbs_frame: &FrameTbs,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     debug!("get_opcode_and_input_for_init_group");
-    let public_key = CortadoAffine::deserialize_uncompressed(&*tbs_frame.nonce)?;
+    let public_key = CortadoAffine::deserialize_compressed(&*tbs_frame.nonce)?;
 
     Ok((
         VerificationOpcode::InitGroup,

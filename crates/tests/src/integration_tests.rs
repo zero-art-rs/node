@@ -17,17 +17,15 @@ use prost::Message;
 use tracing::debug;
 use tracing::field::debug;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
-use types::protos;
-use types::protos::{Frame, SpFrames};
+use types::protos::{Frame, SpFrames, FrameTbs};
 use sha3::{Sha3_256, Digest};
 use futures::StreamExt;
-
-const BACKEND_URL: &str = "http://localhost:8080";
-const CENTRIFUGO_URL: &str = "http://localhost:8000";
-// used for tests, which can be repeated
-const TEST_REPEATS: usize = 1;
-const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
-const DEFAULT_GROUP_SIZE: u64 = 100;
+use crate::{
+    CENTRIFUGO_URL,
+    TEST_REPEATS,
+    DEFAULT_NONCE_LENGTH,
+    GROUP_SIZE,
+};
 
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {
@@ -35,7 +33,8 @@ async fn test_send_message() -> eyre::Result<()> {
 
     // let sender = get_integration_test_sender();
 
-    let (context, init_message) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
+    let (mut context, init_message) = UserTestModel::new(GROUP_SIZE).await;
+    debug!("chat_uuid: {:?}", context.chat_uuid);
 
     let challenge = context.get_challenge().await?;
 
@@ -83,7 +82,7 @@ async fn test_send_message() -> eyre::Result<()> {
             Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send>),
         });
 
-    let tbs_frame = protos::FrameTbs {
+    let tbs_frame = FrameTbs {
         group_id: context.chat_uuid.to_string(),
         epoch: 0,
         nonce: (0..DEFAULT_NONCE_LENGTH)
@@ -101,7 +100,7 @@ async fn test_send_message() -> eyre::Result<()> {
     let verification_result = verify(&signature, &pk, &msg);
     assert!(verification_result.is_ok());
 
-    let req = protos::Frame {
+    let req = Frame {
         frame: Some(tbs_frame),
         proof: signature,
     };
@@ -159,7 +158,7 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let (mut context, init_message) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
+    let (mut context, init_message) = UserTestModel::new(GROUP_SIZE).await;
     let mut test_context = context.derive_new(2)?;
 
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
@@ -184,7 +183,7 @@ async fn test_get_message() -> eyre::Result<()> {
 async fn test_init_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
     Ok(())
 }
@@ -193,7 +192,7 @@ async fn test_init_group() -> eyre::Result<()> {
 async fn test_add_member() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     for _ in 0..TEST_REPEATS {
         context.add_member().await?;
     }
@@ -205,7 +204,7 @@ async fn test_add_member() -> eyre::Result<()> {
 async fn test_add_member_after_removal() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
     for i in 0..TEST_REPEATS {
         let path = context.index_of(i + 1).unwrap().get_path().unwrap();
@@ -220,7 +219,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 async fn test_remove_member() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     let mut retrieval_context = context.derive_new(1)?;
 
     // skip the root node
@@ -258,7 +257,7 @@ async fn test_remove_member() -> eyre::Result<()> {
 async fn test_get_art() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     let mut retrieval_context = context.derive_new(2)?;
     let mut art_roots = vec![context.art.root.public_key];
 
@@ -290,7 +289,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
 
     let payload = UserTestModel::new_nonce();
 
-    let (mut user0, _) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
+    let (mut user0, _) = UserTestModel::new(GROUP_SIZE).await;
     let mut user1 = user0.derive_new(1)?;
     let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(5)?;
@@ -420,7 +419,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 async fn test_delete_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
     context.delete_group().await?;
     Ok(())
