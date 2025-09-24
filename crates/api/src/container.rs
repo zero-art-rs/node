@@ -10,7 +10,7 @@ use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 use types::errors::{ARTServiceError, ServiceError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
@@ -27,9 +27,64 @@ pub struct Container {
     pub proof_verifier_sender: ProofVerifierSender,
 
     pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
+
+    art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
+    pub(crate) merge_changes: bool,
 }
 
 impl Container {
+    pub fn new(
+        messenger_service: Arc<MessengerService>,
+        centrifugo_service: Arc<CentrifugoService>,
+        art_service: Arc<ARTService>,
+        proof_verifier_sender: ProofVerifierSender,
+        merge_changes: bool,
+    ) -> Self {
+        Self {
+            messenger_service,
+            centrifugo_service,
+            art_service,
+            proof_verifier_sender,
+            challenges: Arc::new(RwLock::new(HashSet::new())),
+            art_is_updating: Arc::new(RwLock::new(HashSet::new())),
+            merge_changes,
+        }
+    }
+    pub async fn can_update_art(&self, id: Uuid) -> bool {
+        // If merge is enabled, then there is no management required
+        if self.merge_changes {
+            return true;
+        }
+
+        !self.art_is_updating.read().await.contains(&id)
+    }
+
+    pub async fn start_updating(&self, id: Uuid) -> Result<(), ServiceError> {
+        // If merge is enabled, then there is no management required
+        if self.merge_changes {
+            return Ok(());
+        }
+
+        if self.can_update_art(id).await {
+            debug!("Mark ART in group with id {} as updating.", id);
+            self.art_is_updating.write().await.insert(id);
+            Ok(())
+        } else {
+            error!("Failed to update art. It is updating now.");
+            Err(ServiceError::ArtIsUpdating)
+        }
+    }
+
+    pub async fn stop_updating(&self, id: Uuid) {
+        // If merge is enabled, then there is no management required
+        if self.merge_changes {
+            return;
+        }
+
+        debug!("Mark ART in group with id {} as free to update.", id);
+        self.art_is_updating.write().await.remove(&id);
+    }
+
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
 

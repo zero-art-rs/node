@@ -6,4 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct ApiConfig {
     /// Address to listen of incoming connections
     pub address: SocketAddr,
+
+    /// If true, allows to merge art changes at the same epoch
+    pub merge_changes: bool,
 }

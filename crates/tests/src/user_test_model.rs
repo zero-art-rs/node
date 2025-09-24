@@ -36,6 +36,7 @@ use types::{
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
+use types::errors::StorageError;
 use crate::utils::CentrifugoTokenResponse;
 
 const BACKEND_URL: &str = "http://localhost:8080";
@@ -53,6 +54,18 @@ pub(crate) struct UserTestModel {
     pub chat_uuid: Uuid,
     pub epoch: u64,
     pub owner_id_key: Option<Fr>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum UserTestModelError {
+    #[error("Wrong StatusCode: {got}, while expected {expected}")]
+    WrongStatusCode{got: String, expected: String},
+}
+
+impl From<(StatusCode, StatusCode)> for UserTestModelError {
+    fn from((got, expected): (StatusCode, StatusCode)) -> Self {
+        Self::WrongStatusCode{got: got.to_string(), expected: expected.to_string()}
+    }
 }
 
 impl UserTestModel {
@@ -201,11 +214,13 @@ impl UserTestModel {
             })
             .await?;
 
-        assert_eq!(
-            update_key_response.0.status(),
-            StatusCode::OK,
-            "Check if key update is successful."
-        );
+        if update_key_response.0.status() != StatusCode::OK {
+            Err(UserTestModelError::from((
+                update_key_response.0.status(),
+                StatusCode::OK
+            )))?;
+        }
+
         self.epoch += 1;
 
         Ok(update_key_response)

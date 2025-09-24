@@ -80,13 +80,13 @@ impl Node {
         );
         let art_service = ARTService::new();
 
-        let container = Arc::new(Container {
-            messenger_service: Arc::new(messenger_service),
-            centrifugo_service: Arc::new(centrifugo_service),
-            art_service: Arc::new(art_service),
+        let container = Arc::new(Container::new(
+            Arc::new(messenger_service),
+            Arc::new(centrifugo_service),
+            Arc::new(art_service),
             proof_verifier_sender,
-            challenges: Arc::new(RwLock::new(HashSet::new())),
-        });
+            self.config.api.merge_changes,
+        ));
 
         self.task_tracker.spawn(api::run_server(
             address,

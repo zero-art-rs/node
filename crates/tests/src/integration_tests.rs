@@ -1,3 +1,5 @@
+use std::hint::assert_unchecked;
+use std::sync::Arc;
 use std::time::Duration;
 use crate::{
     user_test_model::UserTestModel,
@@ -159,7 +161,7 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let (mut context, init_message) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
+    let (mut context, _) = UserTestModel::new(DEFAULT_GROUP_SIZE).await;
     let mut test_context = context.derive_new(2)?;
 
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
@@ -182,9 +184,7 @@ async fn test_get_message() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_init_group() -> eyre::Result<()> {
-    init_tracing_for_test();
-
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
 
     Ok(())
 }
@@ -212,6 +212,69 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
         context.make_blank(&path).await?;
         context.add_member().await?;
     }
+
+    Ok(())
+}
+
+/// Six users try to update the same epoch at the same time.
+#[tokio::test]
+async fn test_concurent_art_update() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+
+    debug!("{:?}", context.chat_uuid);
+
+    let mut user1 = context.derive_new(1).unwrap();
+    let mut user2 = context.derive_new(2).unwrap();
+    let mut user3 = context.derive_new(3).unwrap();
+    let mut user4 = context.derive_new(4).unwrap();
+    let mut user5 = context.derive_new(5).unwrap();
+    let mut user6 = context.derive_new(6).unwrap();
+
+
+    let handle1 = tokio::spawn(async move {
+    user1.update_key(None).await.is_ok()
+    });
+
+    let handle2 = tokio::spawn(async move {
+    user2.update_key(None).await.is_ok()
+    });
+
+    let handle3 = tokio::spawn(async move {
+    user3.update_key(None).await.is_ok()
+    });
+
+    let handle4 = tokio::spawn(async move {
+    user4.update_key(None).await.is_ok()
+    });
+
+    let handle5 = tokio::spawn(async move {
+    user5.update_key(None).await.is_ok()
+    });
+
+    let handle6 = tokio::spawn(async move {
+    user6.update_key(None).await.is_ok()
+    });
+
+    let mut  ok_count = 0;
+    ok_count += handle1.await.unwrap() as i64;
+    ok_count += handle2.await.unwrap() as i64;
+    ok_count += handle3.await.unwrap() as i64;
+    ok_count += handle4.await.unwrap() as i64;
+    ok_count += handle5.await.unwrap() as i64;
+    ok_count += handle6.await.unwrap() as i64;
+
+    #[cfg(feature = "merge_changes")]
+    let result_count = 6;
+    #[cfg(not(feature = "merge_changes"))]
+    let result_count = 1;
+
+    assert_eq!(
+        ok_count,
+        result_count,
+        "Failed to prevent the merge, when merge_changes is disabled."
+    );
 
     Ok(())
 }
@@ -343,12 +406,10 @@ async fn test_epoch_merge() -> eyre::Result<()> {
 async fn test_merge_for_removal() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let payload = UserTestModel::new_nonce();
-
     let (mut user0, _) = UserTestModel::new(7).await;
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
-    let mut user3 = user0.derive_new(1)?;
+    let user3 = user0.derive_new(1)?;
     debug!(
         "User0 pk: {}",
         user0.art.public_key_of(&user0.art.get_secret_key())

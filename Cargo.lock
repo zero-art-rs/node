@@ -4004,6 +4004,7 @@ dependencies = [
  "serde_with",
  "sha3",
  "storage",
+ "thiserror 2.0.16",
  "tokio",
  "tokio-util",
  "tower-http",
