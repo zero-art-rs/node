@@ -15,6 +15,8 @@ use proof_verifier::verifier_engine::*;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
+use axum::http::request::Parts;
+use bytes::Bytes;
 use storage::{ARTStorage, MongoARTStorage};
 use tracing::{debug, error};
 use types::art_schemas::{GetARTQuery, ProofMode};
@@ -318,39 +320,49 @@ pub async fn send_frame(
     }
 
     // If merge_changes feature is disabled, allow only frames, with epoch following the current one.
-    #[cfg(not(feature = "merge_changes"))]
-    match &operation {
-        Some(Operation::AddMember(branch_changes_bytes))
-        | Some(Operation::RemoveMember(branch_changes_bytes))
-        | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
-            if tbs_frame.epoch != current_epoch + 1 {
-                error!(
-                    "Epoch {} is invalid, as the current one is {}",
-                    tbs_frame.epoch, current_epoch
-                );
-                return Err(VerificationError::InvalidEpoch {
-                    current: current_epoch,
-                    provided: tbs_frame.epoch,
-                });
-            }
-        },
-        _ => {}
+    if !state.merge_changes {
+        match &operation {
+            Some(Operation::AddMember(branch_changes_bytes))
+            | Some(Operation::RemoveMember(branch_changes_bytes))
+            | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
+                if tbs_frame.epoch != current_epoch + 1 {
+                    error!(
+                        "Epoch {} is invalid, as the current one is {}",
+                        tbs_frame.epoch, current_epoch
+                    );
+                    return Err(VerificationError::InvalidEpoch {
+                        current: current_epoch,
+                        provided: tbs_frame.epoch,
+                    });
+                }
+            },
+            _ => {}
+        }
     }
 
-    debug!("Retreive operation_data...");
+    debug!("Retrieve operation_data...");
     let (opcode, public_inputs) = match &operation {
         None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
         Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
         Some(Operation::AddMember(branch_changes_bytes))
         | Some(Operation::RemoveMember(branch_changes_bytes))
         | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
-            get_opcode_and_input_for_art_update(
+            // Create a lock on group art
+            state.start_updating(id).await.map_err(VerificationError::from)?;
+
+            match get_opcode_and_input_for_art_update(
                 state.clone(),
                 id,
                 branch_changes_bytes,
                 Some(tbs_frame.epoch - 1),
             )
-            .await?
+            .await {
+                Ok(result) => result,
+                Err(err) => {
+                    state.stop_updating(id).await;
+                    return Err(err);
+                }
+            }
         }
         Some(Operation::LeaveGroup(index)) => {
             get_opcode_and_input_for_leave_group(state.clone(), id, *index).await?
@@ -369,6 +381,27 @@ pub async fn send_frame(
         },
     };
 
+    let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
+    match &operation{
+        Some(Operation::AddMember(_))
+            | Some(Operation::RemoveMember(_))
+            | Some(Operation::KeyUpdate(_)) =>
+        {
+                state.stop_updating(id).await;
+        }
+        _ => {}
+    }
+
+    response
+}
+
+pub async fn verify_and_send(
+    verification_req: VerificationRequest,
+    state: Arc<Container>,
+    next: Next,
+    parts: Parts,
+    bytes: Bytes,
+) -> Result<Response, VerificationError> {
     verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
 
     Ok(next

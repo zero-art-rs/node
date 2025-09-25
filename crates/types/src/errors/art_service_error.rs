@@ -21,8 +21,6 @@ pub enum ARTServiceError {
     GroupChatOnly,
     #[error("Failed to retrieve database")]
     DatabaseRetrieval,
-    #[error("Art is changing, so the result is unpredictable")]
-    ArtIsChanging,
     #[error("Failed to initiate new session")]
     SessionInitiation,
     #[error("Failed to use ART {0}")]

@@ -1,4 +1,4 @@
-use crate::errors::{ARTServiceError, ApiError, StorageError};
+use crate::errors::{ARTServiceError, ApiError, ServiceError, StorageError};
 use art::errors::ARTError;
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
@@ -41,6 +41,8 @@ pub enum VerificationError {
     DecodeError(#[from] prost::DecodeError),
     #[error("Failed to retrieve data from the storage: {0}")]
     StorageError(#[from] StorageError),
+    #[error("Service error occurred: {0}")]
+    ServiceError(#[from] ServiceError),
 }
 
 impl From<serde_json::Error> for VerificationError {

@@ -10,7 +10,6 @@ path = "src/main.rs"
 [features]
 art_modifications = ["api/art_modifications"]
 verification = ["api/verification"]
-merge_changes = ["api/merge_changes"]
 default = ["verification"]
 
 [dependencies]
