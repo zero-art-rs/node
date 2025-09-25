@@ -125,7 +125,10 @@ async fn test_send_message() -> eyre::Result<()> {
                             // debug!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
                         }
                         CentrifugoEvent::ChannelMessage(channel_msg) => {
-                            let content_string = channel_msg.publication.data.content;
+                            let sp_frame = SpFrame::decode(&*channel_msg.publication.data).unwrap();
+                            debug!("sp_frame.frame: {:?}", sp_frame.frame);
+
+                            let content_string = sp_frame.frame.unwrap().encode_to_vec();
 
                             if content_string.eq(&init_message.to_vec()) {
                                 // skip accidental init group message
@@ -223,7 +226,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 async fn test_concurent_art_update() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(DEFAULT_GROUP_SIZE).await.0;
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
     debug!("{:?}", context.chat_uuid);
 
