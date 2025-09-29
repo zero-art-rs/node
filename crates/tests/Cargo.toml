@@ -7,8 +7,9 @@ edition = "2024"
 integration_tests = []
 merge_changes = []
 
-[lib]
-path = "src/lib.rs"
+#[[test]]
+#name = "api_tests"
+#path = "src/lib.rs"
 
 [dependencies]
 axum-test = { workspace = true }

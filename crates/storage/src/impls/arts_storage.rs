@@ -1,18 +1,14 @@
 use crate::{ARTStorage, DATABASE};
-use crate::{DataStorage, MongoFramesStorage, StorageError};
-use art::types::{BranchChangesType, NodeIndex};
+use crate::StorageError;
+use art::types::NodeIndex;
 use art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
 };
-use bytes::{BufMut, BytesMut};
-use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
+use cortado::{CortadoAffine};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use tracing::{debug, error, warn};
-use types::errors::{ARTServiceError, MessageServiceError};
-use types::protos::{group_operation::Operation, Frame};
-use types::utils::decode_branch_changes;
-use types::{protos, ARTRecord, FrameRecord};
+use types::{ARTRecord};
 use uuid::Uuid;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
@@ -20,9 +16,9 @@ pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";
 
 pub struct MongoARTStorage {
     /// Collection for the initial art state for every chat.
-    pub initial_arts_collection: Collection<ARTRecord<ARTGroup>>,
+    pub initial_arts_collection: Collection<ARTRecord<CortadoAffine>>,
     /// Collection for the current state of the art for the chat.
-    pub arts_collection: Collection<ARTRecord<ARTGroup>>,
+    pub arts_collection: Collection<ARTRecord<CortadoAffine>>,
 }
 
 impl MongoARTStorage {
@@ -71,7 +67,7 @@ impl ARTStorage for MongoARTStorage {
     async fn new_chat(
         &self,
         session: &mut ClientSession,
-        art: PublicART<ARTGroup>,
+        art: PublicART<CortadoAffine>,
         chat_id: Uuid,
         is_private: bool,
     ) -> Result<(), mongodb::error::Error> {
@@ -128,7 +124,7 @@ impl ARTStorage for MongoARTStorage {
     }
 
     /// return the latest art
-    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
+    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
         debug!("Retrieving latest art for chat: {chat_id}");
         let art = self
             .arts_collection
@@ -139,7 +135,7 @@ impl ARTStorage for MongoARTStorage {
     }
 
     /// Return the first art state in the chat
-    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError> {
+    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
         debug!("Retrieving initial art for chat: {chat_id}");
         let art = self
             .initial_arts_collection
@@ -151,7 +147,7 @@ impl ARTStorage for MongoARTStorage {
 
     async fn update_art(
         &self,
-        changes: BranchChanges<ARTGroup>,
+        changes: BranchChanges<CortadoAffine>,
         chat_id: Uuid,
     ) -> Result<(), StorageError> {
         let filter = doc! { "chat_id": chat_id };
@@ -221,7 +217,7 @@ impl ARTStorage for MongoARTStorage {
     async fn replace_art(
         &self,
         id: Uuid,
-        new_art_record: ARTRecord<ARTGroup>,
+        new_art_record: ARTRecord<CortadoAffine>,
     ) -> Result<(), StorageError> {
         debug!("Retrieving latest art for chat: {}", id);
         let art = self

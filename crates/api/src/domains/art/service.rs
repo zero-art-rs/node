@@ -1,6 +1,5 @@
 use art::traits::ARTPublicAPI;
-use art::types::{BranchChanges, BranchChangesType, NodeIndex, PublicART};
-use bytes::BytesMut;
+use art::types::{BranchChanges, BranchChangesType, NodeIndex};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use std::cmp::Ordering;
@@ -9,13 +8,12 @@ use storage::{
     MongoKeysStorage, StorageError,
 };
 use tracing::{debug, error};
-use types::{ARTRecord, KeyRecord, protos};
+use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
 
-use types::errors::{ARTServiceError, MessageServiceError};
-use types::utils::{decode_art, decode_branch_changes};
+use types::errors::ARTServiceError;
+use types::utils::decode_art;
 
-use crate::MessengerService;
 use mongodb::ClientSession;
 
 pub struct ARTService {}
@@ -94,8 +92,6 @@ impl ARTService {
             epoch, id
         );
         let filter = doc! { "epoch": { "$lte": epoch as i64 } };
-        // let sort_options = Some(doc! { "sequence_number": 1 });
-        let sort_options = None;
 
         let mut changes = Vec::with_capacity(epoch as usize);
 
@@ -104,7 +100,6 @@ impl ARTService {
             let messages = message_storage
                 .list(
                     filter.clone(),
-                    sort_options.clone(),
                     types::DEFAULT_LIMIT,
                     skip,
                 )

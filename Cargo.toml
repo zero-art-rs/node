@@ -69,12 +69,6 @@ zk = { git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "featur
 art = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "feature/compact-serialization" }
 zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 
-[workspace.lints.clippy]
-all = "warn"
-pedantic = "warn"
-nursery = "warn"
-restriction = "warn"
-
 [workspace.lints.rust]
 unsafe_code = "warn"
 missing_docs = "deny"

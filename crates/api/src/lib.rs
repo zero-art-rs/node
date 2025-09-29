@@ -6,7 +6,7 @@ use axum::{
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tower_http::{classify::ServerErrorsFailureClass, cors::CorsLayer, trace::TraceLayer};
-use tracing::{Span, info, info_span, warn};
+use tracing::{Span, info, info_span};
 
 mod container;
 pub(crate) mod domains;

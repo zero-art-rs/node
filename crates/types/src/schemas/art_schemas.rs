@@ -1,4 +1,4 @@
-use crate::{ARTRecord, default_limit, default_skip};
+use crate::ARTRecord;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use art::errors::ARTError;
@@ -8,7 +8,6 @@ use serde_with::{
     base64::{Base64, UrlSafe},
     serde_as,
 };
-use sha3::{Digest, Sha3_256};
 use std::fmt::Display;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;

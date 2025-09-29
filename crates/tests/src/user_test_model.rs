@@ -23,32 +23,25 @@ use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use tracing::debug;
-use tracing::field::debug;
 use types::{
-    art_schemas::*,
-    centrifugo_schemas::*,
+    art_schemas::{GetARTResponse, GetARTQuery, ChallengeResponse},
+    centrifugo_schemas::AuthRequest,
     messenger_schemas::GetMessageQuery,
-    messenger_schemas::*,
-    protos,
     protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation},
     utils::extract_branch_changes,
 };
 use uuid::Uuid;
 use zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use types::errors::StorageError;
 use crate::utils::CentrifugoTokenResponse;
 
 use crate::{
     BACKEND_URL,
-    CENTRIFUGO_URL,
-    TEST_REPEATS,
     DEFAULT_NONCE_LENGTH,
-    GROUP_SIZE,
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct UserTestModel {
+pub struct UserTestModel {
     pub client: reqwest::Client,
     pub art: PrivateART<CortadoAffine>,
     pub initial_secrets: Vec<Fr>,
@@ -68,7 +61,7 @@ impl From<(StatusCode, StatusCode)> for UserTestModelError {
         Self::WrongStatusCode{got: got.to_string(), expected: expected.to_string()}
     }
 }
-
+#[allow(dead_code)]
 impl UserTestModel {
     pub async fn new(size: u64) -> (Self, BytesMut) {
         let mut rng = StdRng::seed_from_u64(rand::random());
@@ -80,7 +73,7 @@ impl UserTestModel {
 
         let id = Uuid::now_v7();
 
-        let mut user = Self {
+        let user = Self {
             client: reqwest::Client::new(),
             art,
             initial_secrets: secrets,
@@ -111,10 +104,10 @@ impl UserTestModel {
     }
 
     /// Clone this uses, and change this user secret key to the different one
-    pub fn derive_new(&self, index: i64) -> Result<Self, ARTError> {
+    pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
         let (mut art, _) =
             PrivateART::new_art_from_secrets(&self.initial_secrets, &CortadoAffine::generator())?;
-        art.secret_key = self.initial_secrets[index as usize].clone();
+        art.secret_key = self.initial_secrets[index];
         art.update_node_index()?;
 
         Ok(Self {
@@ -127,14 +120,11 @@ impl UserTestModel {
         })
     }
 
-    pub fn is_owner(&self) -> bool {
-        match self.owner_id_key {
-            Some(_) => true,
-            None => false,
-        }
+    pub const fn is_owner(&self) -> bool {
+        self.owner_id_key.is_some()
     }
 
-    async fn create_new_chat(
+    pub async fn create_new_chat(
         &self,
         art: PublicART<CortadoAffine>,
         sk: Fr,
@@ -156,7 +146,7 @@ impl UserTestModel {
         let mut msg = BytesMut::new();
         tbs_frame.encode(&mut msg)?;
 
-        let msg = Sha3_256::digest(msg.to_vec());
+        let msg = Sha3_256::digest(&msg);
 
         let signature = sign(&vec![sk], &vec![pk], &msg)?;
         let verification_result = verify(&signature, &vec![pk], &msg);
@@ -186,7 +176,7 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let secret_key = self.art.secret_key.clone();
+        let secret_key = self.art.secret_key;
         let new_secret_key = Fr::rand(&mut rng);
 
         let (_, key_update_changes, artefacts) = self.art.update_key(&new_secret_key)?;
@@ -198,7 +188,7 @@ impl UserTestModel {
             group_operation: Some(GroupOperation {
                 operation: Some(Operation::KeyUpdate(key_update_changes.serialze()?)),
             }),
-            protected_payload: payload.unwrap_or(vec![]),
+            protected_payload: payload.unwrap_or_default(),
         };
 
         let proof_bytes = self.prove_and_check_art_update(
@@ -232,7 +222,7 @@ impl UserTestModel {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         // let old_tk = self.art.get_root_key()?.key;
-        let old_tk = self.art.secret_key.clone();
+        let old_tk = self.art.secret_key;
         let new_user_secret_key = Fr::rand(&mut rng);
         let (_, append_user_changes, artefacts) =
             self.art.append_or_replace_node(&new_user_secret_key)?;
@@ -269,16 +259,17 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = match self.is_owner() {
-            true => self.art.secret_key.clone(),
-            false => self.art.get_root_key()?.key,
+        let old_tk = if self.is_owner() {
+            self.art.secret_key
+        } else {
+            self.art.get_root_key()?.key
         };
 
         let temporary_secret_key = Fr::rand(&mut rng);
         debug!("temporary_secret_key: {}", temporary_secret_key);
         let (_, remove_user_changes, artefacts) = self
             .art
-            .make_blank(&user_to_remove, &temporary_secret_key)?;
+            .make_blank(user_to_remove, &temporary_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -400,10 +391,11 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        let sk = match secret_key_to_use {
-            Some(secret_key) => secret_key,
-            None => self.art.secret_key,
-        };
+        let sk = secret_key_to_use.unwrap_or(self.art.secret_key);
+        // let sk = match secret_key_to_use {
+        //     Some(secret_key) => secret_key,
+        //     None => self.art.secret_key,
+        // };
 
         let pk = self.art.public_key_of(&sk);
 
@@ -437,21 +429,6 @@ impl UserTestModel {
         )?;
 
         Ok(received_art)
-    }
-
-    pub async fn get_art_and_update(
-        &mut self,
-        epoch: u64,
-        secret_key_to_use: Option<Fr>,
-        proof_mode: String,
-    ) -> eyre::Result<()> {
-        let art = self
-            .get_art(epoch, secret_key_to_use, proof_mode.clone())
-            .await?;
-        self.art = PrivateART::from_public_art(art, self.art.secret_key)?;
-        self.epoch = epoch;
-
-        Ok(())
     }
 
     pub async fn delete_group(&mut self) -> eyre::Result<(reqwest::Response, BytesMut)> {
@@ -494,7 +471,7 @@ impl UserTestModel {
     fn sign_and_check_signature(&self, msg: &[u8], sk: Fr) -> eyre::Result<Vec<u8>> {
         let pk = self.art.public_key_of(&sk);
 
-        let signature = sign(&vec![sk], &vec![pk], &msg)?;
+        let signature = sign(&vec![sk], &vec![pk], msg)?;
         let verification_result = verify(&signature, &vec![pk], msg);
         assert!(verification_result.is_ok(), "Failed to verify signature");
 
@@ -512,7 +489,7 @@ impl UserTestModel {
         tbs_frame.encode(&mut buf)?;
         let associated_data = &*Sha3_256::digest(&buf).to_vec();
 
-        let blindings: Vec<_> = (0..artefacts.co_path.len() + 1)
+        let blindings: Vec<_> = (0..=artefacts.co_path.len())
             .map(|_| Scalar::random(&mut thread_rng()))
             .collect();
 
@@ -535,13 +512,13 @@ impl UserTestModel {
             Self::get_pedersen_basis(),
             associated_data,
             vec![public_key],
-            changes.public_keys.iter().rev().cloned().collect(),
+            changes.public_keys.iter().rev().copied().collect(),
             self.art.get_co_path_values(&changes.node_index)?,
             proof.clone(),
         )
         .is_ok();
 
-        assert_eq!(verification_result, true);
+        assert!(verification_result);
 
         let mut proof_bytes = Vec::new();
         proof.serialize_compressed(&mut proof_bytes)?;
@@ -597,10 +574,7 @@ impl UserTestModel {
 
         let mut changes = Vec::with_capacity(sp_frames.len());
         for sp_frame in sp_frames {
-            let frame = match sp_frame.frame {
-                Some(frame) => frame,
-                None => continue,
-            };
+            let Some(frame) = sp_frame.frame else { continue };
 
             if let Some(frame_change) = extract_branch_changes(&frame)? {
                 changes.push(frame_change);
@@ -611,8 +585,7 @@ impl UserTestModel {
     }
 
     pub fn new_nonce() -> Vec<u8> {
-        std::iter::repeat(rand::random::<u8>())
-            .take(DEFAULT_NONCE_LENGTH as usize)
+        std::iter::repeat_n(rand::random::<u8>(), DEFAULT_NONCE_LENGTH as usize)
             .collect::<Vec<u8>>()
     }
 

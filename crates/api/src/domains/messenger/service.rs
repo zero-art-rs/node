@@ -50,7 +50,7 @@ impl MessengerService {
     ) -> Result<BytesMut, MessageServiceError> {
         let frame_records = MongoFramesStorage::new(chat_id)
             .await?
-            .list(filter.clone(), None, limit, skip)
+            .list(filter.clone(), limit, skip)
             .await?;
 
         if frame_records.is_empty() {

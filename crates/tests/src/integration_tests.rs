@@ -36,7 +36,7 @@ async fn test_send_message() -> eyre::Result<()> {
 
     // let sender = get_integration_test_sender();
 
-    let (mut context, init_message) = UserTestModel::new(GROUP_SIZE).await;
+    let (context, init_message) = UserTestModel::new(GROUP_SIZE).await;
     debug!("chat_uuid: {:?}", context.chat_uuid);
 
     let challenge = context.get_challenge().await?;

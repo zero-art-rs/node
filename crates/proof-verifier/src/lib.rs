@@ -1,12 +1,12 @@
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalDeserialize;
-use bulletproofs::{BulletproofGens, PedersenGens};
-use cortado::{self, CortadoAffine, FromScalar, Parameters, ToScalar};
+use bulletproofs::{PedersenGens};
+use cortado::{CortadoAffine, ALT_GENERATOR_X, ALT_GENERATOR_Y};
 use crypto::schnorr;
 use tokio::sync::mpsc;
 use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
@@ -130,7 +130,7 @@ impl ProofVerifier {
 
 fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
     let g_1 = CortadoAffine::generator();
-    let h_1 = CortadoAffine::new_unchecked(cortado::ALT_GENERATOR_X, cortado::ALT_GENERATOR_Y);
+    let h_1 = CortadoAffine::new_unchecked(ALT_GENERATOR_X, ALT_GENERATOR_Y);
 
     let gens = PedersenGens::default();
     PedersenBasis::<CortadoAffine, Ed25519Affine>::new(

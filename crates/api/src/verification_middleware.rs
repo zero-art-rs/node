@@ -271,9 +271,9 @@ pub async fn send_frame(
     // If merge_changes feature is disabled, allow only frames, with epoch following the current one.
     if !state.merge_changes {
         match &operation {
-            Some(Operation::AddMember(branch_changes_bytes))
-            | Some(Operation::RemoveMember(branch_changes_bytes))
-            | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
+            Some(Operation::AddMember(_))
+            | Some(Operation::RemoveMember(_))
+            | Some(Operation::KeyUpdate(_)) => {
                 if tbs_frame.epoch != current_epoch + 1 {
                     error!(
                         "Epoch {} is invalid, as the current one is {}",

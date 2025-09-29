@@ -11,9 +11,7 @@ use mongodb::{
 };
 use prost::Message;
 use tracing::debug;
-use types::protos::group_operation::Operation;
 use types::protos::Frame;
-use types::utils::decode_branch_changes;
 use types::FrameRecord;
 use uuid::Uuid;
 
@@ -199,7 +197,7 @@ impl FrameStorage for MongoFramesStorage {
 
         let mut records = MongoFramesStorage::new(&id)
             .await?
-            .list(doc! {"epoch": epoch as i64}, None, limit, skip)
+            .list(doc! {"epoch": epoch as i64}, limit, skip)
             .await?;
 
         let mut changes = Vec::new();
@@ -213,7 +211,7 @@ impl FrameStorage for MongoFramesStorage {
 
             records = MongoFramesStorage::new(&id)
                 .await?
-                .list(doc! {"epoch": epoch as i64}, None, limit, skip)
+                .list(doc! {"epoch": epoch as i64}, limit, skip)
                 .await?;
         }
 

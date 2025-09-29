@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_with::{
-    base64::{Base64, UrlSafe},
+    base64::Base64,
     serde_as,
 };
 use uuid::Uuid;

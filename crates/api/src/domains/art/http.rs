@@ -5,8 +5,8 @@ use axum::{
 };
 use mongodb::bson::doc;
 use std::sync::Arc;
-use tracing::{debug, instrument};
-use types::{art_schemas::*, errors::ApiError, protos::Frame};
+use tracing::{instrument};
+use types::{art_schemas::{GetARTQuery, GetARTResponse, ChallengeResponse}, errors::ApiError};
 use uuid::Uuid;
 use validator::Validate;
 

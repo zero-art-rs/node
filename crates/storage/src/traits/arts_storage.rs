@@ -1,13 +1,10 @@
 use uuid::Uuid;
 
-use crate::{MongoFramesStorage, StorageError};
+use crate::{StorageError};
 use art::types::{BranchChanges, PublicART};
-use bson::doc;
-use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
+use cortado::{CortadoAffine as ARTGroup};
 use mongodb::ClientSession;
-use types::protos::group_operation::Operation;
-use types::utils::decode_branch_changes;
-use types::{protos, ARTRecord, FrameRecord};
+use types::ARTRecord;
 
 /// Storage for art full states
 #[async_trait::async_trait]

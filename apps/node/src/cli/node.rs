@@ -2,12 +2,11 @@ use crate::config::NodeConfig;
 use api::{ARTService, CentrifugoService, Container, MessengerService};
 use mongodb::{Client, bson::doc, options::ClientOptions};
 use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use storage::DATABASE;
 use tokio::time::sleep;
-use tokio::{select, sync::RwLock, sync::mpsc};
+use tokio::{select, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::info;
 

@@ -13,7 +13,7 @@ impl MongoKeysStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let keys_collection = db.collection(&"keys");
+        let keys_collection = db.collection("keys");
 
         let index_model = IndexModel::builder()
             .keys(doc! { "chat_id": -1})

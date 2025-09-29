@@ -9,29 +9,30 @@ use {
     serde_with::{base64::Base64, serde_as},
     std::collections::HashMap,
 };
-use types::FrameRecord;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CentrifugoTokenResponse {
-    pub(crate) token: String,
+#[allow(dead_code)]
+pub struct CentrifugoTokenResponse {
+    pub token: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 #[serde(untagged)]
-pub(crate) enum CentrifugoEvent {
+pub enum CentrifugoEvent {
     Connect(ConnectMessage),
     ChannelMessage(CentrifugoMessage),
 }
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub(crate) struct ConnectMessage {
+pub struct ConnectMessage {
     connect: ConnectData,
 }
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub(crate) struct ConnectData {
+pub struct ConnectData {
     client: String,
     version: String,
     subs: HashMap<String, SubscriptionInfo>,
@@ -43,7 +44,7 @@ pub(crate) struct ConnectData {
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub(crate) struct SubscriptionInfo {
+pub struct SubscriptionInfo {
     recoverable: bool,
     epoch: String,
     offset: u64,
@@ -51,19 +52,22 @@ pub(crate) struct SubscriptionInfo {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CentrifugoMessage {
+#[allow(dead_code)]
+pub struct CentrifugoMessage {
     #[serde(rename = "pub")]
-    pub(crate) publication: CentrifugoPub,
+    pub publication: CentrifugoPub,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-pub(crate) struct CentrifugoPub {
+#[allow(dead_code)]
+pub struct CentrifugoPub {
     #[serde_as(as = "Base64")]
-    pub(crate) data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
-pub(crate) struct LocalTimer;
+#[allow(dead_code)]
+pub struct LocalTimer;
 
 impl FormatTime for LocalTimer {
     fn format_time(&self, w: &mut Writer<'_>) -> fmt::Result {
@@ -72,7 +76,9 @@ impl FormatTime for LocalTimer {
     }
 }
 
-pub(crate) fn init_tracing_for_test() {
+/// Create a new `tracing_subscriber` to listen tests logs, and print them in the console.
+#[allow(dead_code)]
+pub fn init_tracing_for_test() {
     _ = tracing_subscriber::fmt()
         .with_timer(LocalTimer)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
