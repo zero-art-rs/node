@@ -94,8 +94,6 @@ impl ProofVerifier {
         co_path: Vec<CortadoAffine>,
         proof: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
-        debug!("Verify art update proof");
-
         let verification_result = art_verify(
             get_pedersen_basis(),
             associated_data.as_slice(),
@@ -120,10 +118,6 @@ impl ProofVerifier {
         public_keys: &Vec<CortadoAffine>,
         msg: &[u8],
     ) -> eyre::Result<ProofVerifierResult> {
-        debug!("Verifying schnorr signature, with provided data:");
-        debug!("signature: {:?}", signature);
-        debug!("public_keys: {:?}", public_keys);
-        debug!("msg: {:?}", msg);
         match schnorr::verify(signature, public_keys, msg) {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
             Err(e) => {

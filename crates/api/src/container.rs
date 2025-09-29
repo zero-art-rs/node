@@ -10,7 +10,7 @@ use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 use types::errors::{ARTServiceError, ServiceError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
@@ -50,28 +50,21 @@ impl Container {
             merge_changes,
         }
     }
-    pub async fn can_update_art(&self, id: Uuid) -> bool {
-        // If merge is enabled, then there is no management required
-        if self.merge_changes {
-            return true;
-        }
-
-        !self.art_is_updating.read().await.contains(&id)
-    }
 
     pub async fn start_updating(&self, id: Uuid) -> Result<(), ServiceError> {
-        // If merge is enabled, then there is no management required
+        // If merge is enabled, there is no management required
         if self.merge_changes {
             return Ok(());
         }
 
-        if self.can_update_art(id).await {
-            debug!("Mark ART in group with id {} as updating.", id);
-            self.art_is_updating.write().await.insert(id);
-            Ok(())
-        } else {
-            error!("Failed to update art. It is updating now.");
+        let mut write_lock = self.art_is_updating.write().await;
+        if write_lock.contains(&id) {
+            error!("Update failed because another update is in progress.");
             Err(ServiceError::ArtIsUpdating)
+        } else {
+            debug!("Mark ART in group with id {} as updating.", id);
+            write_lock.insert(id);
+            Ok(())
         }
     }
 
@@ -143,8 +136,6 @@ impl Container {
         branch_changes_bytes: Vec<u8>,
         new_epoch: u64,
     ) -> Result<StatusCode, ServiceError> {
-        // self.start_updating(chat_id).await?;
-
         let branch_changes =
             decode_branch_changes(&branch_changes_bytes).map_err(ARTServiceError::from)?;
 
@@ -164,8 +155,6 @@ impl Container {
             _ => return Err(ARTServiceError::InvalidInput.into()),
         }
 
-        // self.stop_updating(chat_id).await;
-
         match branch_changes.change_type {
             BranchChangesType::UpdateKey => Ok(StatusCode::OK),
             BranchChangesType::AppendNode => Ok(StatusCode::OK),
@@ -176,25 +165,17 @@ impl Container {
 
     // Check if provided correct challenge
     pub async fn contains_challenge(&self, challenge: &Vec<u8>) -> bool {
-        debug!("Create read lock for challenges.");
         let lock = self.challenges.read().await;
 
         if !lock.contains(challenge) {
-            drop(lock);
-            debug!("Lock for challenges is dropped.");
-
-            warn!("Provided challenge isn't in the state.");
+            error!("Provided challenge isn't in the state.");
             return false;
         }
-
-        drop(lock);
-        debug!("Lock for challenges is dropped.");
 
         true
     }
 
     pub async fn new_challenge(&self) -> Vec<u8> {
-        debug!("Create a write lock on challenges and create new challenge...");
         let mut lock = self.challenges.write().await;
 
         let challenge = (0..DEFAULT_CHALLENGE_LENGTH)
@@ -202,8 +183,6 @@ impl Container {
             .collect::<Vec<u8>>();
 
         lock.insert(challenge.clone());
-        drop(lock);
-        debug!("Challenge created and lock is dropped");
 
         challenge
     }

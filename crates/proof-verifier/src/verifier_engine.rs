@@ -1,15 +1,6 @@
-use crate::ProofVerifierSender;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::Direction;
-use art::types::{BranchChanges, BranchChangesType, LeafIterWithPath, NodeIndex, PublicART};
 use cortado::CortadoAffine;
-use tokio_util::bytes::Buf;
-use tracing::{debug, error};
-use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
+use types::callback_wrappers::{ProofVerifierMessage};
 use types::errors::VerificationError;
-use types::{art_schemas::*, centrifugo_schemas::AuthRequest, messenger_schemas::*};
-use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub enum VerificationOpcode {
@@ -53,8 +44,6 @@ pub struct VerificationRequest {
 
 impl VerificationRequest {
     pub fn to_message(self) -> Result<ProofVerifierMessage, VerificationError> {
-        debug!("Try to convert VerificationRequest to ProofVerifierMessage...");
-
         match self.opcode {
             VerificationOpcode::KeyUpdate
             | VerificationOpcode::AddMember

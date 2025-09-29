@@ -32,10 +32,8 @@ pub async fn get_art(
     Path((chat_id, epoch)): Path<(Uuid, u64)>,
     Query(payload): Query<GetARTQuery>,
 ) -> Result<Json<GetARTResponse>, ApiError> {
-    debug!("Validate payload");
     payload.validate()?;
 
-    debug!("retrieve art_record");
     let art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
 
     Ok(Json(GetARTResponse::try_from(art_record)?))

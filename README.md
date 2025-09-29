@@ -23,15 +23,13 @@ DOCKER_BUILDKIT=1 docker build --ssh default .
 
 This command uses Docker BuildKit with SSH agent forwarding to authenticate with private GitHub repositories during the build process.
 
-## Build
+## Build features
 
 * `node` features
   * **default** - Enables `verification` feature. To run the node without default features, use `--no-default-features` command line option.
-  * **art_modifications** - Enable `api/art_modifications` feature
   * **verification** - Enable `api/verification` feature.
 
 * `api` features
-  * **api/art_modifications** - Enable art modification endpoints for use
   * **api/verification** - Enable Proof verification. (Automatically enables `api/art_modifications` feature.)
 
 * `tests` feature

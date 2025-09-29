@@ -60,18 +60,15 @@ pub async fn list_messages(
     Path(id): Path<Uuid>,
     Query(payload): Query<GetMessageQuery>,
 ) -> Result<(StatusCode, BytesMut), ApiError> {
-    debug!("Validate payload");
     payload.validate()?;
 
     let mut filter = doc! {};
 
     if let Some(sequence_number) = payload.message_sequence_number {
-        debug!("Append sequence_number: {}, to filter", sequence_number);
         filter.insert("sequence_number", doc! { "$gte": sequence_number });
     }
 
     if let Some(epoch) = payload.epoch {
-        debug!("Append epoch: {}, to filter", epoch);
         filter.insert("epoch", doc! { "$gte": epoch as i64 });
     }
 
@@ -103,22 +100,18 @@ pub async fn count_messages(
     Path(id): Path<Uuid>,
     Query(payload): Query<CountMessagesQuery>,
 ) -> Result<(StatusCode, Json<u64>), ApiError> {
-    debug!("Validate payload");
     payload.validate()?;
 
     let mut filter = doc! {};
 
     if let Some(sequence_number) = payload.message_sequence_number {
-        debug!("Append sequence_number: {}, to filter", sequence_number);
         filter.insert("sequence_number", doc! { "$gte": sequence_number });
     }
 
     if let Some(epoch) = payload.epoch {
-        debug!("Append epoch: {}, to filter", epoch);
         filter.insert("epoch", doc! { "$gte": epoch });
     }
 
-    debug!("Count messages...");
     let count = state
         .messenger_service
         .count_messages(&id, filter.clone(), payload.limit, payload.skip)

@@ -7,8 +7,7 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-art_modifications = []
-verification = ["art_modifications"]
+verification = []
 
 [dependencies]
 storage = { path = "../storage" }

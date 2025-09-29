@@ -8,7 +8,6 @@ name = "zk-messenger-node"
 path = "src/main.rs"
 
 [features]
-art_modifications = ["api/art_modifications"]
 verification = ["api/verification"]
 default = ["verification"]
 
