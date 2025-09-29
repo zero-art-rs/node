@@ -102,7 +102,7 @@ impl ProofVerifier {
             aux_public_keys,
             path,
             co_path,
-            ARTProof::deserialize_uncompressed(proof.reader())?,
+            ARTProof::deserialize_compressed(proof.reader())?,
         );
 
         match verification_result {
