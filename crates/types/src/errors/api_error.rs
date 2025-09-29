@@ -1,4 +1,4 @@
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 

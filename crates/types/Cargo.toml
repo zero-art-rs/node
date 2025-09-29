@@ -16,7 +16,7 @@ serde = { workspace = true }
 mongodb = { workspace = true }
 hex = { workspace = true }
 callbacks = { path = "../callback" }
-art = { workspace = true }
+zrt-art = { workspace = true }
 ark-ec = { workspace = true }
 ark-ff = { workspace = true }
 eyre = { workspace = true }

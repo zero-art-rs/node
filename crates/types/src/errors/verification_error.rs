@@ -1,5 +1,5 @@
 use crate::errors::{ARTServiceError, ApiError, ServiceError, StorageError};
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
 use eyre::Report;
@@ -11,7 +11,7 @@ pub enum VerificationError {
     InvalidEpoch { current: u64, provided: u64 },
     #[error("Invalid input Provided")]
     InvalidInput,
-    #[error("Failed to use ART {0}")]
+    #[error("Failed to use zrt_art {0}")]
     ArtError(#[from] ARTError),
     #[error("ARTServiceError error: {0}")]
     ArtServiceError(#[from] ARTServiceError),

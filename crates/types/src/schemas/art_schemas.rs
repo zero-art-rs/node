@@ -1,7 +1,7 @@
 use crate::ARTRecord;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use serde_with::{

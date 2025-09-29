@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::{StorageError};
-use art::types::{BranchChanges, PublicART};
+use zrt_art::types::{BranchChanges, PublicART};
 use cortado::{CortadoAffine as ARTGroup};
 use mongodb::ClientSession;
 use types::ARTRecord;

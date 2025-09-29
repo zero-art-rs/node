@@ -6,14 +6,14 @@ use crate::{
 use types::centrifugo_schemas::AuthRequest;
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
-use art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
-use art::types::{PrivateART, PublicART};
+use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
+use zrt_art::types::{PrivateART, PublicART};
 use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use bytes::{Bytes, BytesMut};
 use cortado::CortadoAffine;
-use crypto::schnorr::{sign, verify};
+use zrt_crypto::schnorr::{sign, verify};
 use eventsource_stream::Eventsource;
 use prost::Message;
 use tracing::debug;

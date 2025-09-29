@@ -1,7 +1,7 @@
 use crate::protos::Frame;
 use crate::protos::group_operation::Operation;
-use art::errors::ARTError;
-use art::types::{BranchChanges, PublicART};
+use zrt_art::errors::ARTError;
+use zrt_art::types::{BranchChanges, PublicART};
 use cortado::CortadoAffine;
 
 /// Decode branch changes from base64 string

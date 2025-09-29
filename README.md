@@ -1,10 +1,10 @@
-# zk-messenger-node
+# zrt-node
 
-Node for zkMessenger protocol
+Node for zero-art protocol
 
 ## Project structure:
 - `apps`
-    - `node` - zk-messenger-node which takes a role of a server
+    - `zrt-node` - node which takes a role of a intermediate server, storing data for users
 - `crates`
     - `api` - main logic of a server
     - `callback` - small helper crate for defining structures for communication between api and proof-verifier.
@@ -25,7 +25,7 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 
 ## Build features
 
-* `node` features
+* `zrt-node` features
   * **default** - Enables `verification` feature. To run the node without default features, use `--no-default-features` command line option.
   * **verification** - Enable `api/verification` feature.
 
@@ -40,7 +40,7 @@ This command uses Docker BuildKit with SSH agent forwarding to authenticate with
 
 To run the node without features use `--no-default-features` option.
 ```shell
-cargo run -p zk-messenger-node --no-default-features --release -- run --config config.toml
+cargo run -p zrt-node --no-default-features --release -- run --config config.toml
 ```
 
 ## Tests

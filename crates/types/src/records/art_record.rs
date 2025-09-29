@@ -1,7 +1,7 @@
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::types::PublicART;
+use zrt_art::types::PublicART;
 use bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::fmt;

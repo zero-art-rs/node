@@ -1,7 +1,7 @@
 use crate::Container;
 use ark_serialize::CanonicalDeserialize;
-use art::traits::{ARTPublicAPI, ARTPublicView};
-use art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, NodeIndex};
+use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
+use zrt_art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, NodeIndex};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::middleware::Next;

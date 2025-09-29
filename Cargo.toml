@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "apps/node",
+    "apps/zrt-node",
     "crates/api",
     "crates/proof-verifier",
     "crates/storage",
@@ -62,12 +62,12 @@ bytes = { version = "1.10.1" }
 eventsource-stream = { version = "0.2.3" }
 futures = { version = "0.3.31" }
 reqwest = { version = "0.12.23" }
-bulletproofs = { version = "5.0.0", git="https://github.com/zk-messenger/bulletproofs"}
-crypto = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "feature/compact-serialization"  }
-cortado = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "feature/compact-serialization"  }
-zk = { git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "feature/compact-serialization" }
-art = {  git = "ssh://git@github.com/zk-messenger/project-m.git", branch = "feature/compact-serialization" }
 zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
+zrt-zk = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+zrt-art = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+zrt-crypto = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+cortado = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+bulletproofs = { version = "5.0.0", git="https://github.com/zero-art-rs/bulletproofs", features=["yoloproofs"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

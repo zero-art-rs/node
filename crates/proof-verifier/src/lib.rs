@@ -2,7 +2,7 @@ use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalDeserialize;
 use bulletproofs::{PedersenGens};
 use cortado::{CortadoAffine, ALT_GENERATOR_X, ALT_GENERATOR_Y};
-use crypto::schnorr;
+use zrt_crypto::schnorr;
 use tokio::sync::mpsc;
 use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
-use zk::art::{ARTProof, art_verify};
+use zrt_zk::art::{ARTProof, art_verify};
 use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 

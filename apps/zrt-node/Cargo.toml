@@ -1,10 +1,10 @@
 [package]
-name = "zk-messenger-node"
+name = "zrt-node"
 version = "0.1.9"
 edition = "2024"
 
 [[bin]]
-name = "zk-messenger-node"
+name = "zrt-node"
 path = "src/main.rs"
 
 [features]

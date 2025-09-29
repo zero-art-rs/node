@@ -1,4 +1,4 @@
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {

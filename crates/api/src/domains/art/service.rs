@@ -1,5 +1,5 @@
-use art::traits::ARTPublicAPI;
-use art::types::{BranchChanges, BranchChangesType, NodeIndex};
+use zrt_art::traits::ARTPublicAPI;
+use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use std::cmp::Ordering;

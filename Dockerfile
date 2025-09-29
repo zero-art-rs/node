@@ -10,7 +10,7 @@ WORKDIR /opt
 COPY Cargo.lock .
 COPY Cargo.toml .
 
-COPY apps/node/Cargo.toml ./apps/node/Cargo.toml
+COPY apps/zrt-node/Cargo.toml ./apps/zrt-node/Cargo.toml
 COPY crates/api/Cargo.toml ./crates/api/Cargo.toml
 COPY crates/callback/Cargo.toml ./crates/callback/Cargo.toml
 COPY crates/proof-verifier/Cargo.toml ./crates/proof-verifier/Cargo.toml
@@ -25,15 +25,15 @@ COPY crates crates/
 COPY apps apps/
 
 # Build main application with SSH mount for git authentication
-RUN --mount=type=ssh cargo build --release -p zk-messenger-node \
+RUN --mount=type=ssh cargo build --release -p zrt-node \
 	&& mkdir out \
-	&& cp target/release/zk-messenger-node out/ \
-	&& strip out/zk-messenger-node
+	&& cp target/release/zrt-node out/ \
+	&& strip out/zrt-node
 
 FROM alpine:3.20
 
 RUN apk add --no-cache libgcc openssl postgresql-client
 
-COPY --from=builder /opt/out/zk-messenger-node /bin/zk-messenger-node
+COPY --from=builder /opt/out/zrt-node /bin/zrt-node
 
-CMD ["/bin/zk-messenger-node", "run", "--config", "/config.toml"]
+CMD ["/bin/zrt-node", "run", "--config", "/config.toml"]

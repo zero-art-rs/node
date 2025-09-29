@@ -2,7 +2,7 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
-use art::types::BranchChangesType;
+use zrt_art::types::BranchChangesType;
 use axum::body::Bytes;
 use axum::http::StatusCode;
 use proof_verifier::ProofVerifierSender;

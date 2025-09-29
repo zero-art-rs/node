@@ -1,7 +1,7 @@
 use crate::{ARTStorage, DATABASE};
 use crate::StorageError;
-use art::types::NodeIndex;
-use art::{
+use zrt_art::types::NodeIndex;
+use zrt_art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
 };

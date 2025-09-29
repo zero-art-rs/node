@@ -6,8 +6,8 @@ use ark_std::{
     rand::prelude::StdRng,
     rand::{SeedableRng, thread_rng},
 };
-use art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
-use art::{
+use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
+use zrt_art::{
     errors::ARTError,
     traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
     types::{PrivateART, PublicART},
@@ -16,7 +16,7 @@ use axum::body::Bytes;
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
-use crypto::schnorr::{sign, verify};
+use zrt_crypto::schnorr::{sign, verify};
 use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
@@ -31,7 +31,7 @@ use types::{
     utils::extract_branch_changes,
 };
 use uuid::Uuid;
-use zk::art::{art_prove, art_verify};
+use zrt_zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use crate::utils::CentrifugoTokenResponse;
 
