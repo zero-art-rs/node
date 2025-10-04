@@ -424,7 +424,7 @@ pub async fn get_left_most_leaf_public_key(
 ) -> Result<CortadoAffine, VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = &art.root;
+    let mut left_most_leaf = art.root.as_ref();
     while let Ok(node) = left_most_leaf.get_left() {
         left_most_leaf = node;
     }
@@ -438,7 +438,7 @@ pub async fn get_opcode_and_input_for_drop_group(
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = &art.root;
+    let mut left_most_leaf = art.root.as_ref();
     let mut path = Vec::new();
     while let Ok(node) = left_most_leaf.get_left() {
         path.push(Direction::Left);

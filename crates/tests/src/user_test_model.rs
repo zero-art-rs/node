@@ -22,7 +22,7 @@ use prost::Message;
 use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
-use tracing::debug;
+use tracing::{debug, error};
 use types::{
     art_schemas::{GetARTResponse, GetARTQuery, ChallengeResponse},
     centrifugo_schemas::AuthRequest,
@@ -33,6 +33,7 @@ use types::{
 use uuid::Uuid;
 use zrt_zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
+use zrt_art::traits::ARTPublicView;
 use crate::utils::CentrifugoTokenResponse;
 
 use crate::{
@@ -56,6 +57,19 @@ pub enum UserTestModelError {
     WrongStatusCode{got: String, expected: String},
 }
 
+fn get_co_path_values(art: &PrivateART<CortadoAffine>, index: &NodeIndex) -> Result<Vec<CortadoAffine>, ARTError> {
+    let mut co_path_values = Vec::new();
+
+    let mut parent = art.get_root();
+    for direction in &index.get_path()? {
+        co_path_values.push(parent.get_other_child(direction)?.public_key);
+        parent = parent.get_child(direction)?;
+    }
+
+    co_path_values.reverse();
+    Ok(co_path_values)
+}
+
 impl From<(StatusCode, StatusCode)> for UserTestModelError {
     fn from((got, expected): (StatusCode, StatusCode)) -> Self {
         Self::WrongStatusCode{got: got.to_string(), expected: expected.to_string()}
@@ -64,9 +78,12 @@ impl From<(StatusCode, StatusCode)> for UserTestModelError {
 #[allow(dead_code)]
 impl UserTestModel {
     pub async fn new(size: u64) -> (Self, BytesMut) {
-        let mut rng = StdRng::seed_from_u64(rand::random());
+        // let seed = rand::random();
+        let seed = 0;
+        let mut rng = StdRng::seed_from_u64(seed);
 
         let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect();
+        debug!("secrets: {:?}", secrets);
         let owner_id_key = Fr::rand(&mut rng);
         let (art, _) =
             PrivateART::new_art_from_secrets(&secrets, &CortadoAffine::generator()).unwrap();
@@ -107,8 +124,8 @@ impl UserTestModel {
     pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
         let (mut art, _) =
             PrivateART::new_art_from_secrets(&self.initial_secrets, &CortadoAffine::generator())?;
-        art.secret_key = self.initial_secrets[index];
-        art.update_node_index()?;
+
+        let art = PrivateART::from_public_art(self.art.clone(), self.initial_secrets[index])?;
 
         Ok(Self {
             client: reqwest::Client::new(),
@@ -267,9 +284,11 @@ impl UserTestModel {
 
         let temporary_secret_key = Fr::rand(&mut rng);
         debug!("temporary_secret_key: {}", temporary_secret_key);
+        debug!("target_node_path: {:#?}", user_to_remove);
         let (_, remove_user_changes, artefacts) = self
             .art
             .make_blank(user_to_remove, &temporary_secret_key)?;
+
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -513,7 +532,7 @@ impl UserTestModel {
             associated_data,
             vec![public_key],
             changes.public_keys.iter().rev().copied().collect(),
-            self.art.get_co_path_values(&changes.node_index)?,
+            get_co_path_values(&self.art, &changes.node_index)?,
             proof.clone(),
         )
         .is_ok();
@@ -572,11 +591,13 @@ impl UserTestModel {
         let buf = BytesMut::from(&*changes_response.bytes().await?);
         let sp_frames = SpFrames::decode(buf)?.sp_frames;
 
+
         let mut changes = Vec::with_capacity(sp_frames.len());
         for sp_frame in sp_frames {
             let Some(frame) = sp_frame.frame else { continue };
 
             if let Some(frame_change) = extract_branch_changes(&frame)? {
+                debug!("frame_change: {:#?}", frame_change);
                 changes.push(frame_change);
             }
         }

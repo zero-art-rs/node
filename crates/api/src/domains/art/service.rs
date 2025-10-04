@@ -64,7 +64,7 @@ impl ARTService {
             match epoch_changes.len().cmp(&1) {
                 Ordering::Less => return Err(ARTServiceError::NotFound),
                 Ordering::Equal => art_record.art.update_public_art(&epoch_changes[0])?,
-                Ordering::Greater => art_record.art.merge(&epoch_changes)?,
+                Ordering::Greater => art_record.art.merge_all(&epoch_changes)?,
             }
         }
 
@@ -375,7 +375,7 @@ impl ARTService {
         target_changes.push(change);
         latest_art
             .art
-            .merge(&target_changes)?;
+            .merge_all(&target_changes)?;
 
         debug!(
             "Finished to merge art. New root PK is: {}",

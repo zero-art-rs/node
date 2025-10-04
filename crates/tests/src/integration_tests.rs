@@ -386,9 +386,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     debug!("User 2 merge changes locally ...");
     user2
         .art
-        .recompute_path_secrets_for_observer(&changes)
-        .unwrap();
-    user2.art.merge(&changes)?;
+        .merge_for_observer(&changes);
     user2.epoch += 1;
     debug!("User2 MTK_x: {}", user2.art.root.public_key);
 
@@ -421,13 +419,13 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     );
 
     // sanity check
-    assert_eq!(user2.art.get_root(), user0.art.get_root());
-    assert_eq!(user1.art.get_root(), user0.art.get_root());
-    assert_eq!(user3.art.get_root(), user0.art.get_root());
+    assert_eq!(user2.art, user0.art);
+    assert_eq!(user1.art, user0.art);
+    assert_eq!(user3.art, user0.art);
 
     let target_node_path = user0.index_of(4).unwrap().get_path().unwrap();
 
-    debug!("User 0 update key ...");
+    debug!("User 0 blanking the user on path {:?} ...", &target_node_path);
     user0.make_blank(&target_node_path).await?;
     // user0.update_key(None).await?;
     debug!("User0 TK: {}", user0.art.root.public_key);
@@ -435,12 +433,14 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     debug!("User1 receive changes ..");
     let blank_user_0 = user1.get_changes(20, 0, None).await?;
+    assert_eq!(user1.art, user2.art);
     user1.art.update_private_art(&blank_user_0[0]).unwrap();
+    assert_eq!(user1.art, user0.art);
     user1.epoch += 1;
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
-    assert_eq!(user1.art.get_root(), user0.art.get_root());
+    assert_eq!(user1.art, user0.art);
 
-    debug!("User 1 update key ...");
+    debug!("User 1 blanking the target node ...");
     user1.make_blank(&target_node_path).await?;
     debug!("User1 TK: {}", user1.art.root.public_key);
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
@@ -455,7 +455,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     user2.epoch += 1;
     debug!("User2 tk: {}", user2.art.get_root_key().unwrap().key);
     // debug!("art2:\n{}", user2.art.get_root());
-    assert_eq!(user2.art.get_root(), user0.art.get_root());
+    assert_eq!(user2.art, user0.art);
     assert_eq!(
         user2.art.public_key_of(&user2.art.get_root_key()?.key),
         user0.art.public_key_of(&user0.art.get_root_key()?.key),
