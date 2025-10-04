@@ -7,9 +7,7 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-integration-tests = []
-art_modifications = []
-verification = ["art_modifications"]
+verification = []
 
 [dependencies]
 storage = { path = "../storage" }
@@ -27,12 +25,12 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["full"] }
 eyre = { workspace = true }
-tower-http = { version = "0.6.2", features = ["fs", "trace", "cors"] }
+tower-http = { workspace = true, features = ["fs", "trace", "cors"] }
 jsonwebtoken = { workspace = true }
 mongodb = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
-zk = { workspace = true }
-art = { workspace = true }
+zrt-zk = { workspace = true }
+zrt-art = { workspace = true }
 cortado = { workspace = true }
 ark-ec = { workspace = true }
 ark-serialize = { workspace = true }
@@ -50,15 +48,16 @@ callbacks = { path = "../callback" }
 prost = { workspace = true }
 bytes = { workspace = true }
 prost-types = { workspace = true }
+sha3 = { workspace = true }
 
 [dev-dependencies]
-reqwest = { version = "0.12.22", features = ["json", "stream"] }
-serde_json = { version = "1.0.140" }
-eventsource-stream = { version = "0.2.3" }
-futures = { version = "0.3.31" }
+reqwest = { workspace = true, features = ["json", "stream"] }
+serde_json = { workspace = true }
+eventsource-stream = { workspace = true }
+futures = { workspace = true }
 zkp = { workspace = true }
 bulletproofs = { workspace = true }
 curve25519-dalek = { workspace = true }
 ark-ed25519 = { workspace = true }
-crypto = { workspace = true }
+zrt-crypto = { workspace = true }
 tracing-subscriber = { workspace = true }

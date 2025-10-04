@@ -1,4 +1,4 @@
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
 
@@ -19,16 +19,13 @@ pub enum ApiError {
     NotFound(String),
 }
 
-pub fn invalid_request() -> ApiError {
-    ApiError::BadRequest(String::from("Invalid request"))
-}
-
 impl From<ServiceError> for ApiError {
     fn from(value: ServiceError) -> Self {
         match value {
             ServiceError::ARTServiceError(art_err) => Self::from(art_err),
             ServiceError::MessageServiceError(msg_err) => Self::from(msg_err),
-            ServiceError::DecodeError(_) => invalid_request(),
+            ServiceError::DecodeError(_) => ApiError::BadRequest(String::from("Invalid request")),
+            ServiceError::ArtIsUpdating => ApiError::InternalServerError(value.to_string()),
         }
     }
 }

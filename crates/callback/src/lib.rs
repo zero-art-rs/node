@@ -38,7 +38,7 @@ impl<T, V> CallbackWrapper<T, V> {
 impl<T, V> From<(T, CallbackSender<V>)> for CallbackWrapper<T, V> {
     #[inline]
     fn from(value: (T, CallbackSender<V>)) -> Self {
-        CallbackWrapper(value.0, value.1)
+        Self(value.0, value.1)
     }
 }
 

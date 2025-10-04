@@ -1,16 +1,16 @@
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalDeserialize;
-use bulletproofs::{BulletproofGens, PedersenGens};
-use cortado::{self, CortadoAffine, FromScalar, Parameters, ToScalar};
-use crypto::schnorr;
+use bulletproofs::{PedersenGens};
+use cortado::{CortadoAffine, ALT_GENERATOR_X, ALT_GENERATOR_Y};
+use zrt_crypto::schnorr;
 use tokio::sync::mpsc;
 use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
-use zk::art::{ARTProof, art_verify};
+use zrt_zk::art::{ARTProof, art_verify};
 use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 
@@ -94,15 +94,13 @@ impl ProofVerifier {
         co_path: Vec<CortadoAffine>,
         proof: Vec<u8>,
     ) -> eyre::Result<ProofVerifierResult> {
-        debug!("Verify art update proof");
-
         let verification_result = art_verify(
             get_pedersen_basis(),
             associated_data.as_slice(),
             aux_public_keys,
             path,
             co_path,
-            ARTProof::deserialize_uncompressed(proof.reader())?,
+            ARTProof::deserialize_compressed(proof.reader())?,
         );
 
         match verification_result {
@@ -120,7 +118,6 @@ impl ProofVerifier {
         public_keys: &Vec<CortadoAffine>,
         msg: &[u8],
     ) -> eyre::Result<ProofVerifierResult> {
-        debug!("Verifying schnorr signature");
         match schnorr::verify(signature, public_keys, msg) {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
             Err(e) => {
@@ -133,7 +130,7 @@ impl ProofVerifier {
 
 fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
     let g_1 = CortadoAffine::generator();
-    let h_1 = CortadoAffine::new_unchecked(cortado::ALT_GENERATOR_X, cortado::ALT_GENERATOR_Y);
+    let h_1 = CortadoAffine::new_unchecked(ALT_GENERATOR_X, ALT_GENERATOR_Y);
 
     let gens = PedersenGens::default();
     PedersenBasis::<CortadoAffine, Ed25519Affine>::new(

@@ -1,11 +1,10 @@
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use art::types::PublicART;
+use zrt_art::types::PublicART;
 use bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -19,7 +18,7 @@ where
     pub chat_id: Uuid,
     pub art: PublicART<G>,
     pub is_private: bool,
-    pub epoch: i64,
+    pub epoch: u64,
 }
 
 impl<G> fmt::Display for ARTRecord<G>

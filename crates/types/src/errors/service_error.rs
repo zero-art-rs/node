@@ -10,4 +10,7 @@ pub enum ServiceError {
 
     #[error("Failed to decode payload: {0}")]
     DecodeError(#[from] prost::DecodeError),
+
+    #[error("Fail to update ART. I is changing now.")]
+    ArtIsUpdating,
 }

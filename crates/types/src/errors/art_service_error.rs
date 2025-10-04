@@ -1,5 +1,5 @@
 use crate::errors::StorageError;
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ARTServiceError {
@@ -21,11 +21,9 @@ pub enum ARTServiceError {
     GroupChatOnly,
     #[error("Failed to retrieve database")]
     DatabaseRetrieval,
-    #[error("Art is changing, so the result is unpredictable")]
-    ArtIsChanging,
     #[error("Failed to initiate new session")]
     SessionInitiation,
-    #[error("Failed to use ART {0}")]
+    #[error("Failed to use zrt_art {0}")]
     ArtError(#[from] ARTError),
     #[error("No previous record found")]
     NoPreviousRecord,

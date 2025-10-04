@@ -3,16 +3,65 @@ name = "tests"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-path = "src/lib.rs"
+[features]
+integration_tests = []
+merge_changes = []
+
+#[[test]]
+#name = "api_tests"
+#path = "src/lib.rs"
 
 [dependencies]
-axum = "0.8.4"
-api = { path = "../api"}
-tokio = { workspace = true }
 axum-test = { workspace = true }
-utoipa = { workspace = true }
+storage = { path = "../storage" }
+proof-verifier = { path = "../proof-verifier" }
+types = { path = "../types" }
+axum = { workspace = true, features = ["macros"] }
+validator = { workspace = true, features = ["derive"] }
+utoipa = { workspace = true, features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 utoipa-axum = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["full"] }
+eyre = { workspace = true }
+tower-http = { version = "0.6.2", features = ["fs", "trace", "cors"] }
+jsonwebtoken = { workspace = true }
+mongodb = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+zrt-zk = { workspace = true }
+zrt-art = { workspace = true }
+cortado = { workspace = true }
+ark-ec = { workspace = true }
+ark-serialize = { workspace = true }
+ark-std = { workspace = true }
+rand = { workspace = true, features = ["thread_rng"] }
+futures-util = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+postcard = { workspace = true }
+hyper = { workspace = true }
+axum-core = {  workspace = true}
+serde_urlencoded = {workspace = true}
+serde_with = { workspace = true }
+callbacks = { path = "../callback" }
+prost = { workspace = true }
+bytes = { workspace = true }
+prost-types = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
+eventsource-stream = { workspace = true }
+futures = { workspace = true }
+zkp = { workspace = true }
+bulletproofs = { workspace = true }
+curve25519-dalek = { workspace = true }
+ark-ed25519 = { workspace = true }
+zrt-crypto = { workspace = true }
+tracing-subscriber = { workspace = true }
+sha3 = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

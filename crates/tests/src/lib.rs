@@ -1,18 +1,31 @@
 //! Crate for testing the node
 
-mod test_api;
-mod user_test_model;
+#[cfg(test)]
+#[cfg(feature = "integration_tests")]
+pub(crate) mod integration_tests;
 
 #[cfg(test)]
-mod tests {
-    /// template
-    pub fn add(left: u64, right: u64) -> u64 {
-        left + right
-    }
+pub(crate) mod test_api;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(test)]
+pub(crate) mod user_test_model;
+
+#[cfg(test)]
+pub(crate) mod utils;
+
+/// Backend url for testing.
+#[cfg(test)]
+const BACKEND_URL: &str = "http://localhost:8080";
+/// Centrifugo url for testing.
+#[cfg(test)]
+const CENTRIFUGO_URL: &str = "http://localhost:8000";
+
+/// used for tests, which can be repeated.
+#[cfg(test)]
+const TEST_REPEATS: usize = 4;
+/// Default nonce used in tests.
+#[cfg(test)]
+const DEFAULT_NONCE_LENGTH: u32 = 16; // 16 bytes
+/// Used to denote the size of the group for some tests.
+#[cfg(test)]
+const GROUP_SIZE: u64 = 10;

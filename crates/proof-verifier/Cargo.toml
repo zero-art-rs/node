@@ -16,8 +16,8 @@ ark-ed25519 = { workspace = true }
 ark-serialize = { workspace = true }
 bulletproofs = { workspace = true }
 cortado = { workspace = true }
-zk = { workspace = true }
+zrt-zk = { workspace = true }
 zkp = { workspace = true }
-crypto = { workspace = true }
+zrt-crypto = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
-art = { workspace = true }
+zrt-art = { workspace = true }

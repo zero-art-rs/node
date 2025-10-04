@@ -1,7 +1,6 @@
 use crate::StorageError;
 use bson::doc;
 use futures_util::TryStreamExt;
-use mongodb::options::FindOptions;
 use mongodb::{bson::Document, ClientSession, Collection};
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::debug;
@@ -15,7 +14,6 @@ pub trait DataStorage: Send + Sync {
     async fn list(
         &self,
         filter: Document,
-        sort_option: Option<Document>,
         limit: i64,
         skip: i64,
     ) -> Result<Vec<Self::Data>, StorageError> {
@@ -23,9 +21,8 @@ pub trait DataStorage: Send + Sync {
             .get_collection()
             .await
             .find(filter)
-            // .sort(sort_option.unwrap_or_default())
             .skip(skip as u64)
-            .limit(limit as i64)
+            .limit(limit)
             .await?;
 
         let mut records = Vec::new();
@@ -93,6 +90,14 @@ pub trait DataStorage: Send + Sync {
 
     async fn drop_collection(&self) -> Result<(), mongodb::error::Error> {
         self.get_collection().await.drop().await?;
+        Ok(())
+    }
+
+    async fn drop_collection_in_session(
+        &self,
+        sesion: &mut ClientSession,
+    ) -> Result<(), mongodb::error::Error> {
+        self.get_collection().await.drop().session(sesion).await?;
         Ok(())
     }
 

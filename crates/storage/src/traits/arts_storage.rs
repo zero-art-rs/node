@@ -1,8 +1,8 @@
 use uuid::Uuid;
 
-use crate::StorageError;
-use art::types::{BranchChanges, PublicART};
-use cortado::CortadoAffine as ARTGroup;
+use crate::{StorageError};
+use zrt_art::types::{BranchChanges, PublicART};
+use cortado::{CortadoAffine as ARTGroup};
 use mongodb::ClientSession;
 use types::ARTRecord;
 
@@ -36,24 +36,18 @@ pub trait ARTStorage: Send + Sync {
         changes: BranchChanges<ARTGroup>,
         chat_id: Uuid,
     ) -> Result<(), StorageError>;
-    async fn update_art_in_session(
-        &self,
-        session: &mut ClientSession,
-        changes: BranchChanges<ARTGroup>,
-        chat_id: Uuid,
-    ) -> Result<(), mongodb::error::Error>;
 
     /// Drop initial_arts_collection and/or arts_collection if empty
     async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;
 
     /// Get the sequence number of the art
-    async fn get_latest_epoch(&self, chat_id: &Uuid) -> Result<i64, mongodb::error::Error>;
+    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error>;
 
     async fn update_metadata(
         &self,
         chat_id: Uuid,
         new_metadata: Vec<u8>,
-        node_index: i64,
+        node_index: u64,
     ) -> Result<(), StorageError>;
 
     async fn replace_art(

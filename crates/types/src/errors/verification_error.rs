@@ -1,5 +1,5 @@
-use crate::errors::ARTServiceError;
-use art::errors::ARTError;
+use crate::errors::{ARTServiceError, ApiError, ServiceError, StorageError};
+use zrt_art::errors::ARTError;
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
 use eyre::Report;
@@ -7,9 +7,11 @@ use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
+    #[error("Invalid epoch provided ({provided}), while the current one is {current}")]
+    InvalidEpoch { current: u64, provided: u64 },
     #[error("Invalid input Provided")]
     InvalidInput,
-    #[error("Failed to use ART {0}")]
+    #[error("Failed to use zrt_art {0}")]
     ArtError(#[from] ARTError),
     #[error("ARTServiceError error: {0}")]
     ArtServiceError(#[from] ARTServiceError),
@@ -23,8 +25,8 @@ pub enum VerificationError {
     InvalidProof,
     #[error("Failed to send message to proof verifier: {0}")]
     FailedToSendProof(Report),
-    #[error("No challenge requested. Use get_challenge endpoint")]
-    NoChallenge,
+    #[error("Challenge not found: it may have already been removed")]
+    WrongChallenge,
     #[error("ART operation isn't supported")]
     UnsupportedOperation,
     #[error("Serialization error: {0}")]
@@ -37,6 +39,10 @@ pub enum VerificationError {
     JsonRejection(#[from] JsonRejection),
     #[error("Failed to decode request: {0}")]
     DecodeError(#[from] prost::DecodeError),
+    #[error("Failed to retrieve data from the storage: {0}")]
+    StorageError(#[from] StorageError),
+    #[error("Service error occurred: {0}")]
+    ServiceError(#[from] ServiceError),
 }
 
 impl From<serde_json::Error> for VerificationError {
@@ -61,5 +67,11 @@ impl From<Report> for VerificationError {
     fn from(report: Report) -> Self {
         error!("Failed to send message to proof verifier: {}", report);
         VerificationError::FailedToSendProof(report)
+    }
+}
+
+impl IntoResponse for VerificationError {
+    fn into_response(self) -> axum::response::Response {
+        ApiError::from(self).into_response()
     }
 }

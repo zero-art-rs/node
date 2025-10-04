@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "apps/node",
+    "apps/zrt-node",
     "crates/api",
     "crates/proof-verifier",
     "crates/storage",
@@ -32,11 +32,11 @@ hex = { version = "0.4.3", default-features = false }
 hyper = { version = "1.6.0", default-features = false }
 lazy_static = { version = "1.5.0", default-features = false }
 thiserror = { version = "2.0.12", default-features = false }
-ark-ec = { version = "0.5.0", default-features = false }
-ark-ff = { version = "0.5.0" }
-ark-ed25519 = { version = "0.5.0"}
 ark-std = { version = "0.5.0", default-features = false }
-ark-serialize = { version = "0.5.0", default-features = false }
+ark-ec = { version = "0.5.0", default-features = false, git = "https://github.com/arkworks-rs/algebra", rev = "7601bf9" }
+ark-ff = { version = "0.5.0", git = "https://github.com/arkworks-rs/algebra", rev = "7601bf9" }
+ark-ed25519 = { version = "0.5.0", git = "https://github.com/arkworks-rs/algebra", rev = "7601bf9" }
+ark-serialize = { version = "0.5.0", default-features = false, git = "https://github.com/arkworks-rs/algebra", rev = "7601bf9" }
 utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "9.0.1", features = ["axum", "reqwest"] }
 utoipa-axum = "0.2"
@@ -47,15 +47,9 @@ bson = { version = "2.15.0", features = ["chrono-0_4"] }
 tracing-subscriber = { version = "0.3.19" }
 uuid = { version = "1.17.0", features = ["v7", "serde"] }
 jsonwebtoken = "9.3.1"
-zk = { git = "ssh://git@github.com/zk-messenger/project-m.git" }
 tokio-stream = { version = "0.1.10" }
-art = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
-crypto = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
-cortado = {  git = "ssh://git@github.com/zk-messenger/project-m.git" }
 postcard = { version = "1.1.2"  }
 serde_with = { version = "3.14.0", features = ["base64"] }
-bulletproofs = { version = "5.0.0", git="https://github.com/zk-messenger/bulletproofs"}
-zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 curve25519-dalek = { version = "4.1.3", features = ["digest", "group", "rand_core", "serde"] }
 serde_urlencoded = { version = "0.7.1" }
 axum-core = "0.5.2"
@@ -65,12 +59,15 @@ axum-extra = { version = "0.10.1" }
 prost = "0.14.1"
 prost-types = { version = "0.14.1" }
 bytes = { version = "1.10.1" }
-
-[workspace.lints.clippy]
-all = "warn"
-pedantic = "warn"
-nursery = "warn"
-restriction = "warn"
+eventsource-stream = { version = "0.2.3" }
+futures = { version = "0.3.31" }
+reqwest = { version = "0.12.23" }
+zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
+zrt-zk = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+zrt-art = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+zrt-crypto = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+cortado = { git = "ssh://git@github.com/zero-art-rs/core.git" }
+bulletproofs = { version = "5.0.0", git="https://github.com/zero-art-rs/bulletproofs", features=["yoloproofs"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

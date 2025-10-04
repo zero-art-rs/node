@@ -5,12 +5,10 @@ use axum::{
 };
 use mongodb::bson::doc;
 use std::sync::Arc;
-use tracing::{debug, instrument};
-use types::{art_schemas::*, errors::ApiError, protos::Frame};
+use tracing::{instrument};
+use types::{art_schemas::{GetARTQuery, GetARTResponse, ChallengeResponse}, errors::ApiError};
 use uuid::Uuid;
 use validator::Validate;
-
-const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
 /// Get ART structure
 #[utoipa::path(
@@ -19,7 +17,7 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
     params(
         GetARTQuery,
         ("id" = Uuid, Path, description = "Group id"),
-        ("epoch" = i64, Path, description = "Get art at provided epoch")
+        ("epoch" = u64, Path, description = "Get art at provided epoch")
     ),
     responses(
         (status = 200, description = "ART retrieved successfully", body = GetARTResponse),
@@ -31,16 +29,12 @@ const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 #[instrument(skip(state), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
-    Path((chat_id, epoch)): Path<(Uuid, i64)>,
+    Path((chat_id, epoch)): Path<(Uuid, u64)>,
     Query(payload): Query<GetARTQuery>,
 ) -> Result<Json<GetARTResponse>, ApiError> {
     payload.validate()?;
 
-    let art_record = state
-        .art_service
-        .get_art(&chat_id, Some(epoch))
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+    let art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
 
     Ok(Json(GetARTResponse::try_from(art_record)?))
 }
@@ -59,16 +53,9 @@ pub async fn get_art(
 pub async fn get_challenge(
     State(state): State<Arc<Container>>,
 ) -> Result<Json<ChallengeResponse>, ApiError> {
-    debug!("Create a write lock on challenges and create new challenge...");
-    let mut lock = state.challenges.write().await;
+    // let challenge = state.new_challenge().await;
 
-    let challenge = (0..DEFAULT_CHALLENGE_LENGTH)
-        .map(|_| rand::random::<u8>())
-        .collect::<Vec<u8>>();
-
-    lock.insert(challenge.clone());
-    drop(lock);
-    debug!("Challenge created and lock is dropped");
-
-    Ok(Json(ChallengeResponse { challenge }))
+    Ok(Json(ChallengeResponse {
+        challenge: state.new_challenge().await,
+    }))
 }

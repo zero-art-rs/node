@@ -1,4 +1,4 @@
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
@@ -10,4 +10,8 @@ pub enum StorageError {
     ARTError(#[from] ARTError),
     #[error("Record Not Found")]
     NotFound,
+    #[error("Failed to decode payload: {0}")]
+    DecodeError(#[from] prost::DecodeError),
+    #[error("Failed to encode payload: {0}")]
+    EncodeError(#[from] prost::EncodeError),
 }

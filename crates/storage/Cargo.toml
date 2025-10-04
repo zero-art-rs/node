@@ -13,7 +13,9 @@ async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 futures-util = { workspace = true }
-art = { workspace = true }
+zrt-art = { workspace = true }
 cortado = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
 bson = { workspace = true, features = ["uuid-1"] }
+bytes = { workspace = true }
+prost = { workspace = true }

@@ -3,9 +3,11 @@ use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
-use types::FrameRecord;
-use types::errors::MessageServiceError;
-use types::protos::{Frame, SpFrame, SpFrames};
+use types::{
+    FrameRecord,
+    errors::MessageServiceError,
+    protos::{Frame, SpFrame, SpFrames},
+};
 use uuid::Uuid;
 
 pub struct MessengerService {}
@@ -46,23 +48,23 @@ impl MessengerService {
         limit: i64,
         skip: i64,
     ) -> Result<BytesMut, MessageServiceError> {
-        let messages = MongoFramesStorage::new(chat_id)
+        let frame_records = MongoFramesStorage::new(chat_id)
             .await?
-            .list(filter.clone(), None, limit, skip)
+            .list(filter.clone(), limit, skip)
             .await?;
 
-        if messages.is_empty() {
-            debug!("No messages found for filter {}", &filter);
+        if frame_records.is_empty() {
+            debug!("No records found for filter {}", &filter);
         } else {
             debug!(
-                "Found {} messages for the filter {}",
-                messages.len(),
+                "Found {} records for the filter {}",
+                frame_records.len(),
                 &filter
             );
         }
 
         let mut sp_frames = SpFrames { sp_frames: vec![] };
-        for message in &messages {
+        for message in &frame_records {
             let mut frame_buf = BytesMut::new();
             frame_buf.put(&*message.content);
 
@@ -97,13 +99,10 @@ impl MessengerService {
 
     pub async fn delete_messages(
         &self,
-        chat_id: &Uuid,
+        id: &Uuid,
         filter: Document,
     ) -> Result<Vec<FrameRecord>, MessageServiceError> {
-        let result = MongoFramesStorage::new(chat_id)
-            .await?
-            .delete(filter)
-            .await?;
+        let result = MongoFramesStorage::new(id).await?.delete(filter).await?;
         Ok(result)
     }
 }

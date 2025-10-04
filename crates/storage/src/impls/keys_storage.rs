@@ -1,9 +1,6 @@
 use crate::{DataStorage, DATABASE};
 use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
-use types::{
-    KeyRecord,
-    errors::StorageError
-};
+use types::{errors::StorageError, KeyRecord};
 
 /// Collection to store owner public key for every chat.
 pub struct MongoKeysStorage {
@@ -16,7 +13,7 @@ impl MongoKeysStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let keys_collection = db.collection(&"keys");
+        let keys_collection = db.collection("keys");
 
         let index_model = IndexModel::builder()
             .keys(doc! { "chat_id": -1})
@@ -25,9 +22,7 @@ impl MongoKeysStorage {
 
         keys_collection.create_index(index_model.clone()).await?;
 
-        Ok(Self {
-            keys_collection,
-        })
+        Ok(Self { keys_collection })
     }
 }
 

@@ -1,11 +1,13 @@
-use crate::{ARTRecord, default_limit, default_skip};
+use crate::ARTRecord;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
-use art::errors::ARTError;
+use zrt_art::errors::ARTError;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, serde_as};
-use sha3::{Digest, Sha3_256};
+use serde_with::{
+    base64::{Base64, UrlSafe},
+    serde_as,
+};
 use std::fmt::Display;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
@@ -18,24 +20,23 @@ pub enum ProofMode {
     UseLeafKey,
 }
 
-///
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct GetARTQuery {
     /// Schnorr signature of the message: (chat_id.as_bytes() || nonce || challenge || epoch.to_be_bytes()).
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub signature: Vec<u8>,
 
     /// User provided nonce
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub nonce: Vec<u8>,
 
     /// Server given challenge
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub challenge: Vec<u8>,
 
     /// Indicates which key to use for verification. It can be eather "use_root_key" or "use_leaf_key" mode.
@@ -43,7 +44,7 @@ pub struct GetARTQuery {
 
     /// Users leaf or root public key corresponding to the proof_mode
     #[param(value_type = String)]
-    #[serde_as(as = "Base64")]
+    #[serde_as(as = "Base64<UrlSafe>")]
     pub public_key: Vec<u8>,
 }
 
@@ -52,7 +53,7 @@ pub struct GetARTQuery {
 #[serde(rename_all = "camelCase")]
 pub struct GetARTResponse {
     /// Serialized art structure
-    #[schema(value_type = Option<String>, content_encoding = "base64")]
+    #[schema(value_type = Option<String>, content_encoding = "Base64")]
     #[serde_as(as = "Base64")]
     pub art: Vec<u8>,
 
@@ -60,10 +61,12 @@ pub struct GetARTResponse {
     pub is_private: bool,
 }
 
+#[serde_as]
 #[derive(Serialize, ToSchema, Deserialize)]
 pub struct ChallengeResponse {
     /// Server provided challenge
-    #[schema(value_type = String, content_encoding = "base64")]
+    #[schema(value_type = String, content_encoding = "Base64")]
+    #[serde_as(as = "Base64")]
     pub challenge: Vec<u8>,
 }
 

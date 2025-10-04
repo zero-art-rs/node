@@ -1,16 +1,15 @@
 [package]
-name = "zk-messenger-node"
-version = "0.1.8"
+name = "zrt-node"
+version = "0.1.9"
 edition = "2024"
 
 [[bin]]
-name = "zk-messenger-node"
+name = "zrt-node"
 path = "src/main.rs"
 
 [features]
-default = ["verification"]
-art_modifications = ["api/art_modifications"]
 verification = ["api/verification"]
+default = ["verification"]
 
 [dependencies]
 api = { path = "../../crates/api" }

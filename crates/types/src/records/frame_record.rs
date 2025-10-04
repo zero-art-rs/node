@@ -3,7 +3,6 @@ use mongodb::{
     bson::doc,
     change_stream::{ChangeStream, event::ChangeStreamEvent},
 };
-use prost::Message;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use std::fmt;
