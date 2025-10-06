@@ -1,31 +1,33 @@
-use crate::Container;
+use crate::{Container, MessengerService};
 use ark_serialize::CanonicalDeserialize;
-use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, NodeIndex};
 use axum::Json;
 use axum::extract::{Path, State};
+use axum::http::request::Parts;
 use axum::middleware::Next;
 use axum_core::body::Body;
 use axum_core::extract::{FromRequestParts, Request};
 use axum_core::response::Response;
+use bytes::Bytes;
 use callbacks::callback;
 use cortado::CortadoAffine;
+use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
-use axum::http::request::Parts;
-use bytes::Bytes;
 use storage::{ARTStorage, MongoARTStorage};
 use tracing::{debug, error};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
+use types::errors::ServiceError::MessageServiceError;
 use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
+use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
+use zrt_art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, NodeIndex};
 
 /// Handle authentication request verification.
 pub async fn authenticate(
@@ -156,7 +158,11 @@ pub async fn get_art(
     let Path((chat_id, epoch)) =
         Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
 
-    let query_bytes = parts.uri.query().ok_or(VerificationError::MissingQuery)?.as_bytes();
+    let query_bytes = parts
+        .uri
+        .query()
+        .ok_or(VerificationError::MissingQuery)?
+        .as_bytes();
     let payload = serde_urlencoded::from_bytes::<GetARTQuery>(query_bytes)?;
 
     let public_key = CortadoAffine::deserialize_compressed(&*payload.public_key)?;
@@ -251,43 +257,7 @@ pub async fn send_frame(
         Some(val) => val.operation.as_ref(),
     };
 
-    let current_epoch = MongoARTStorage::new()
-        .await?
-        .get_current_epoch(&id)
-        .await
-        .unwrap_or(0);
-
-    if tbs_frame.epoch < current_epoch || tbs_frame.epoch > current_epoch + 1 {
-        error!(
-            "Invalid epoch provided ({}), while the current one is {}",
-            tbs_frame.epoch, current_epoch
-        );
-        return Err(VerificationError::InvalidEpoch {
-            current: current_epoch,
-            provided: tbs_frame.epoch,
-        });
-    }
-
-    // If merge_changes feature is disabled, allow only frames, with epoch following the current one.
-    if !state.merge_changes {
-        match &operation {
-            Some(Operation::AddMember(_))
-            | Some(Operation::RemoveMember(_))
-            | Some(Operation::KeyUpdate(_)) => {
-                if tbs_frame.epoch != current_epoch + 1 {
-                    error!(
-                        "Epoch {} is invalid, as the current one is {}",
-                        tbs_frame.epoch, current_epoch
-                    );
-                    return Err(VerificationError::InvalidEpoch {
-                        current: current_epoch,
-                        provided: tbs_frame.epoch,
-                    });
-                }
-            },
-            _ => {}
-        }
-    }
+    validate_frame_applicability(state.clone(), id, &tbs_frame).await?;
 
     let (opcode, public_inputs) = match &operation {
         None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
@@ -295,7 +265,10 @@ pub async fn send_frame(
         Some(Operation::AddMember(branch_changes_bytes))
         | Some(Operation::RemoveMember(branch_changes_bytes))
         | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
-            state.start_updating(id).await.map_err(VerificationError::from)?;
+            state
+                .start_updating(id)
+                .await
+                .map_err(VerificationError::from)?;
 
             match get_opcode_and_input_for_art_update(
                 state.clone(),
@@ -303,7 +276,8 @@ pub async fn send_frame(
                 branch_changes_bytes,
                 Some(tbs_frame.epoch - 1),
             )
-            .await {
+            .await
+            {
                 Ok(result) => result,
                 Err(err) => {
                     state.stop_updating(id).await;
@@ -329,17 +303,91 @@ pub async fn send_frame(
     };
 
     let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
-    match &operation{
+    match &operation {
         Some(Operation::AddMember(_))
-            | Some(Operation::RemoveMember(_))
-            | Some(Operation::KeyUpdate(_)) =>
-        {
-                state.stop_updating(id).await;
+        | Some(Operation::RemoveMember(_))
+        | Some(Operation::KeyUpdate(_)) => {
+            state.stop_updating(id).await;
         }
         _ => {}
     }
 
     response
+}
+
+async fn validate_frame_applicability(
+    state: Arc<Container>,
+    id: Uuid,
+    tbs_frame: &FrameTbs,
+) -> Result<(), VerificationError> {
+    let operation = match &tbs_frame.group_operation {
+        None => None,
+        Some(val) => val.operation.as_ref(),
+    };
+
+    let current_epoch = MongoARTStorage::new()
+        .await?
+        .get_current_epoch(&id)
+        .await
+        .unwrap_or(0);
+
+    // if !state.merge_changes {
+    let applicable_epochs = match &operation {
+        Some(Operation::AddMember(_)) => {
+            vec![current_epoch + 1]
+        }
+        Some(Operation::RemoveMember(_)) | Some(Operation::KeyUpdate(_)) => {
+            match state.merge_changes {
+                true => vec![current_epoch, current_epoch + 1],
+                false => vec![current_epoch + 1],
+            }
+        }
+        _ => {
+            // Allow all epochs. For validation allow the used one.
+            vec![tbs_frame.epoch]
+        }
+    };
+
+    if !applicable_epochs.contains(&tbs_frame.epoch) {
+        error!(
+            "Invalid epoch provided ({}), while the current one is {}",
+            tbs_frame.epoch, current_epoch
+        );
+        return Err(VerificationError::InvalidEpoch {
+            current: current_epoch,
+            provided: tbs_frame.epoch,
+        });
+    }
+
+    // If merge_changes feature is disabled, allow only frames, with epoch following the current one.
+    match &operation {
+        Some(Operation::RemoveMember(_)) | Some(Operation::KeyUpdate(_)) => {
+            if state
+                .messenger_service
+                .epoch_has_add_member_change(id, tbs_frame.epoch)
+                .await?
+            {
+                return Err(VerificationError::AddMemberUniqueness {
+                    epoch: tbs_frame.epoch,
+                });
+            }
+        }
+        Some(Operation::AddMember(_)) => {
+            if state
+                .messenger_service
+                .count_messages(id, doc! {"epoch": tbs_frame.epoch as i64 }, 1, 0)
+                .await?
+                != 0
+            {
+                return Err(VerificationError::AddMemberUniqueness {
+                    epoch: tbs_frame.epoch,
+                });
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
 
 pub async fn verify_and_send(
@@ -395,17 +443,12 @@ pub async fn get_opcode_and_input_for_art_update(
         ),
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
-                true => {
-                    art.root.public_key
-                }
-                false => {
-                    get_left_most_leaf_public_key(state, id).await?
-                }
+                true => art.root.public_key,
+                false => get_left_most_leaf_public_key(state, id).await?,
             };
 
             (VerificationOpcode::RemoveMember, vec![aux_public_key])
         }
-        _ => return Err(VerificationError::UnsupportedOperation),
     };
 
     Ok((

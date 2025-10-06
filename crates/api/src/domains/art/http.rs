@@ -5,8 +5,11 @@ use axum::{
 };
 use mongodb::bson::doc;
 use std::sync::Arc;
-use tracing::{instrument};
-use types::{art_schemas::{GetARTQuery, GetARTResponse, ChallengeResponse}, errors::ApiError};
+use tracing::instrument;
+use types::{
+    art_schemas::{ChallengeResponse, GetARTQuery, GetARTResponse},
+    errors::ApiError,
+};
 use uuid::Uuid;
 use validator::Validate;
 

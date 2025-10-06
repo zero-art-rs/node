@@ -1,8 +1,8 @@
 use crate::protos::Frame;
 use crate::protos::group_operation::Operation;
+use cortado::CortadoAffine;
 use zrt_art::errors::ARTError;
 use zrt_art::types::{BranchChanges, PublicART};
-use cortado::CortadoAffine;
 
 /// Decode branch changes from base64 string
 pub fn decode_branch_changes(
@@ -20,8 +20,9 @@ pub fn extract_branch_changes(
     frame: &Frame,
 ) -> Result<Option<BranchChanges<CortadoAffine>>, ARTError> {
     if let Some(tbs_frame) = &frame.frame
-    && let Some(group_operation) = &tbs_frame.group_operation
-    && let Some(operation) = &group_operation.operation {
+        && let Some(group_operation) = &tbs_frame.group_operation
+        && let Some(operation) = &group_operation.operation
+    {
         return match operation {
             Operation::AddMember(branch_changes) => {
                 Ok(Some(decode_branch_changes(branch_changes)?))
@@ -35,8 +36,6 @@ pub fn extract_branch_changes(
             _ => Ok(None),
         };
     }
-
-
 
     Ok(None)
 }

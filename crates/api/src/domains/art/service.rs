@@ -1,5 +1,3 @@
-use zrt_art::traits::ARTPublicAPI;
-use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use std::cmp::Ordering;
@@ -10,6 +8,8 @@ use storage::{
 use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
+use zrt_art::traits::ARTPublicAPI;
+use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
 
 use types::errors::ARTServiceError;
 use types::utils::decode_art;
@@ -98,11 +98,7 @@ impl ARTService {
         let mut skip = 0;
         while changes.len() < epoch as usize {
             let messages = message_storage
-                .list(
-                    filter.clone(),
-                    types::DEFAULT_LIMIT,
-                    skip,
-                )
+                .list(filter.clone(), types::DEFAULT_LIMIT, skip)
                 .await?;
             skip += types::DEFAULT_LIMIT;
 
@@ -182,9 +178,7 @@ impl ARTService {
         session.start_transaction().await?;
 
         arts_storage.delete_art(&mut session, *id).await?;
-        arts_storage
-            .delete_initial_art(&mut session, *id)
-            .await?;
+        arts_storage.delete_initial_art(&mut session, *id).await?;
         keys_storage
             .keys_collection
             .delete_one(doc! {"chat_id": id})
@@ -373,9 +367,8 @@ impl ARTService {
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
 
         target_changes.push(change);
-        latest_art
-            .art
-            .merge_all(&target_changes)?;
+        latest_art.art.merge_all(&target_changes)?;
+        latest_art.epoch = new_epoch;
 
         debug!(
             "Finished to merge art. New root PK is: {}",

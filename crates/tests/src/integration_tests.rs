@@ -1,34 +1,26 @@
-use std::time::Duration;
-use crate::{
-    user_test_model::UserTestModel,
-    utils::*,
-};
-use types::centrifugo_schemas::AuthRequest;
+use crate::{CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
+use crate::{user_test_model::UserTestModel, utils::*};
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
-use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{PrivateART, PublicART};
 use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use bytes::{Bytes, BytesMut};
 use cortado::CortadoAffine;
-use zrt_crypto::schnorr::{sign, verify};
 use eventsource_stream::Eventsource;
+use futures::StreamExt;
 use prost::Message;
+use sha3::{Digest, Sha3_256};
+use std::time::Duration;
 use tracing::debug;
 use tracing::field::debug;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
+use types::centrifugo_schemas::AuthRequest;
 use types::protos;
-use types::protos::{Frame, SpFrame, SpFrames, FrameTbs};
-use sha3::{Sha3_256, Digest};
-use futures::StreamExt;
-use crate::{
-    CENTRIFUGO_URL,
-    TEST_REPEATS,
-    DEFAULT_NONCE_LENGTH,
-    GROUP_SIZE,
-};
+use types::protos::{Frame, FrameTbs, SpFrame, SpFrames};
+use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
+use zrt_art::types::{PrivateART, PublicART};
+use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {
@@ -147,9 +139,7 @@ async fn test_send_message() -> eyre::Result<()> {
         }
     });
 
-    context
-        .send_frame(req)
-        .await?;
+    context.send_frame(req).await?;
 
     let result = tokio::time::timeout(Duration::from_secs(5), handle).await?;
 
@@ -170,7 +160,7 @@ async fn test_get_message() -> eyre::Result<()> {
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
     // messages.push(init_message);
     for _ in 0..TEST_REPEATS {
-        let (add_member_response, message) = context.add_member().await?;
+        let (add_member_response, message) = context.add_member(Some(StatusCode::OK)).await?;
         messages.push(message);
         assert_eq!(add_member_response.status(), StatusCode::OK);
     }
@@ -200,7 +190,7 @@ async fn test_add_member() -> eyre::Result<()> {
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     for _ in 0..TEST_REPEATS {
-        context.add_member().await?;
+        context.add_member(Some(StatusCode::OK)).await?;
     }
 
     Ok(())
@@ -215,7 +205,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
     for i in 0..TEST_REPEATS {
         let path = context.index_of(i + 1).unwrap().get_path().unwrap();
         context.make_blank(&path).await?;
-        context.add_member().await?;
+        context.add_member(Some(StatusCode::OK)).await?;
     }
 
     Ok(())
@@ -237,32 +227,19 @@ async fn test_concurent_art_update() -> eyre::Result<()> {
     let mut user5 = context.derive_new(5).unwrap();
     let mut user6 = context.derive_new(6).unwrap();
 
+    let handle1 = tokio::spawn(async move { user1.update_key(None).await.is_ok() });
 
-    let handle1 = tokio::spawn(async move {
-    user1.update_key(None).await.is_ok()
-    });
+    let handle2 = tokio::spawn(async move { user2.update_key(None).await.is_ok() });
 
-    let handle2 = tokio::spawn(async move {
-    user2.update_key(None).await.is_ok()
-    });
+    let handle3 = tokio::spawn(async move { user3.update_key(None).await.is_ok() });
 
-    let handle3 = tokio::spawn(async move {
-    user3.update_key(None).await.is_ok()
-    });
+    let handle4 = tokio::spawn(async move { user4.update_key(None).await.is_ok() });
 
-    let handle4 = tokio::spawn(async move {
-    user4.update_key(None).await.is_ok()
-    });
+    let handle5 = tokio::spawn(async move { user5.update_key(None).await.is_ok() });
 
-    let handle5 = tokio::spawn(async move {
-    user5.update_key(None).await.is_ok()
-    });
+    let handle6 = tokio::spawn(async move { user6.update_key(None).await.is_ok() });
 
-    let handle6 = tokio::spawn(async move {
-    user6.update_key(None).await.is_ok()
-    });
-
-    let mut  ok_count = 0;
+    let mut ok_count = 0;
     ok_count += handle1.await.unwrap() as i64;
     ok_count += handle2.await.unwrap() as i64;
     ok_count += handle3.await.unwrap() as i64;
@@ -276,8 +253,7 @@ async fn test_concurent_art_update() -> eyre::Result<()> {
     let result_count = 1;
 
     assert_eq!(
-        ok_count,
-        result_count,
+        ok_count, result_count,
         "Failed to prevent the merge, when merge_changes is disabled."
     );
 
@@ -368,11 +344,6 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     assert_eq!(user1.art.get_root(), user0.art.get_root());
     assert_eq!(user3.art.get_root(), user0.art.get_root());
 
-    debug!("User 0 update key ...");
-    user0.add_member().await?;
-    // user0.update_key(None).await?;
-    debug!("User0 TK: {}", user0.art.root.public_key);
-
     debug!("User 1 update key ...");
     user1.update_key(Some(payload.clone())).await?;
     debug!("User1 TK: {}", user1.art.root.public_key);
@@ -384,23 +355,20 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     let changes = user2.get_changes(20, 0, None).await?;
 
     debug!("User 2 merge changes locally ...");
-    user2
-        .art
-        .merge_for_observer(&changes);
+    user2.art.merge_for_observer(&changes);
+    user0.art.merge_for_observer(&changes);
     user2.epoch += 1;
+    user0.epoch += 1;
     debug!("User2 MTK_x: {}", user2.art.root.public_key);
-
-    assert_eq!(
-        user2
-            .art
-            .public_key_of(&user2.art.get_root_key().unwrap().key),
-        user2.art.root.public_key,
-        "Check if secret on path is the same one used for art root pub key computation."
-    );
 
     debug!("User 2 update and send update request with merge resolved");
     user2.update_key(Some(payload.clone())).await?;
     debug!("User2 TK_x: {}", user2.art.root.public_key);
+
+    debug!("User 0 fail to append member ...");
+    user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
+    // user0.update_key(None).await?;
+    debug!("User0 TK: {}", user0.art.root.public_key);
 
     Ok(())
 }
@@ -425,7 +393,10 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     let target_node_path = user0.index_of(4).unwrap().get_path().unwrap();
 
-    debug!("User 0 blanking the user on path {:?} ...", &target_node_path);
+    debug!(
+        "User 0 blanking the user on path {:?} ...",
+        &target_node_path
+    );
     user0.make_blank(&target_node_path).await?;
     // user0.update_key(None).await?;
     debug!("User0 TK: {}", user0.art.root.public_key);

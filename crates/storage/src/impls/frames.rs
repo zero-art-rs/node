@@ -1,5 +1,4 @@
 use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
-use zrt_art::types::BranchChanges;
 use bytes::{BufMut, BytesMut};
 use cortado::CortadoAffine;
 use futures_util::TryStreamExt;
@@ -11,9 +10,11 @@ use mongodb::{
 };
 use prost::Message;
 use tracing::debug;
+use types::errors::ARTServiceError;
 use types::protos::Frame;
 use types::FrameRecord;
 use uuid::Uuid;
+use zrt_art::types::{BranchChanges, BranchChangesType};
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";

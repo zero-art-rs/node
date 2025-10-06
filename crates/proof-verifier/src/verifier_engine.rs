@@ -1,5 +1,5 @@
 use cortado::CortadoAffine;
-use types::callback_wrappers::{ProofVerifierMessage};
+use types::callback_wrappers::ProofVerifierMessage;
 use types::errors::VerificationError;
 
 #[derive(Clone, Debug)]

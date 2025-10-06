@@ -1,3 +1,4 @@
+use crate::utils::CentrifugoTokenResponse;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
@@ -6,17 +7,10 @@ use ark_std::{
     rand::prelude::StdRng,
     rand::{SeedableRng, thread_rng},
 };
-use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
-use zrt_art::{
-    errors::ARTError,
-    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
-    types::{PrivateART, PublicART},
-};
 use axum::body::Bytes;
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
-use zrt_crypto::schnorr::{sign, verify};
 use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
@@ -24,22 +18,26 @@ use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use tracing::{debug, error};
 use types::{
-    art_schemas::{GetARTResponse, GetARTQuery, ChallengeResponse},
+    art_schemas::{ChallengeResponse, GetARTQuery, GetARTResponse},
     centrifugo_schemas::AuthRequest,
     messenger_schemas::GetMessageQuery,
     protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation},
     utils::extract_branch_changes,
 };
+use utoipa::openapi::request_body::RequestBody;
 use uuid::Uuid;
-use zrt_zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_art::traits::ARTPublicView;
-use crate::utils::CentrifugoTokenResponse;
-
-use crate::{
-    BACKEND_URL,
-    DEFAULT_NONCE_LENGTH,
+use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
+use zrt_art::{
+    errors::ARTError,
+    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
+    types::{PrivateART, PublicART},
 };
+use zrt_crypto::schnorr::{sign, verify};
+use zrt_zk::art::{art_prove, art_verify};
+
+use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 
 #[derive(Clone, Debug)]
 pub struct UserTestModel {
@@ -54,10 +52,13 @@ pub struct UserTestModel {
 #[derive(Debug, thiserror::Error)]
 pub enum UserTestModelError {
     #[error("Wrong StatusCode: {got}, while expected {expected}")]
-    WrongStatusCode{got: String, expected: String},
+    WrongStatusCode { got: String, expected: String },
 }
 
-fn get_co_path_values(art: &PrivateART<CortadoAffine>, index: &NodeIndex) -> Result<Vec<CortadoAffine>, ARTError> {
+fn get_co_path_values(
+    art: &PrivateART<CortadoAffine>,
+    index: &NodeIndex,
+) -> Result<Vec<CortadoAffine>, ARTError> {
     let mut co_path_values = Vec::new();
 
     let mut parent = art.get_root();
@@ -72,7 +73,10 @@ fn get_co_path_values(art: &PrivateART<CortadoAffine>, index: &NodeIndex) -> Res
 
 impl From<(StatusCode, StatusCode)> for UserTestModelError {
     fn from((got, expected): (StatusCode, StatusCode)) -> Self {
-        Self::WrongStatusCode{got: got.to_string(), expected: expected.to_string()}
+        Self::WrongStatusCode {
+            got: got.to_string(),
+            expected: expected.to_string(),
+        }
     }
 }
 #[allow(dead_code)]
@@ -122,9 +126,6 @@ impl UserTestModel {
 
     /// Clone this uses, and change this user secret key to the different one
     pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
-        let (mut art, _) =
-            PrivateART::new_art_from_secrets(&self.initial_secrets, &CortadoAffine::generator())?;
-
         let art = PrivateART::from_public_art(self.art.clone(), self.initial_secrets[index])?;
 
         Ok(Self {
@@ -196,7 +197,14 @@ impl UserTestModel {
         let secret_key = self.art.secret_key;
         let new_secret_key = Fr::rand(&mut rng);
 
-        let (_, key_update_changes, artefacts) = self.art.update_key(&new_secret_key)?;
+        let mut art_clone = self.art.clone();
+        let (_, key_update_changes, artefacts) = art_clone.update_key(&new_secret_key)?;
+
+        debug!(
+            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {}",
+            self.epoch + 1,
+            self.art.root.public_key
+        );
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -209,6 +217,7 @@ impl UserTestModel {
         };
 
         let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
             secret_key,
             &artefacts,
             &tbs_frame,
@@ -225,24 +234,36 @@ impl UserTestModel {
         if update_key_response.0.status() != StatusCode::OK {
             Err(UserTestModelError::from((
                 update_key_response.0.status(),
-                StatusCode::OK
+                StatusCode::OK,
             )))?;
         }
 
+        self.art = art_clone;
         self.epoch += 1;
 
         Ok(update_key_response)
     }
 
     // add node to the art, and send updates to the chat
-    pub async fn add_member(&mut self) -> eyre::Result<(reqwest::Response, BytesMut)> {
+    pub async fn add_member(
+        &mut self,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         // let old_tk = self.art.get_root_key()?.key;
         let old_tk = self.art.secret_key;
         let new_user_secret_key = Fr::rand(&mut rng);
+        let mut art_clone = self.art.clone();
         let (_, append_user_changes, artefacts) =
-            self.art.append_or_replace_node(&new_user_secret_key)?;
+            art_clone.append_or_replace_node(&new_user_secret_key)?;
+
+        debug!(
+            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {}\n\tstatus_check: {:?}",
+            self.epoch + 1,
+            self.art.root.public_key,
+            status_check,
+        );
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -254,20 +275,29 @@ impl UserTestModel {
             protected_payload: vec![],
         };
 
-        let proof_bytes =
-            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &append_user_changes)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
+            old_tk,
+            &artefacts,
+            &tbs_frame,
+            &append_user_changes,
+        )?;
 
-        let add_member_response = self
+        let (request_response, request_bytes) = self
             .send_frame(Frame {
                 frame: Some(tbs_frame),
                 proof: proof_bytes,
             })
             .await?;
 
-        assert_eq!(add_member_response.0.status(), StatusCode::OK);
+        if let Some(status_code) = status_check {
+            assert_eq!(request_response.status(), status_code);
+        }
+
+        self.art = art_clone;
         self.epoch += 1;
 
-        Ok(add_member_response)
+        Ok((request_response, request_bytes))
     }
 
     pub async fn make_blank(
@@ -285,10 +315,9 @@ impl UserTestModel {
         let temporary_secret_key = Fr::rand(&mut rng);
         debug!("temporary_secret_key: {}", temporary_secret_key);
         debug!("target_node_path: {:#?}", user_to_remove);
-        let (_, remove_user_changes, artefacts) = self
-            .art
-            .make_blank(user_to_remove, &temporary_secret_key)?;
-
+        let mut art_clone = self.art.clone();
+        let (_, remove_user_changes, artefacts) =
+            art_clone.make_blank(user_to_remove, &temporary_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -300,8 +329,13 @@ impl UserTestModel {
             protected_payload: vec![],
         };
 
-        let proof_bytes =
-            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &remove_user_changes)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
+            old_tk,
+            &artefacts,
+            &tbs_frame,
+            &remove_user_changes,
+        )?;
 
         let make_blank_result = self
             .send_frame(Frame {
@@ -315,6 +349,8 @@ impl UserTestModel {
             StatusCode::NO_CONTENT,
             "Check if remove member is successful."
         );
+
+        self.art = art_clone;
         self.epoch += 1;
 
         Ok(make_blank_result)
@@ -499,6 +535,7 @@ impl UserTestModel {
 
     fn prove_and_check_art_update(
         &self,
+        test_art: &PrivateART<CortadoAffine>,
         secret_key: Fr,
         artefacts: &ProverArtefacts<CortadoAffine>,
         tbs_frame: &FrameTbs,
@@ -532,7 +569,7 @@ impl UserTestModel {
             associated_data,
             vec![public_key],
             changes.public_keys.iter().rev().copied().collect(),
-            get_co_path_values(&self.art, &changes.node_index)?,
+            get_co_path_values(&test_art, &changes.node_index)?,
             proof.clone(),
         )
         .is_ok();
@@ -591,10 +628,11 @@ impl UserTestModel {
         let buf = BytesMut::from(&*changes_response.bytes().await?);
         let sp_frames = SpFrames::decode(buf)?.sp_frames;
 
-
         let mut changes = Vec::with_capacity(sp_frames.len());
         for sp_frame in sp_frames {
-            let Some(frame) = sp_frame.frame else { continue };
+            let Some(frame) = sp_frame.frame else {
+                continue;
+            };
 
             if let Some(frame_change) = extract_branch_changes(&frame)? {
                 debug!("frame_change: {:#?}", frame_change);

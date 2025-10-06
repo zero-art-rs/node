@@ -2,7 +2,6 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
-use zrt_art::types::BranchChangesType;
 use axum::body::Bytes;
 use axum::http::StatusCode;
 use proof_verifier::ProofVerifierSender;
@@ -16,6 +15,7 @@ use types::protos::Frame;
 use types::protos::group_operation::Operation;
 use types::utils::decode_branch_changes;
 use uuid::Uuid;
+use zrt_art::types::BranchChangesType;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 

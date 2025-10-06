@@ -1,6 +1,6 @@
-use zrt_art::errors::ARTError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
+use zrt_art::errors::ARTError;
 
 use crate::errors::{ARTServiceError, MessageServiceError, ServiceError};
 use serde_json::json;
