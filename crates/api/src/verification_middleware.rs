@@ -1,4 +1,4 @@
-use crate::{Container, MessengerService};
+use crate::Container;
 use ark_serialize::CanonicalDeserialize;
 use axum::Json;
 use axum::extract::{Path, State};
@@ -21,7 +21,6 @@ use tracing::{debug, error};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
-use types::errors::ServiceError::MessageServiceError;
 use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
@@ -343,7 +342,6 @@ async fn validate_frame_applicability(
         .await
         .unwrap_or(0);
 
-    // if !state.merge_changes {
     let applicable_epochs = match &operation {
         Some(Operation::AddMember(_)) => {
             vec![current_epoch + 1]
@@ -372,34 +370,6 @@ async fn validate_frame_applicability(
             current: current_epoch,
             provided: tbs_frame.epoch,
         });
-    }
-
-    // If merge_changes feature is disabled, allow only frames, with epoch following the current one.
-    match &operation {
-        Some(Operation::RemoveMember(_)) | Some(Operation::KeyUpdate(_)) => {
-            if state
-                .messenger_service
-                .epoch_has_add_member_change(id, tbs_frame.epoch)
-                .await?
-            {
-                return Err(VerificationError::AddMemberUniqueness {
-                    epoch: tbs_frame.epoch,
-                });
-            }
-        }
-        Some(Operation::AddMember(_)) => {
-            if state
-                .messenger_service
-                .count_messages(id, doc! {"epoch": tbs_frame.epoch as i64 }, 1, 0)
-                .await?
-                != 0
-            {
-                return Err(VerificationError::AddMemberUniqueness {
-                    epoch: tbs_frame.epoch,
-                });
-            }
-        }
-        _ => {}
     }
 
     Ok(())

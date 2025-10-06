@@ -3,7 +3,6 @@ use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
-use types::errors::ARTServiceError;
 use types::{
     FrameRecord,
     errors::MessageServiceError,

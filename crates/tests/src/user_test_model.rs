@@ -233,7 +233,6 @@ impl UserTestModel {
             .await?;
 
         if let Some(status_check) = status_check {
-            // assert_eq!(update_key_response.0.status(), status_check);
             if update_key_response.0.status() != status_check {
                 Err(UserTestModelError::from((
                     update_key_response.0.status(),

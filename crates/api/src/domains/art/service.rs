@@ -66,7 +66,6 @@ impl ARTService {
 
         for i in 1..=epoch {
             let (epoch_changes, leave_changes) = frame_storage.get_epoch_changes(id, i).await?;
-            debug!("leave_changes: {:?}", leave_changes);
             for node_index in leave_changes {
                 debug!("try");
                 art_record.art.get_mut_node(&node_index)?.is_blank = true;
