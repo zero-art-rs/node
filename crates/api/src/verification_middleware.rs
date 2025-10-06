@@ -286,7 +286,18 @@ pub async fn send_frame(
             }
         }
         Some(Operation::LeaveGroup(index)) => {
-            get_opcode_and_input_for_leave_group(state.clone(), id, *index).await?
+            state
+                .start_updating(id)
+                .await
+                .map_err(VerificationError::from)?;
+
+            match get_opcode_and_input_for_leave_group(state.clone(), id, *index).await {
+                Ok(result) => result,
+                Err(err) => {
+                    state.stop_updating(id).await;
+                    return Err(err);
+                }
+            }
         }
         Some(Operation::DropGroup(_)) => {
             get_opcode_and_input_for_drop_group(state.clone(), id).await?
@@ -306,7 +317,8 @@ pub async fn send_frame(
     match &operation {
         Some(Operation::AddMember(_))
         | Some(Operation::RemoveMember(_))
-        | Some(Operation::KeyUpdate(_)) => {
+        | Some(Operation::KeyUpdate(_))
+        | Some(Operation::LeaveGroup(_)) => {
             state.stop_updating(id).await;
         }
         _ => {}
@@ -341,6 +353,9 @@ async fn validate_frame_applicability(
                 true => vec![current_epoch, current_epoch + 1],
                 false => vec![current_epoch + 1],
             }
+        }
+        Some(Operation::LeaveGroup(_)) => {
+            vec![current_epoch]
         }
         _ => {
             // Allow all epochs. For validation allow the used one.
@@ -433,18 +448,31 @@ pub async fn get_opcode_and_input_for_art_update(
     let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
 
     let (opcode, aux_public_keys) = match branch_changes.change_type {
-        BranchChangesType::UpdateKey => (
-            VerificationOpcode::KeyUpdate,
-            vec![art.get_node(&branch_changes.node_index)?.public_key],
-        ),
+        BranchChangesType::UpdateKey => {
+            let leaf = art.get_node(&branch_changes.node_index)?;
+            if leaf.is_blank {
+                return Err(VerificationError::UserAlreadyRemoved);
+            }
+
+            (
+                VerificationOpcode::KeyUpdate,
+                vec![art.get_node(&branch_changes.node_index)?.public_key],
+            )
+        }
         BranchChangesType::AppendNode => (
             VerificationOpcode::AddMember,
             vec![get_left_most_leaf_public_key(state, id).await?],
         ),
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_blank {
-                true => art.root.public_key,
-                false => get_left_most_leaf_public_key(state, id).await?,
+                true => {
+                    debug!("using art.root.public_key for verification");
+                    art.root.public_key
+                }
+                false => {
+                    debug!("using get_left_most_leaf_public_key for verification");
+                    get_left_most_leaf_public_key(state, id).await?
+                }
             };
 
             (VerificationOpcode::RemoveMember, vec![aux_public_key])
@@ -521,6 +549,11 @@ pub async fn get_opcode_and_input_for_leave_group(
     user_index: u64,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
+
+    if art.get_node(&NodeIndex::from(user_index))?.is_blank {
+        error!("Node with index {} is already a blank node", user_index);
+        return Err(VerificationError::UserAlreadyRemoved);
+    }
 
     let leaf = art.get_node(&NodeIndex::from(user_index))?;
 

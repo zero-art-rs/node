@@ -58,8 +58,20 @@ impl ARTService {
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
         let mut art_record = self.get_initial_art(&id).await?;
+
+        let (_, leave_changes) = frame_storage.get_epoch_changes(id, 0).await?;
+        for node_index in leave_changes {
+            art_record.art.get_mut_node(&node_index)?.is_blank = true;
+        }
+
         for i in 1..=epoch {
-            let epoch_changes = frame_storage.get_epoch_changes(id, i).await?;
+            let (epoch_changes, leave_changes) = frame_storage.get_epoch_changes(id, i).await?;
+            debug!("leave_changes: {:?}", leave_changes);
+            for node_index in leave_changes {
+                debug!("try");
+                art_record.art.get_mut_node(&node_index)?.is_blank = true;
+                debug!("fail");
+            }
 
             match epoch_changes.len().cmp(&1) {
                 Ordering::Less => return Err(ARTServiceError::NotFound),
@@ -107,8 +119,7 @@ impl ARTService {
             }
 
             for message in &messages {
-                if let Ok(Some(branch_changes)) =
-                    MongoFramesStorage::extract_branch_changes(message)
+                if let Ok(Some(branch_changes)) = MongoFramesStorage::extract_branch_change(message)
                 {
                     changes.push(branch_changes);
                 }
@@ -362,7 +373,12 @@ impl ARTService {
         let frames_storage = MongoFramesStorage::get_existing_collection(id).await?;
 
         let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
-        let mut target_changes = frames_storage.get_epoch_changes(id, new_epoch).await?;
+        let (mut target_changes, leave_changes) =
+            frames_storage.get_epoch_changes(id, new_epoch).await?;
+
+        for node_index in leave_changes {
+            latest_art.art.get_mut_node(&node_index)?.is_blank = true;
+        }
 
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
 

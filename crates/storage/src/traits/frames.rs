@@ -1,10 +1,13 @@
 use crate::StorageError;
+use bytes::BytesMut;
 use cortado::CortadoAffine;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;
+use types::protos::group_operation::Operation;
+use types::protos::Frame;
 use types::FrameRecord;
 use uuid::Uuid;
-use zrt_art::types::BranchChanges;
+use zrt_art::types::{BranchChanges, NodeIndex};
 
 #[async_trait::async_trait]
 pub trait FrameStorage: Send + Sync + Sized {
@@ -26,12 +29,13 @@ pub trait FrameStorage: Send + Sync + Sized {
     ) -> Result<(), mongodb::error::Error>;
     async fn get_existing_collection(chat_id: Uuid) -> Result<Self, mongodb::error::Error>;
     async fn drop_in_session(&self, session: &mut ClientSession) -> Result<(), StorageError>;
-    fn extract_branch_changes(
+    fn extract_branch_change(
         messages: &FrameRecord,
     ) -> Result<Option<BranchChanges<CortadoAffine>>, StorageError>;
+    fn extract_leave_operation(messages: &FrameRecord) -> Result<Option<NodeIndex>, StorageError>;
     async fn get_epoch_changes(
         &self,
         id: Uuid,
         epoch: u64,
-    ) -> Result<Vec<BranchChanges<CortadoAffine>>, StorageError>;
+    ) -> Result<(Vec<BranchChanges<CortadoAffine>>, Vec<NodeIndex>), StorageError>;
 }

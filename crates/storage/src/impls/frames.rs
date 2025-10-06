@@ -11,10 +11,12 @@ use mongodb::{
 use prost::Message;
 use tracing::debug;
 use types::errors::ARTServiceError;
+use types::protos::group_operation::Operation;
 use types::protos::Frame;
+use types::utils::decode_branch_changes;
 use types::FrameRecord;
 use uuid::Uuid;
-use zrt_art::types::{BranchChanges, BranchChangesType};
+use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
@@ -178,21 +180,50 @@ impl FrameStorage for MongoFramesStorage {
         Ok(())
     }
 
-    fn extract_branch_changes(
+    fn extract_branch_change(
         messages: &FrameRecord,
     ) -> Result<Option<BranchChanges<CortadoAffine>>, StorageError> {
         let mut buf = BytesMut::new();
         buf.put(messages.content.as_slice());
         let frame = Frame::decode(buf)?;
 
-        Ok(types::utils::extract_branch_changes(&frame)?)
+        if let Some(operation) = &types::utils::extract_operation(frame)? {
+            return match operation {
+                Operation::AddMember(branch_changes) => {
+                    Ok(Some(decode_branch_changes(branch_changes)?))
+                }
+                Operation::RemoveMember(branch_changes) => {
+                    Ok(Some(decode_branch_changes(branch_changes)?))
+                }
+                Operation::KeyUpdate(branch_changes) => {
+                    Ok(Some(decode_branch_changes(branch_changes)?))
+                }
+                _ => Ok(None),
+            };
+        }
+
+        Ok(None)
+    }
+
+    fn extract_leave_operation(messages: &FrameRecord) -> Result<Option<NodeIndex>, StorageError> {
+        let mut buf = BytesMut::new();
+        buf.put(messages.content.as_slice());
+        let frame = Frame::decode(buf)?;
+
+        if let Some(operation) = &types::utils::extract_operation(frame)? {
+            if let Operation::LeaveGroup(index) = operation {
+                return Ok(Some(NodeIndex::from(*index)));
+            }
+        }
+
+        Ok(None)
     }
 
     async fn get_epoch_changes(
         &self,
         id: Uuid,
         epoch: u64,
-    ) -> Result<Vec<BranchChanges<CortadoAffine>>, StorageError> {
+    ) -> Result<(Vec<BranchChanges<CortadoAffine>>, Vec<NodeIndex>), StorageError> {
         let limit = types::DEFAULT_LIMIT;
         let mut skip = 0;
 
@@ -201,11 +232,16 @@ impl FrameStorage for MongoFramesStorage {
             .list(doc! {"epoch": epoch as i64}, limit, skip)
             .await?;
 
-        let mut changes = Vec::new();
+        let mut branch_changes = Vec::new();
+        let mut leave_changes = Vec::new();
         while !records.is_empty() {
             for record in &records {
-                if let Ok(Some(branch_changes)) = Self::extract_branch_changes(record) {
-                    changes.push(branch_changes);
+                if let Ok(Some(branch_change)) = Self::extract_branch_change(record) {
+                    branch_changes.push(branch_change);
+                }
+
+                if let Ok(Some(leaved_node)) = Self::extract_leave_operation(record) {
+                    leave_changes.push(leaved_node);
                 }
             }
             skip += types::DEFAULT_LIMIT;
@@ -216,7 +252,7 @@ impl FrameStorage for MongoFramesStorage {
                 .await?;
         }
 
-        Ok(changes)
+        Ok((branch_changes, leave_changes))
     }
 }
 

@@ -9,6 +9,7 @@ use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::field::debug;
 use tracing::{debug, error};
 use types::errors::{ARTServiceError, ServiceError};
 use types::protos::Frame;
@@ -51,6 +52,7 @@ impl Container {
         }
     }
 
+    /// Mark ART updating
     pub async fn start_updating(&self, id: Uuid) -> Result<(), ServiceError> {
         // If merge is enabled, there is no management required
         if self.merge_changes {
@@ -68,6 +70,7 @@ impl Container {
         }
     }
 
+    /// Mark ART as not updating.
     pub async fn stop_updating(&self, id: Uuid) {
         // If merge is enabled, then there is no management required
         if self.merge_changes {
@@ -78,6 +81,7 @@ impl Container {
         self.art_is_updating.write().await.remove(&id);
     }
 
+    /// Handles send_frame operation.
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
 
@@ -120,6 +124,7 @@ impl Container {
         Ok(response)
     }
 
+    /// Marks the node with `index` as removed.
     pub async fn handle_self_removal(
         &self,
         id: Uuid,

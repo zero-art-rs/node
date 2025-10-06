@@ -45,6 +45,8 @@ pub enum VerificationError {
     ServiceError(#[from] ServiceError),
     #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has some.")]
     AddMemberUniqueness { epoch: u64 },
+    #[error("Can't leave the group, because the node is already marked as blank")]
+    UserAlreadyRemoved,
 }
 
 impl From<MessageServiceError> for VerificationError {

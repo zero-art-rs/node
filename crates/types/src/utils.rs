@@ -16,6 +16,16 @@ pub fn decode_art(art_bytes: &[u8]) -> Result<PublicART<CortadoAffine>, ARTError
     PublicART::<CortadoAffine>::deserialize(art_bytes)
 }
 
+pub fn extract_operation(frame: Frame) -> Result<Option<Operation>, ARTError> {
+    if let Some(tbs_frame) = frame.frame
+        && let Some(group_operation) = tbs_frame.group_operation
+    {
+        return Ok(group_operation.operation);
+    }
+
+    Ok(None)
+}
+
 pub fn extract_branch_changes(
     frame: &Frame,
 ) -> Result<Option<BranchChanges<CortadoAffine>>, ARTError> {

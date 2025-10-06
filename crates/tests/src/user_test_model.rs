@@ -1,4 +1,5 @@
 use crate::utils::CentrifugoTokenResponse;
+use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
@@ -17,6 +18,7 @@ use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use tracing::{debug, error};
+use types::protos::SpFrame;
 use types::{
     art_schemas::{ChallengeResponse, GetARTQuery, GetARTResponse},
     centrifugo_schemas::AuthRequest,
@@ -36,8 +38,6 @@ use zrt_art::{
 };
 use zrt_crypto::schnorr::{sign, verify};
 use zrt_zk::art::{art_prove, art_verify};
-
-use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 
 #[derive(Clone, Debug)]
 pub struct UserTestModel {
@@ -191,6 +191,7 @@ impl UserTestModel {
     pub async fn update_key(
         &mut self,
         payload: Option<Vec<u8>>,
+        status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
@@ -201,7 +202,7 @@ impl UserTestModel {
         let (_, key_update_changes, artefacts) = art_clone.update_key(&new_secret_key)?;
 
         debug!(
-            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {}",
+            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
             self.epoch + 1,
             self.art.root.public_key
         );
@@ -231,11 +232,14 @@ impl UserTestModel {
             })
             .await?;
 
-        if update_key_response.0.status() != StatusCode::OK {
-            Err(UserTestModelError::from((
-                update_key_response.0.status(),
-                StatusCode::OK,
-            )))?;
+        if let Some(status_check) = status_check {
+            // assert_eq!(update_key_response.0.status(), status_check);
+            if update_key_response.0.status() != status_check {
+                Err(UserTestModelError::from((
+                    update_key_response.0.status(),
+                    status_check,
+                )))?;
+            }
         }
 
         self.art = art_clone;
@@ -259,7 +263,7 @@ impl UserTestModel {
             art_clone.append_or_replace_node(&new_user_secret_key)?;
 
         debug!(
-            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {}\n\tstatus_check: {:?}",
+            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
             self.epoch + 1,
             self.art.root.public_key,
             status_check,
@@ -303,18 +307,35 @@ impl UserTestModel {
     pub async fn make_blank(
         &mut self,
         user_to_remove: &Vec<Direction>,
+        status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = if self.is_owner() {
-            self.art.secret_key
-        } else {
+        let old_tk = if self
+            .art
+            .get_node(&NodeIndex::Direction(user_to_remove.clone()))?
+            .is_blank
+        {
             self.art.get_root_key()?.key
+        } else {
+            self.art.secret_key
         };
 
         let temporary_secret_key = Fr::rand(&mut rng);
-        debug!("temporary_secret_key: {}", temporary_secret_key);
-        debug!("target_node_path: {:#?}", user_to_remove);
+
+        debug!(
+            "MakeBlank debug data:
+            epoch: {}
+            New TK: {:#?}
+            temporary_secret_key: {}
+            target_node_path: {:?}
+            ",
+            self.epoch + 1,
+            self.art.root.public_key,
+            temporary_secret_key,
+            user_to_remove
+        );
+
         let mut art_clone = self.art.clone();
         let (_, remove_user_changes, artefacts) =
             art_clone.make_blank(user_to_remove, &temporary_secret_key)?;
@@ -344,14 +365,51 @@ impl UserTestModel {
             })
             .await?;
 
-        assert_eq!(
-            make_blank_result.0.status(),
-            StatusCode::NO_CONTENT,
-            "Check if remove member is successful."
-        );
+        if let Some(status_code) = status_check {
+            assert_eq!(
+                make_blank_result.0.status(),
+                status_code,
+                "Check if remove member result status is correct."
+            );
+        }
 
         self.art = art_clone;
         self.epoch += 1;
+
+        Ok(make_blank_result)
+    }
+
+    pub async fn leave_group(
+        &mut self,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch,
+            nonce: vec![],
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::LeaveGroup(self.art.node_index.get_index()?)),
+            }),
+            protected_payload: Self::new_nonce(),
+        };
+
+        let signature =
+            self.prove_and_check_schnorr_signature(vec![self.art.secret_key], &tbs_frame)?;
+
+        let make_blank_result = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: signature,
+            })
+            .await?;
+
+        if let Some(status_code) = status_check {
+            assert_eq!(
+                make_blank_result.0.status(),
+                status_code,
+                "Check if remove member is successful."
+            );
+        }
 
         Ok(make_blank_result)
     }
@@ -533,6 +591,23 @@ impl UserTestModel {
         Ok(signature)
     }
 
+    fn prove_and_check_schnorr_signature(
+        &self,
+        secret_keys: Vec<Fr>,
+        tbs_frame: &FrameTbs,
+    ) -> eyre::Result<Vec<u8>> {
+        let public_keys = secret_keys
+            .iter()
+            .map(|sk| self.art.public_key_of(sk))
+            .collect::<Vec<_>>();
+        let msg = Sha3_256::digest(&tbs_frame.encode_to_vec());
+        let signature = sign(&secret_keys, &public_keys, &msg)?;
+        let verification_result = verify(&signature, &public_keys, &msg);
+        assert!(verification_result.is_ok());
+
+        Ok(signature)
+    }
+
     fn prove_and_check_art_update(
         &self,
         test_art: &PrivateART<CortadoAffine>,
@@ -550,8 +625,6 @@ impl UserTestModel {
             .collect();
 
         let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
-
-        debug!("Using public_key: {} for proof creation.", &public_key);
 
         let proof = art_prove(
             Self::get_pedersen_basis(),
@@ -582,12 +655,25 @@ impl UserTestModel {
         Ok(proof_bytes)
     }
 
-    pub async fn get_changes(
+    pub fn unwrap_operation(frame: SpFrame) -> Operation {
+        frame
+            .frame
+            .unwrap()
+            .frame
+            .unwrap()
+            .group_operation
+            .unwrap()
+            .operation
+            .unwrap()
+    }
+
+    pub async fn get_frames(
         &self,
         limit: i64,
         skip: i64,
         epoch: Option<u64>,
-    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<SpFrames> {
         let tk = self.art.get_root_key()?.key;
         let pk = self.art.root.public_key;
 
@@ -599,11 +685,9 @@ impl UserTestModel {
         msg.extend(&nonce);
 
         let msg = Sha3_256::digest(&msg).to_vec();
-
         debug!("Using {} for verification.", pk);
 
         let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
-
         assert!(verify(&signature, &vec![pk], &msg).is_ok());
 
         let changes_response = self
@@ -623,10 +707,27 @@ impl UserTestModel {
             .send()
             .await?;
 
-        assert_eq!(changes_response.status(), StatusCode::ACCEPTED);
+        if let Some(status) = status_check {
+            assert_eq!(changes_response.status(), status);
+        }
 
         let buf = BytesMut::from(&*changes_response.bytes().await?);
-        let sp_frames = SpFrames::decode(buf)?.sp_frames;
+        let sp_frames = SpFrames::decode(buf)?;
+
+        Ok(sp_frames)
+    }
+
+    pub async fn get_changes(
+        &self,
+        limit: i64,
+        skip: i64,
+        epoch: Option<u64>,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+        let sp_frames = self
+            .get_frames(limit, skip, epoch, status_check)
+            .await?
+            .sp_frames;
 
         let mut changes = Vec::with_capacity(sp_frames.len());
         for sp_frame in sp_frames {
@@ -635,7 +736,6 @@ impl UserTestModel {
             };
 
             if let Some(frame_change) = extract_branch_changes(&frame)? {
-                debug!("frame_change: {:#?}", frame_change);
                 changes.push(frame_change);
             }
         }

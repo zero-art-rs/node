@@ -59,7 +59,7 @@ impl MessengerService {
             debug!("No records found for filter {}", &filter);
         } else {
             debug!(
-                "Found {} records for the filter {}",
+                "Found {} records for the filter \"{}\"",
                 frame_records.len(),
                 &filter
             );
@@ -114,7 +114,7 @@ impl MessengerService {
         epoch: u64,
     ) -> Result<bool, MessageServiceError> {
         let frame_storage = MongoFramesStorage::new(&id).await?;
-        let changes = frame_storage.get_epoch_changes(id, epoch).await?;
+        let (changes, _) = frame_storage.get_epoch_changes(id, epoch).await?;
 
         for applied_change in &changes {
             if let BranchChangesType::AppendNode = applied_change.change_type {

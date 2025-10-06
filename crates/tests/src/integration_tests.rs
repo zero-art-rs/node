@@ -17,7 +17,8 @@ use tracing::field::debug;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::centrifugo_schemas::AuthRequest;
 use types::protos;
-use types::protos::{Frame, FrameTbs, SpFrame, SpFrames};
+use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
+use types::utils::extract_branch_changes;
 use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
 use zrt_art::types::{PrivateART, PublicART};
 use zrt_crypto::schnorr::{sign, verify};
@@ -204,7 +205,9 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 
     for i in 0..TEST_REPEATS {
         let path = context.index_of(i + 1).unwrap().get_path().unwrap();
-        context.make_blank(&path).await?;
+        context
+            .make_blank(&path, Some(StatusCode::NO_CONTENT))
+            .await?;
         context.add_member(Some(StatusCode::OK)).await?;
     }
 
@@ -227,17 +230,18 @@ async fn test_concurent_art_update() -> eyre::Result<()> {
     let mut user5 = context.derive_new(5).unwrap();
     let mut user6 = context.derive_new(6).unwrap();
 
-    let handle1 = tokio::spawn(async move { user1.update_key(None).await.is_ok() });
-
-    let handle2 = tokio::spawn(async move { user2.update_key(None).await.is_ok() });
-
-    let handle3 = tokio::spawn(async move { user3.update_key(None).await.is_ok() });
-
-    let handle4 = tokio::spawn(async move { user4.update_key(None).await.is_ok() });
-
-    let handle5 = tokio::spawn(async move { user5.update_key(None).await.is_ok() });
-
-    let handle6 = tokio::spawn(async move { user6.update_key(None).await.is_ok() });
+    let handle1 =
+        tokio::spawn(async move { user1.update_key(None, Some(StatusCode::OK)).await.is_ok() });
+    let handle2 =
+        tokio::spawn(async move { user2.update_key(None, Some(StatusCode::OK)).await.is_ok() });
+    let handle3 =
+        tokio::spawn(async move { user3.update_key(None, Some(StatusCode::OK)).await.is_ok() });
+    let handle4 =
+        tokio::spawn(async move { user4.update_key(None, Some(StatusCode::OK)).await.is_ok() });
+    let handle5 =
+        tokio::spawn(async move { user5.update_key(None, Some(StatusCode::OK)).await.is_ok() });
+    let handle6 =
+        tokio::spawn(async move { user6.update_key(None, Some(StatusCode::OK)).await.is_ok() });
 
     let mut ok_count = 0;
     ok_count += handle1.await.unwrap() as i64;
@@ -270,7 +274,9 @@ async fn test_remove_member() -> eyre::Result<()> {
     // skip the root node
     for i in 0..TEST_REPEATS {
         let path = context.index_of(i + 5).unwrap().get_path().unwrap();
-        context.make_blank(&path).await?;
+        context
+            .make_blank(&path, Some(StatusCode::NO_CONTENT))
+            .await?;
 
         let received_art = retrieval_context
             .get_art((i + 1) as u64, None, ProofMode::UseLeafKey.to_string())
@@ -308,7 +314,7 @@ async fn test_get_art() -> eyre::Result<()> {
 
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
-        context.update_key(None).await?;
+        context.update_key(None, Some(StatusCode::OK)).await?;
         art_roots.push(context.art.root.public_key);
     }
 
@@ -345,14 +351,20 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     assert_eq!(user3.art.get_root(), user0.art.get_root());
 
     debug!("User 1 update key ...");
-    user1.update_key(Some(payload.clone())).await?;
+    user1
+        .update_key(Some(payload.clone()), Some(StatusCode::OK))
+        .await?;
     debug!("User1 TK: {}", user1.art.root.public_key);
 
     debug!("User 3 add member ...");
-    user3.update_key(Some(payload.clone())).await?;
+    user3
+        .update_key(Some(payload.clone()), Some(StatusCode::OK))
+        .await?;
     debug!("User3 TK: {}", user3.art.root.public_key);
 
-    let changes = user2.get_changes(20, 0, None).await?;
+    let changes = user2
+        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?;
 
     debug!("User 2 merge changes locally ...");
     user2.art.merge_for_observer(&changes);
@@ -362,12 +374,14 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     debug!("User2 MTK_x: {}", user2.art.root.public_key);
 
     debug!("User 2 update and send update request with merge resolved");
-    user2.update_key(Some(payload.clone())).await?;
+    user2
+        .update_key(Some(payload.clone()), Some(StatusCode::OK))
+        .await?;
     debug!("User2 TK_x: {}", user2.art.root.public_key);
 
     debug!("User 0 fail to append member ...");
     user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
-    // user0.update_key(None).await?;
+    // user0.update_key(None, Some(StatusCode::OK)).await?;
     debug!("User0 TK: {}", user0.art.root.public_key);
 
     Ok(())
@@ -397,13 +411,17 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         "User 0 blanking the user on path {:?} ...",
         &target_node_path
     );
-    user0.make_blank(&target_node_path).await?;
-    // user0.update_key(None).await?;
+    user0
+        .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
+        .await?;
+    // user0.update_key(None, Some(StatusCode::OK)).await?;
     debug!("User0 TK: {}", user0.art.root.public_key);
     debug!("User0 tk: {}", user0.art.get_root_key().unwrap().key);
 
     debug!("User1 receive changes ..");
-    let blank_user_0 = user1.get_changes(20, 0, None).await?;
+    let blank_user_0 = user1
+        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?;
     assert_eq!(user1.art, user2.art);
     user1.art.update_private_art(&blank_user_0[0]).unwrap();
     assert_eq!(user1.art, user0.art);
@@ -412,7 +430,9 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     assert_eq!(user1.art, user0.art);
 
     debug!("User 1 blanking the target node ...");
-    user1.make_blank(&target_node_path).await?;
+    user1
+        .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
+        .await?;
     debug!("User1 TK: {}", user1.art.root.public_key);
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
     assert_eq!(
@@ -421,7 +441,9 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     );
 
     debug!("User 2 receive changes ...");
-    let blank_user_1 = user2.get_changes(20, 0, None).await?;
+    let blank_user_1 = user2
+        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?;
     user2.art.update_private_art(&blank_user_1[0]).unwrap();
     user2.epoch += 1;
     debug!("User2 tk: {}", user2.art.get_root_key().unwrap().key);
@@ -448,8 +470,114 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     );
 
     debug!("User 2 update key ...");
-    user2.update_key(None).await?;
+    user2.update_key(None, Some(StatusCode::OK)).await?;
     debug!("New TK: {}", user2.art.root.public_key);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_leave() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(5)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(1)?;
+    debug!(
+        "User0 pk: {}",
+        user0.art.public_key_of(&user0.art.get_secret_key())
+    );
+
+    let target_node_path = user0.art.get_node_index().get_path().unwrap();
+
+    // sanity check
+    assert_eq!(user2.art, user0.art);
+    assert_eq!(user1.art, user0.art);
+    assert_eq!(user3.art, user0.art);
+
+    debug!("User 0 leave the group ...");
+    user0.leave_group(Some(StatusCode::OK)).await?;
+
+    debug!("User 0 Fails to leave the second time ...");
+    user0.leave_group(Some(StatusCode::UNAUTHORIZED)).await?;
+
+    debug!("User 0 updates key, even if he is removed ...");
+    user0
+        .update_key(None, Some(StatusCode::UNAUTHORIZED))
+        .await?;
+
+    debug!("User1 receive changes ..");
+    let mut blank_user_0 = user1
+        .get_frames(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?
+        .sp_frames;
+    // let key_update = extract_branch_changes(&blank_user_0.pop().unwrap().frame.unwrap()).unwrap().unwrap();
+    let leave_operation = UserTestModel::unwrap_operation(blank_user_0.pop().unwrap());
+    assert_eq!(
+        leave_operation,
+        Operation::LeaveGroup(user0.art.get_node_index().get_index()?)
+    );
+
+    assert_eq!(user1.art, user2.art);
+    user1.art.get_mut_node(user0.art.get_node_index())?.is_blank = true;
+    user2.art.get_mut_node(user0.art.get_node_index())?.is_blank = true;
+    user3.art.get_mut_node(user1.art.get_node_index())?.is_blank = true;
+    debug!("User 1 blanks the target node ...");
+    user1
+        .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
+        .await?;
+
+    debug!("User 2 receive changes ...");
+    let blank_user_1 = user2
+        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?;
+    user2.art.update_private_art(&blank_user_1[0]).unwrap();
+    user2.epoch += 1;
+    // debug!("art2:\n{}", user2.art.get_root());
+    assert_eq!(user2.art, user1.art);
+    assert_eq!(
+        user2.art.public_key_of(&user2.art.get_root_key()?.key),
+        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+    );
+
+    debug!("User 2 blank the target node ...");
+    user2
+        .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_leave_after_removal() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(5)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(1)?;
+    let target_node_path = user3.art.get_node_index().get_path().unwrap();
+
+    debug!("User 0 blanks the target node ...");
+    user0
+        .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
+        .await?;
+
+    debug!("User1 receive changes ..");
+    let blank_user_3_0 = user1
+        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?;
+    assert_eq!(blank_user_3_0.len(), 1);
+
+    debug!("User 3 fails to leave the group ...");
+    user3.leave_group(Some(StatusCode::UNAUTHORIZED)).await?;
+
+    user1.art.update_private_art(&blank_user_3_0[0]).unwrap();
+    user1.epoch += 1;
+
+    debug!("User 2 blank the target node ...");
+    user1
+        .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
+        .await?;
     Ok(())
 }
 
