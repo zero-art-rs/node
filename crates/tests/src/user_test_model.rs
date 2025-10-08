@@ -63,7 +63,7 @@ fn get_co_path_values(
 
     let mut parent = art.get_root();
     for direction in &index.get_path()? {
-        co_path_values.push(parent.get_other_child(direction)?.public_key);
+        co_path_values.push(parent.get_other_child(direction)?.get_public_key());
         parent = parent.get_child(direction)?;
     }
 
@@ -126,7 +126,7 @@ impl UserTestModel {
 
     /// Clone this uses, and change this user secret key to the different one
     pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
-        let art = PrivateART::from_public_art(self.art.clone(), self.initial_secrets[index])?;
+        let art = PrivateART::from_public_art_and_secret(self.art.clone(), self.initial_secrets[index])?;
 
         Ok(Self {
             client: reqwest::Client::new(),
@@ -204,7 +204,7 @@ impl UserTestModel {
         debug!(
             "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
             self.epoch + 1,
-            self.art.root.public_key
+            self.art.root.get_public_key()
         );
 
         let tbs_frame = FrameTbs {
@@ -212,7 +212,7 @@ impl UserTestModel {
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::KeyUpdate(key_update_changes.serialze()?)),
+                operation: Some(Operation::KeyUpdate(key_update_changes.serialize()?)),
             }),
             protected_payload: payload.unwrap_or_default(),
         };
@@ -264,7 +264,7 @@ impl UserTestModel {
         debug!(
             "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
             self.epoch + 1,
-            self.art.root.public_key,
+            self.art.root.get_public_key(),
             status_check,
         );
 
@@ -273,7 +273,7 @@ impl UserTestModel {
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::AddMember(append_user_changes.serialze()?)),
+                operation: Some(Operation::AddMember(append_user_changes.serialize()?)),
             }),
             protected_payload: vec![],
         };
@@ -310,10 +310,10 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = if self
+        let old_tk = if !self
             .art
             .get_node(&NodeIndex::Direction(user_to_remove.clone()))?
-            .is_blank
+            .is_active()
         {
             self.art.get_root_key()?.key
         } else {
@@ -330,7 +330,7 @@ impl UserTestModel {
             target_node_path: {:?}
             ",
             self.epoch + 1,
-            self.art.root.public_key,
+            self.art.root.get_public_key(),
             temporary_secret_key,
             user_to_remove
         );
@@ -344,7 +344,7 @@ impl UserTestModel {
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::RemoveMember(remove_user_changes.serialze()?)),
+                operation: Some(Operation::RemoveMember(remove_user_changes.serialize()?)),
             }),
             protected_payload: vec![],
         };
@@ -674,7 +674,7 @@ impl UserTestModel {
         status_check: Option<StatusCode>,
     ) -> eyre::Result<SpFrames> {
         let tk = self.art.get_root_key()?.key;
-        let pk = self.art.root.public_key;
+        let pk = self.art.root.get_public_key();
 
         let mut msg = Vec::new();
         let nonce = (0..DEFAULT_NONCE_LENGTH)

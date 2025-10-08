@@ -5,11 +5,12 @@ use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Index
 use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::types::NodeIndex;
+use zrt_art::types::{ARTNode, NodeIndex};
 use zrt_art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
 };
+use zrt_art::errors::ARTError;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
 pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";
@@ -209,9 +210,11 @@ impl ARTStorage for MongoARTStorage {
         node_index: u64,
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
-        art.art
-            .get_mut_node(&NodeIndex::Index(node_index))?
-            .metadata = Some(new_metadata);
+        match art.art.get_mut_node(&NodeIndex::Index(node_index))? {
+            ARTNode::Leaf { metadata, .. } => *metadata = new_metadata,
+            ARTNode::Internal { .. } => return Err(StorageError::ARTError(ARTError::NonLeafNode)),
+        }
+
         self.replace_art(chat_id, art).await?;
 
         Ok(())

@@ -9,7 +9,8 @@ use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
 use zrt_art::traits::ARTPublicAPI;
-use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
+use zrt_art::types::{BranchChanges, BranchChangesType, LeafStatus, NodeIndex};
+use zrt_art::errors::ARTError;
 
 use types::errors::ARTServiceError;
 use types::utils::decode_art;
@@ -59,17 +60,17 @@ impl ARTService {
 
         let mut art_record = self.get_initial_art(&id).await?;
 
+        // Apply all possible leaf operations on epoch 0.
         let (_, leave_changes) = frame_storage.get_epoch_changes(id, 0).await?;
         for node_index in leave_changes {
-            art_record.art.get_mut_node(&node_index)?.is_blank = true;
+            art_record.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
         }
 
+        // Apply other operations from remaining epochs.
         for i in 1..=epoch {
             let (epoch_changes, leave_changes) = frame_storage.get_epoch_changes(id, i).await?;
             for node_index in leave_changes {
-                debug!("try");
-                art_record.art.get_mut_node(&node_index)?.is_blank = true;
-                debug!("fail");
+                art_record.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
             }
 
             match epoch_changes.len().cmp(&1) {
@@ -82,7 +83,7 @@ impl ARTService {
         art_record.epoch = epoch;
         debug!(
             "Successfully recomputed {} state of art. It has the next root PK: {}",
-            epoch, art_record.art.root.public_key
+            epoch, art_record.art.root.get_public_key()
         );
 
         Ok(art_record)
@@ -286,7 +287,7 @@ impl ARTService {
         art_record
             .art
             .get_mut_node(&NodeIndex::from(index))?
-            .is_blank = true;
+            .set_status(LeafStatus::Blank)?;
 
         debug!("User with index {index} marked himself as removed.",);
         arts_storage.replace_art(id, art_record).await?;
@@ -316,7 +317,7 @@ impl ARTService {
 
             debug!(
                 "Updated art. New root PK is: {}",
-                &art_record.art.root.public_key
+                &art_record.art.root.get_public_key()
             );
 
             arts_storage
@@ -376,7 +377,7 @@ impl ARTService {
             frames_storage.get_epoch_changes(id, new_epoch).await?;
 
         for node_index in leave_changes {
-            latest_art.art.get_mut_node(&node_index)?.is_blank = true;
+            latest_art.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
         }
 
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
@@ -387,7 +388,7 @@ impl ARTService {
 
         debug!(
             "Finished to merge art. New root PK is: {}",
-            latest_art.art.root.public_key
+            latest_art.art.root.get_public_key()
         );
 
         arts_storage.replace_art(id, latest_art).await?;

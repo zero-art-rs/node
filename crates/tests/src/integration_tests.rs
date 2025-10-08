@@ -20,7 +20,7 @@ use types::protos;
 use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
 use types::utils::extract_branch_changes;
 use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{PrivateART, PublicART};
+use zrt_art::types::{LeafStatus, PrivateART, PublicART};
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -39,7 +39,7 @@ async fn test_send_message() -> eyre::Result<()> {
         .collect::<Vec<u8>>();
 
     let tk = context.art.get_root_key().unwrap().key;
-    let pk = context.art.get_root().public_key;
+    let pk = context.art.get_root().get_public_key();
 
     let signature = sign(&vec![tk], &vec![pk], &*Sha3_256::digest(&challenge)).unwrap();
 
@@ -90,7 +90,7 @@ async fn test_send_message() -> eyre::Result<()> {
 
     let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
     let tk = context.art.get_root_key()?.key;
-    let pk = vec![context.art.root.public_key];
+    let pk = vec![context.art.root.get_public_key()];
 
     let signature = sign(&vec![tk], &pk, &msg)?;
     let verification_result = verify(&signature, &pk, &msg);
@@ -216,7 +216,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 
 /// Six users try to update the same epoch at the same time.
 #[tokio::test]
-async fn test_concurent_art_update() -> eyre::Result<()> {
+async fn test_concurrent_art_update() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
@@ -283,11 +283,11 @@ async fn test_remove_member() -> eyre::Result<()> {
             .await?;
 
         assert_eq!(
-            received_art.root.weight,
-            retrieval_context.art.root.weight - 1
+            received_art.root.get_weight(),
+            retrieval_context.art.root.get_weight() - 1
         );
 
-        retrieval_context.art = PrivateART::from_public_art(received_art, context.art.secret_key)?;
+        retrieval_context.art = PrivateART::from_public_art_and_secret(received_art, context.art.secret_key)?;
 
         let sk_to_use = retrieval_context.art.get_root_key()?.key;
         let received_art_check = retrieval_context
@@ -310,12 +310,12 @@ async fn test_get_art() -> eyre::Result<()> {
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     let mut retrieval_context = context.derive_new(2)?;
-    let mut art_roots = vec![context.art.root.public_key];
+    let mut art_roots = vec![context.art.root.get_public_key()];
 
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
         context.update_key(None, Some(StatusCode::OK)).await?;
-        art_roots.push(context.art.root.public_key);
+        art_roots.push(context.art.root.get_public_key());
     }
 
     // Test if retrieval is correct
@@ -324,10 +324,10 @@ async fn test_get_art() -> eyre::Result<()> {
             .get_art(i as u64, None, ProofMode::UseLeafKey.to_string())
             .await?;
 
-        assert_eq!(received_art.root.public_key, art_roots[i]);
+        assert_eq!(received_art.root.get_public_key(), art_roots[i]);
 
         retrieval_context.art =
-            PrivateART::from_public_art(received_art, retrieval_context.initial_secrets[1])?;
+            PrivateART::from_public_art_and_secret(received_art, retrieval_context.initial_secrets[1])?;
     }
 
     Ok(())
@@ -415,7 +415,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("User0 TK: {}", user0.art.root.public_key);
+    debug!("User0 TK: {}", user0.art.root.get_public_key());
     debug!("User0 tk: {}", user0.art.get_root_key().unwrap().key);
 
     debug!("User1 receive changes ..");
@@ -433,11 +433,11 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
-    debug!("User1 TK: {}", user1.art.root.public_key);
+    debug!("User1 TK: {}", user1.art.root.get_public_key());
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
     assert_eq!(
         user1.art.public_key_of(&user1.art.get_root_key()?.key),
-        user1.art.get_root().public_key
+        user1.art.get_root().get_public_key()
     );
 
     debug!("User 2 receive changes ...");
@@ -466,12 +466,12 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     );
     assert_eq!(
         user2.art.public_key_of(&user2.art.get_root_key()?.key),
-        user1.art.get_root().public_key
+        user1.art.get_root().get_public_key()
     );
 
     debug!("User 2 update key ...");
     user2.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("New TK: {}", user2.art.root.public_key);
+    debug!("New TK: {}", user2.art.root.get_public_key());
     Ok(())
 }
 
@@ -519,9 +519,9 @@ async fn test_leave() -> eyre::Result<()> {
     );
 
     assert_eq!(user1.art, user2.art);
-    user1.art.get_mut_node(user0.art.get_node_index())?.is_blank = true;
-    user2.art.get_mut_node(user0.art.get_node_index())?.is_blank = true;
-    user3.art.get_mut_node(user1.art.get_node_index())?.is_blank = true;
+    user1.art.get_mut_node(user0.art.get_node_index())?.set_status(LeafStatus::Blank);
+    user2.art.get_mut_node(user0.art.get_node_index())?.set_status(LeafStatus::Blank);
+    user3.art.get_mut_node(user1.art.get_node_index())?.set_status(LeafStatus::Blank);
     debug!("User 1 blanks the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
