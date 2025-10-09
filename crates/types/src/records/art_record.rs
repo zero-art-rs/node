@@ -1,11 +1,11 @@
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use zrt_art::types::PublicART;
 use bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
+use zrt_art::types::PublicART;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(bound = "")]
@@ -30,7 +30,7 @@ where
         write!(
             f,
             "[sequence_number: {}, chat_id: {}, root public key: {}]",
-            self.epoch, self.chat_id, self.art.root.public_key
+            self.epoch, self.chat_id, self.art.root.get_public_key()
         )
     }
 }

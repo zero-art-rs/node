@@ -1,5 +1,3 @@
-use zrt_art::traits::ARTPublicAPI;
-use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use std::cmp::Ordering;
@@ -10,6 +8,9 @@ use storage::{
 use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
+use zrt_art::traits::ARTPublicAPI;
+use zrt_art::types::{BranchChanges, BranchChangesType, LeafStatus, NodeIndex};
+use zrt_art::errors::ARTError;
 
 use types::errors::ARTServiceError;
 use types::utils::decode_art;
@@ -58,8 +59,19 @@ impl ARTService {
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
         let mut art_record = self.get_initial_art(&id).await?;
+
+        // Apply all possible leaf operations on epoch 0.
+        let (_, leave_changes) = frame_storage.get_epoch_changes(id, 0).await?;
+        for node_index in leave_changes {
+            art_record.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
+        }
+
+        // Apply other operations from remaining epochs.
         for i in 1..=epoch {
-            let epoch_changes = frame_storage.get_epoch_changes(id, i).await?;
+            let (epoch_changes, leave_changes) = frame_storage.get_epoch_changes(id, i).await?;
+            for node_index in leave_changes {
+                art_record.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
+            }
 
             match epoch_changes.len().cmp(&1) {
                 Ordering::Less => return Err(ARTServiceError::NotFound),
@@ -71,7 +83,7 @@ impl ARTService {
         art_record.epoch = epoch;
         debug!(
             "Successfully recomputed {} state of art. It has the next root PK: {}",
-            epoch, art_record.art.root.public_key
+            epoch, art_record.art.root.get_public_key()
         );
 
         Ok(art_record)
@@ -98,11 +110,7 @@ impl ARTService {
         let mut skip = 0;
         while changes.len() < epoch as usize {
             let messages = message_storage
-                .list(
-                    filter.clone(),
-                    types::DEFAULT_LIMIT,
-                    skip,
-                )
+                .list(filter.clone(), types::DEFAULT_LIMIT, skip)
                 .await?;
             skip += types::DEFAULT_LIMIT;
 
@@ -111,8 +119,7 @@ impl ARTService {
             }
 
             for message in &messages {
-                if let Ok(Some(branch_changes)) =
-                    MongoFramesStorage::extract_branch_changes(message)
+                if let Ok(Some(branch_changes)) = MongoFramesStorage::extract_branch_change(message)
                 {
                     changes.push(branch_changes);
                 }
@@ -182,9 +189,7 @@ impl ARTService {
         session.start_transaction().await?;
 
         arts_storage.delete_art(&mut session, *id).await?;
-        arts_storage
-            .delete_initial_art(&mut session, *id)
-            .await?;
+        arts_storage.delete_initial_art(&mut session, *id).await?;
         keys_storage
             .keys_collection
             .delete_one(doc! {"chat_id": id})
@@ -282,7 +287,7 @@ impl ARTService {
         art_record
             .art
             .get_mut_node(&NodeIndex::from(index))?
-            .is_blank = true;
+            .set_status(LeafStatus::Blank)?;
 
         debug!("User with index {index} marked himself as removed.",);
         arts_storage.replace_art(id, art_record).await?;
@@ -312,7 +317,7 @@ impl ARTService {
 
             debug!(
                 "Updated art. New root PK is: {}",
-                &art_record.art.root.public_key
+                &art_record.art.root.get_public_key()
             );
 
             arts_storage
@@ -368,18 +373,22 @@ impl ARTService {
         let frames_storage = MongoFramesStorage::get_existing_collection(id).await?;
 
         let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
-        let mut target_changes = frames_storage.get_epoch_changes(id, new_epoch).await?;
+        let (mut target_changes, leave_changes) =
+            frames_storage.get_epoch_changes(id, new_epoch).await?;
+
+        for node_index in leave_changes {
+            latest_art.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
+        }
 
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
 
         target_changes.push(change);
-        latest_art
-            .art
-            .merge_all(&target_changes)?;
+        latest_art.art.merge_all(&target_changes)?;
+        latest_art.epoch = new_epoch;
 
         debug!(
             "Finished to merge art. New root PK is: {}",
-            latest_art.art.root.public_key
+            latest_art.art.root.get_public_key()
         );
 
         arts_storage.replace_art(id, latest_art).await?;

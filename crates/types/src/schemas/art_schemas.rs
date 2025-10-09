@@ -1,7 +1,6 @@
 use crate::ARTRecord;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
-use zrt_art::errors::ARTError;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 use serde_with::{
@@ -11,6 +10,7 @@ use serde_with::{
 use std::fmt::Display;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
+use zrt_art::errors::ARTError;
 
 pub const USE_ROOT_KEY: &str = "use_root_key";
 pub const USE_LEAF_KEY: &str = "use_leaf_key";

@@ -1,15 +1,16 @@
-use crate::{ARTStorage, DATABASE};
 use crate::StorageError;
-use zrt_art::types::NodeIndex;
+use crate::{ARTStorage, DATABASE};
+use cortado::CortadoAffine;
+use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
+use tracing::{debug, error, warn};
+use types::ARTRecord;
+use uuid::Uuid;
+use zrt_art::types::{ARTNode, NodeIndex};
 use zrt_art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
 };
-use cortado::{CortadoAffine};
-use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
-use tracing::{debug, error, warn};
-use types::{ARTRecord};
-use uuid::Uuid;
+use zrt_art::errors::ARTError;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
 pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";
@@ -135,7 +136,10 @@ impl ARTStorage for MongoARTStorage {
     }
 
     /// Return the first art state in the chat
-    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
+    async fn get_initial_art(
+        &self,
+        chat_id: Uuid,
+    ) -> Result<ARTRecord<CortadoAffine>, StorageError> {
         debug!("Retrieving initial art for chat: {chat_id}");
         let art = self
             .initial_arts_collection
@@ -206,9 +210,11 @@ impl ARTStorage for MongoARTStorage {
         node_index: u64,
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
-        art.art
-            .get_mut_node(&NodeIndex::Index(node_index))?
-            .metadata = Some(new_metadata);
+        match art.art.get_mut_node(&NodeIndex::Index(node_index))? {
+            ARTNode::Leaf { metadata, .. } => *metadata = new_metadata,
+            ARTNode::Internal { .. } => return Err(StorageError::ARTError(ARTError::NonLeafNode)),
+        }
+
         self.replace_art(chat_id, art).await?;
 
         Ok(())

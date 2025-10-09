@@ -9,6 +9,7 @@ use types::{
     protos::{Frame, SpFrame, SpFrames},
 };
 use uuid::Uuid;
+use zrt_art::types::BranchChangesType;
 
 pub struct MessengerService {}
 
@@ -57,7 +58,7 @@ impl MessengerService {
             debug!("No records found for filter {}", &filter);
         } else {
             debug!(
-                "Found {} records for the filter {}",
+                "Found {} records for the filter \"{}\"",
                 frame_records.len(),
                 &filter
             );
@@ -86,12 +87,12 @@ impl MessengerService {
 
     pub async fn count_messages(
         &self,
-        chat_id: &Uuid,
+        chat_id: Uuid,
         filter: Document,
         limit: i64,
         skip: i64,
     ) -> Result<u64, MessageServiceError> {
-        Ok(MongoFramesStorage::new(chat_id)
+        Ok(MongoFramesStorage::new(&chat_id)
             .await?
             .count(filter, limit, skip)
             .await?)
@@ -104,5 +105,22 @@ impl MessengerService {
     ) -> Result<Vec<FrameRecord>, MessageServiceError> {
         let result = MongoFramesStorage::new(id).await?.delete(filter).await?;
         Ok(result)
+    }
+
+    pub async fn epoch_has_add_member_change(
+        &self,
+        id: Uuid,
+        epoch: u64,
+    ) -> Result<bool, MessageServiceError> {
+        let frame_storage = MongoFramesStorage::new(&id).await?;
+        let (changes, _) = frame_storage.get_epoch_changes(id, epoch).await?;
+
+        for applied_change in &changes {
+            if let BranchChangesType::AppendNode = applied_change.change_type {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }

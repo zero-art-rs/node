@@ -1,3 +1,5 @@
+use crate::utils::CentrifugoTokenResponse;
+use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
@@ -6,40 +8,36 @@ use ark_std::{
     rand::prelude::StdRng,
     rand::{SeedableRng, thread_rng},
 };
-use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
-use zrt_art::{
-    errors::ARTError,
-    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
-    types::{PrivateART, PublicART},
-};
 use axum::body::Bytes;
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
-use zrt_crypto::schnorr::{sign, verify};
 use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use tracing::{debug, error};
+use types::protos::SpFrame;
 use types::{
-    art_schemas::{GetARTResponse, GetARTQuery, ChallengeResponse},
+    art_schemas::{ChallengeResponse, GetARTQuery, GetARTResponse},
     centrifugo_schemas::AuthRequest,
     messenger_schemas::GetMessageQuery,
     protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation},
     utils::extract_branch_changes,
 };
+use utoipa::openapi::request_body::RequestBody;
 use uuid::Uuid;
-use zrt_zk::art::{art_prove, art_verify};
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_art::traits::ARTPublicView;
-use crate::utils::CentrifugoTokenResponse;
-
-use crate::{
-    BACKEND_URL,
-    DEFAULT_NONCE_LENGTH,
+use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
+use zrt_art::{
+    errors::ARTError,
+    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
+    types::{PrivateART, PublicART},
 };
+use zrt_crypto::schnorr::{sign, verify};
+use zrt_zk::art::{art_prove, art_verify};
 
 #[derive(Clone, Debug)]
 pub struct UserTestModel {
@@ -54,15 +52,18 @@ pub struct UserTestModel {
 #[derive(Debug, thiserror::Error)]
 pub enum UserTestModelError {
     #[error("Wrong StatusCode: {got}, while expected {expected}")]
-    WrongStatusCode{got: String, expected: String},
+    WrongStatusCode { got: String, expected: String },
 }
 
-fn get_co_path_values(art: &PrivateART<CortadoAffine>, index: &NodeIndex) -> Result<Vec<CortadoAffine>, ARTError> {
+fn get_co_path_values(
+    art: &PrivateART<CortadoAffine>,
+    index: &NodeIndex,
+) -> Result<Vec<CortadoAffine>, ARTError> {
     let mut co_path_values = Vec::new();
 
     let mut parent = art.get_root();
     for direction in &index.get_path()? {
-        co_path_values.push(parent.get_other_child(direction)?.public_key);
+        co_path_values.push(parent.get_other_child(direction)?.get_public_key());
         parent = parent.get_child(direction)?;
     }
 
@@ -72,7 +73,10 @@ fn get_co_path_values(art: &PrivateART<CortadoAffine>, index: &NodeIndex) -> Res
 
 impl From<(StatusCode, StatusCode)> for UserTestModelError {
     fn from((got, expected): (StatusCode, StatusCode)) -> Self {
-        Self::WrongStatusCode{got: got.to_string(), expected: expected.to_string()}
+        Self::WrongStatusCode {
+            got: got.to_string(),
+            expected: expected.to_string(),
+        }
     }
 }
 #[allow(dead_code)]
@@ -122,10 +126,7 @@ impl UserTestModel {
 
     /// Clone this uses, and change this user secret key to the different one
     pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
-        let (mut art, _) =
-            PrivateART::new_art_from_secrets(&self.initial_secrets, &CortadoAffine::generator())?;
-
-        let art = PrivateART::from_public_art(self.art.clone(), self.initial_secrets[index])?;
+        let art = PrivateART::from_public_art_and_secret(self.art.clone(), self.initial_secrets[index])?;
 
         Ok(Self {
             client: reqwest::Client::new(),
@@ -190,25 +191,34 @@ impl UserTestModel {
     pub async fn update_key(
         &mut self,
         payload: Option<Vec<u8>>,
+        status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         let secret_key = self.art.secret_key;
         let new_secret_key = Fr::rand(&mut rng);
 
-        let (_, key_update_changes, artefacts) = self.art.update_key(&new_secret_key)?;
+        let mut art_clone = self.art.clone();
+        let (_, key_update_changes, artefacts) = art_clone.update_key(&new_secret_key)?;
+
+        debug!(
+            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
+            self.epoch + 1,
+            self.art.root.get_public_key()
+        );
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::KeyUpdate(key_update_changes.serialze()?)),
+                operation: Some(Operation::KeyUpdate(key_update_changes.serialize()?)),
             }),
             protected_payload: payload.unwrap_or_default(),
         };
 
         let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
             secret_key,
             &artefacts,
             &tbs_frame,
@@ -222,86 +232,130 @@ impl UserTestModel {
             })
             .await?;
 
-        if update_key_response.0.status() != StatusCode::OK {
-            Err(UserTestModelError::from((
-                update_key_response.0.status(),
-                StatusCode::OK
-            )))?;
+        if let Some(status_check) = status_check {
+            if update_key_response.0.status() != status_check {
+                Err(UserTestModelError::from((
+                    update_key_response.0.status(),
+                    status_check,
+                )))?;
+            }
         }
 
+        self.art = art_clone;
         self.epoch += 1;
 
         Ok(update_key_response)
     }
 
     // add node to the art, and send updates to the chat
-    pub async fn add_member(&mut self) -> eyre::Result<(reqwest::Response, BytesMut)> {
+    pub async fn add_member(
+        &mut self,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         // let old_tk = self.art.get_root_key()?.key;
         let old_tk = self.art.secret_key;
         let new_user_secret_key = Fr::rand(&mut rng);
+        let mut art_clone = self.art.clone();
         let (_, append_user_changes, artefacts) =
-            self.art.append_or_replace_node(&new_user_secret_key)?;
+            art_clone.append_or_replace_node(&new_user_secret_key)?;
+
+        debug!(
+            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
+            self.epoch + 1,
+            self.art.root.get_public_key(),
+            status_check,
+        );
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::AddMember(append_user_changes.serialze()?)),
+                operation: Some(Operation::AddMember(append_user_changes.serialize()?)),
             }),
             protected_payload: vec![],
         };
 
-        let proof_bytes =
-            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &append_user_changes)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
+            old_tk,
+            &artefacts,
+            &tbs_frame,
+            &append_user_changes,
+        )?;
 
-        let add_member_response = self
+        let (request_response, request_bytes) = self
             .send_frame(Frame {
                 frame: Some(tbs_frame),
                 proof: proof_bytes,
             })
             .await?;
 
-        assert_eq!(add_member_response.0.status(), StatusCode::OK);
+        if let Some(status_code) = status_check {
+            assert_eq!(request_response.status(), status_code);
+        }
+
+        self.art = art_clone;
         self.epoch += 1;
 
-        Ok(add_member_response)
+        Ok((request_response, request_bytes))
     }
 
     pub async fn make_blank(
         &mut self,
         user_to_remove: &Vec<Direction>,
+        status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = if self.is_owner() {
-            self.art.secret_key
-        } else {
+        let old_tk = if !self
+            .art
+            .get_node(&NodeIndex::Direction(user_to_remove.clone()))?
+            .is_active()
+        {
             self.art.get_root_key()?.key
+        } else {
+            self.art.secret_key
         };
 
         let temporary_secret_key = Fr::rand(&mut rng);
-        debug!("temporary_secret_key: {}", temporary_secret_key);
-        debug!("target_node_path: {:#?}", user_to_remove);
-        let (_, remove_user_changes, artefacts) = self
-            .art
-            .make_blank(user_to_remove, &temporary_secret_key)?;
 
+        debug!(
+            "MakeBlank debug data:
+            epoch: {}
+            New TK: {:#?}
+            temporary_secret_key: {}
+            target_node_path: {:?}
+            ",
+            self.epoch + 1,
+            self.art.root.get_public_key(),
+            temporary_secret_key,
+            user_to_remove
+        );
+
+        let mut art_clone = self.art.clone();
+        let (_, remove_user_changes, artefacts) =
+            art_clone.make_blank(user_to_remove, &temporary_secret_key)?;
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::RemoveMember(remove_user_changes.serialze()?)),
+                operation: Some(Operation::RemoveMember(remove_user_changes.serialize()?)),
             }),
             protected_payload: vec![],
         };
 
-        let proof_bytes =
-            self.prove_and_check_art_update(old_tk, &artefacts, &tbs_frame, &remove_user_changes)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
+            old_tk,
+            &artefacts,
+            &tbs_frame,
+            &remove_user_changes,
+        )?;
 
         let make_blank_result = self
             .send_frame(Frame {
@@ -310,12 +364,51 @@ impl UserTestModel {
             })
             .await?;
 
-        assert_eq!(
-            make_blank_result.0.status(),
-            StatusCode::NO_CONTENT,
-            "Check if remove member is successful."
-        );
+        if let Some(status_code) = status_check {
+            assert_eq!(
+                make_blank_result.0.status(),
+                status_code,
+                "Check if remove member result status is correct."
+            );
+        }
+
+        self.art = art_clone;
         self.epoch += 1;
+
+        Ok(make_blank_result)
+    }
+
+    pub async fn leave_group(
+        &mut self,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch,
+            nonce: vec![],
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::LeaveGroup(self.art.node_index.get_index()?)),
+            }),
+            protected_payload: Self::new_nonce(),
+        };
+
+        let signature =
+            self.prove_and_check_schnorr_signature(vec![self.art.secret_key], &tbs_frame)?;
+
+        let make_blank_result = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: signature,
+            })
+            .await?;
+
+        if let Some(status_code) = status_check {
+            assert_eq!(
+                make_blank_result.0.status(),
+                status_code,
+                "Check if remove member is successful."
+            );
+        }
 
         Ok(make_blank_result)
     }
@@ -497,8 +590,26 @@ impl UserTestModel {
         Ok(signature)
     }
 
+    fn prove_and_check_schnorr_signature(
+        &self,
+        secret_keys: Vec<Fr>,
+        tbs_frame: &FrameTbs,
+    ) -> eyre::Result<Vec<u8>> {
+        let public_keys = secret_keys
+            .iter()
+            .map(|sk| self.art.public_key_of(sk))
+            .collect::<Vec<_>>();
+        let msg = Sha3_256::digest(&tbs_frame.encode_to_vec());
+        let signature = sign(&secret_keys, &public_keys, &msg)?;
+        let verification_result = verify(&signature, &public_keys, &msg);
+        assert!(verification_result.is_ok());
+
+        Ok(signature)
+    }
+
     fn prove_and_check_art_update(
         &self,
+        test_art: &PrivateART<CortadoAffine>,
         secret_key: Fr,
         artefacts: &ProverArtefacts<CortadoAffine>,
         tbs_frame: &FrameTbs,
@@ -513,8 +624,6 @@ impl UserTestModel {
             .collect();
 
         let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
-
-        debug!("Using public_key: {} for proof creation.", &public_key);
 
         let proof = art_prove(
             Self::get_pedersen_basis(),
@@ -532,7 +641,7 @@ impl UserTestModel {
             associated_data,
             vec![public_key],
             changes.public_keys.iter().rev().copied().collect(),
-            get_co_path_values(&self.art, &changes.node_index)?,
+            get_co_path_values(&test_art, &changes.node_index)?,
             proof.clone(),
         )
         .is_ok();
@@ -545,14 +654,27 @@ impl UserTestModel {
         Ok(proof_bytes)
     }
 
-    pub async fn get_changes(
+    pub fn unwrap_operation(frame: SpFrame) -> Operation {
+        frame
+            .frame
+            .unwrap()
+            .frame
+            .unwrap()
+            .group_operation
+            .unwrap()
+            .operation
+            .unwrap()
+    }
+
+    pub async fn get_frames(
         &self,
         limit: i64,
         skip: i64,
         epoch: Option<u64>,
-    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<SpFrames> {
         let tk = self.art.get_root_key()?.key;
-        let pk = self.art.root.public_key;
+        let pk = self.art.root.get_public_key();
 
         let mut msg = Vec::new();
         let nonce = (0..DEFAULT_NONCE_LENGTH)
@@ -562,11 +684,9 @@ impl UserTestModel {
         msg.extend(&nonce);
 
         let msg = Sha3_256::digest(&msg).to_vec();
-
         debug!("Using {} for verification.", pk);
 
         let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
-
         assert!(verify(&signature, &vec![pk], &msg).is_ok());
 
         let changes_response = self
@@ -586,18 +706,35 @@ impl UserTestModel {
             .send()
             .await?;
 
-        assert_eq!(changes_response.status(), StatusCode::ACCEPTED);
+        if let Some(status) = status_check {
+            assert_eq!(changes_response.status(), status);
+        }
 
         let buf = BytesMut::from(&*changes_response.bytes().await?);
-        let sp_frames = SpFrames::decode(buf)?.sp_frames;
+        let sp_frames = SpFrames::decode(buf)?;
 
+        Ok(sp_frames)
+    }
+
+    pub async fn get_changes(
+        &self,
+        limit: i64,
+        skip: i64,
+        epoch: Option<u64>,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+        let sp_frames = self
+            .get_frames(limit, skip, epoch, status_check)
+            .await?
+            .sp_frames;
 
         let mut changes = Vec::with_capacity(sp_frames.len());
         for sp_frame in sp_frames {
-            let Some(frame) = sp_frame.frame else { continue };
+            let Some(frame) = sp_frame.frame else {
+                continue;
+            };
 
             if let Some(frame_change) = extract_branch_changes(&frame)? {
-                debug!("frame_change: {:#?}", frame_change);
                 changes.push(frame_change);
             }
         }

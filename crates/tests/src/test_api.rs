@@ -7,7 +7,7 @@ mod tests {
     #[tokio::test]
     async fn it_should_be_healthy() {
         // Build an application with a route.
-        let app = Router::new().route(&"/health", get(async || {"healthy"}));
+        let app = Router::new().route(&"/health", get(async || "healthy"));
 
         // Run the application for testing.
         let server = TestServer::new(app).unwrap();

@@ -1,9 +1,9 @@
-use crate::errors::{ARTServiceError, ApiError, ServiceError, StorageError};
-use zrt_art::errors::ARTError;
+use crate::errors::{ARTServiceError, ApiError, MessageServiceError, ServiceError, StorageError};
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
 use eyre::Report;
-use tracing::error;
+use tracing::{debug, error};
+use zrt_art::errors::ARTError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
@@ -43,6 +43,16 @@ pub enum VerificationError {
     StorageError(#[from] StorageError),
     #[error("Service error occurred: {0}")]
     ServiceError(#[from] ServiceError),
+    #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has some.")]
+    AddMemberUniqueness { epoch: u64 },
+    #[error("Can't leave the group, because the node is already marked as blank")]
+    UserAlreadyRemoved,
+}
+
+impl From<MessageServiceError> for VerificationError {
+    fn from(err: MessageServiceError) -> Self {
+        Self::ServiceError(ServiceError::from(err))
+    }
 }
 
 impl From<serde_json::Error> for VerificationError {
@@ -72,6 +82,7 @@ impl From<Report> for VerificationError {
 
 impl IntoResponse for VerificationError {
     fn into_response(self) -> axum::response::Response {
+        debug!("Verification response: Error: {:?}", self);
         ApiError::from(self).into_response()
     }
 }

@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use bytes::{Bytes, BytesMut};
 use mongodb::bson::doc;
 use std::sync::Arc;
-use tracing::{instrument};
+use tracing::instrument;
 use types::errors::ApiError;
 use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery};
 use types::protos::{Frame, SpFrames};
@@ -114,7 +114,7 @@ pub async fn count_messages(
 
     let count = state
         .messenger_service
-        .count_messages(&id, filter.clone(), payload.limit, payload.skip)
+        .count_messages(id, filter.clone(), payload.limit, payload.skip)
         .await?;
 
     Ok((StatusCode::ACCEPTED, Json(count)))
