@@ -204,7 +204,7 @@ impl UserTestModel {
         debug!(
             "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
             self.epoch + 1,
-            self.art.root.get_public_key()
+            self.art.get_root().get_public_key()
         );
 
         let tbs_frame = FrameTbs {
@@ -264,7 +264,7 @@ impl UserTestModel {
         debug!(
             "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
             self.epoch + 1,
-            self.art.root.get_public_key(),
+            self.art.get_root().get_public_key(),
             status_check,
         );
 
@@ -330,7 +330,7 @@ impl UserTestModel {
             target_node_path: {:?}
             ",
             self.epoch + 1,
-            self.art.root.get_public_key(),
+            self.art.get_root().get_public_key(),
             temporary_secret_key,
             user_to_remove
         );
@@ -674,7 +674,7 @@ impl UserTestModel {
         status_check: Option<StatusCode>,
     ) -> eyre::Result<SpFrames> {
         let tk = self.art.get_root_key()?.key;
-        let pk = self.art.root.get_public_key();
+        let pk = self.art.get_root().get_public_key();
 
         let mut msg = Vec::new();
         let nonce = (0..DEFAULT_NONCE_LENGTH)

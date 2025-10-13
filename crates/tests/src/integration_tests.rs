@@ -90,7 +90,7 @@ async fn test_send_message() -> eyre::Result<()> {
 
     let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
     let tk = context.art.get_root_key()?.key;
-    let pk = vec![context.art.root.get_public_key()];
+    let pk = vec![context.art.get_root().get_public_key()];
 
     let signature = sign(&vec![tk], &pk, &msg)?;
     let verification_result = verify(&signature, &pk, &msg);
@@ -284,7 +284,7 @@ async fn test_remove_member() -> eyre::Result<()> {
 
         assert_eq!(
             received_art.root.get_weight(),
-            retrieval_context.art.root.get_weight() - 1
+            retrieval_context.art.get_root().get_weight() - 1
         );
 
         retrieval_context.art = PrivateART::from_public_art_and_secret(received_art, context.art.secret_key)?;
@@ -298,7 +298,7 @@ async fn test_remove_member() -> eyre::Result<()> {
             )
             .await?;
 
-        assert_eq!(received_art_check.root, retrieval_context.art.root);
+        assert_eq!(received_art_check.root.as_ref(), retrieval_context.art.get_root());
     }
 
     Ok(())
@@ -310,12 +310,12 @@ async fn test_get_art() -> eyre::Result<()> {
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     let mut retrieval_context = context.derive_new(2)?;
-    let mut art_roots = vec![context.art.root.get_public_key()];
+    let mut art_roots = vec![context.art.get_root().get_public_key()];
 
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
         context.update_key(None, Some(StatusCode::OK)).await?;
-        art_roots.push(context.art.root.get_public_key());
+        art_roots.push(context.art.get_root().get_public_key());
     }
 
     // Test if retrieval is correct
@@ -354,13 +354,13 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     user1
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    debug!("User1 TK: {}", user1.art.root.public_key);
+    debug!("User1 TK: {}", user1.art.get_root().get_public_key());
 
     debug!("User 3 add member ...");
     user3
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    debug!("User3 TK: {}", user3.art.root.public_key);
+    debug!("User3 TK: {}", user3.art.get_root().get_public_key());
 
     let changes = user2
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
@@ -371,18 +371,18 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     user0.art.merge_for_observer(&changes);
     user2.epoch += 1;
     user0.epoch += 1;
-    debug!("User2 MTK_x: {}", user2.art.root.public_key);
+    debug!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
 
     debug!("User 2 update and send update request with merge resolved");
     user2
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    debug!("User2 TK_x: {}", user2.art.root.public_key);
+    debug!("User2 TK_x: {}", user2.art.get_root().get_public_key());
 
     debug!("User 0 fail to append member ...");
     user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("User0 TK: {}", user0.art.root.public_key);
+    debug!("User0 TK: {}", user0.art.get_root().get_public_key());
 
     Ok(())
 }
@@ -415,7 +415,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("User0 TK: {}", user0.art.root.get_public_key());
+    debug!("User0 TK: {}", user0.art.get_root().get_public_key());
     debug!("User0 tk: {}", user0.art.get_root_key().unwrap().key);
 
     debug!("User1 receive changes ..");
@@ -433,7 +433,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
-    debug!("User1 TK: {}", user1.art.root.get_public_key());
+    debug!("User1 TK: {}", user1.art.get_root().get_public_key());
     debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
     assert_eq!(
         user1.art.public_key_of(&user1.art.get_root_key()?.key),
@@ -471,7 +471,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     debug!("User 2 update key ...");
     user2.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("New TK: {}", user2.art.root.get_public_key());
+    debug!("New TK: {}", user2.art.get_root().get_public_key());
     Ok(())
 }
 
