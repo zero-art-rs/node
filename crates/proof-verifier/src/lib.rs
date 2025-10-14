@@ -25,6 +25,7 @@ pub type ProofVerifierReceiver = mpsc::Receiver<ProofVerifierMessageWrapper>;
 #[derive(Debug)]
 pub struct ProofVerifier {
     listener: ProofVerifierReceiver,
+    
 }
 
 impl ProofVerifier {
