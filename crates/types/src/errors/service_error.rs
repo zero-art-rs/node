@@ -13,4 +13,7 @@ pub enum ServiceError {
 
     #[error("Fail to update ART. I is changing now.")]
     ArtIsUpdating,
+
+    #[error("Aggregation is not implemented.")]
+    NotImplemented,
 }

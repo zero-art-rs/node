@@ -30,7 +30,9 @@ where
         write!(
             f,
             "[sequence_number: {}, chat_id: {}, root public key: {}]",
-            self.epoch, self.chat_id, self.art.root.get_public_key()
+            self.epoch,
+            self.chat_id,
+            self.art.root.get_public_key()
         )
     }
 }

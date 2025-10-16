@@ -126,7 +126,8 @@ impl UserTestModel {
 
     /// Clone this uses, and change this user secret key to the different one
     pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
-        let art = PrivateART::from_public_art_and_secret(self.art.clone(), self.initial_secrets[index])?;
+        let art =
+            PrivateART::from_public_art_and_secret(self.art.clone(), self.initial_secrets[index])?;
 
         Ok(Self {
             client: reqwest::Client::new(),
@@ -325,7 +326,7 @@ impl UserTestModel {
         debug!(
             "MakeBlank debug data:
             epoch: {}
-            New TK: {:#?}
+            Old TK: {:#?}
             temporary_secret_key: {}
             target_node_path: {:?}
             ",
@@ -338,6 +339,8 @@ impl UserTestModel {
         let mut art_clone = self.art.clone();
         let (_, remove_user_changes, artefacts) =
             art_clone.make_blank(user_to_remove, &temporary_secret_key)?;
+
+        debug!("New root TK: {}", art_clone.get_root().get_public_key());
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -382,35 +385,59 @@ impl UserTestModel {
         &mut self,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        let mut rng = StdRng::seed_from_u64(rand::random());
+
+        let secret_key = self.art.secret_key;
+        let new_secret_key = Fr::rand(&mut rng);
+
+        let mut art_clone = self.art.clone();
+        let (_, key_update_changes, artefacts) = art_clone.leave(new_secret_key)?;
+
+        debug!(
+            "LeaveGroup debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
+            self.epoch + 1,
+            self.art.get_root().get_public_key()
+        );
+
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
-            epoch: self.epoch,
+            epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::LeaveGroup(self.art.node_index.get_index()?)),
+                operation: Some(Operation::LeaveGroup(key_update_changes.serialize()?)),
             }),
             protected_payload: Self::new_nonce(),
         };
 
-        let signature =
-            self.prove_and_check_schnorr_signature(vec![self.art.secret_key], &tbs_frame)?;
+        let proof_bytes = self.prove_and_check_art_update(
+            &art_clone,
+            secret_key,
+            &artefacts,
+            &tbs_frame,
+            &key_update_changes,
+        )?;
 
-        let make_blank_result = self
+        let leave_result = self
             .send_frame(Frame {
                 frame: Some(tbs_frame),
-                proof: signature,
+                proof: proof_bytes,
             })
             .await?;
 
         if let Some(status_code) = status_check {
             assert_eq!(
-                make_blank_result.0.status(),
+                leave_result.0.status(),
                 status_code,
-                "Check if remove member is successful."
+                "Check if status code is correct: get {}, while waiting for {}.",
+                leave_result.0.status(),
+                status_code
             );
         }
 
-        Ok(make_blank_result)
+        self.art = art_clone;
+        self.epoch += 1;
+
+        Ok(leave_result)
     }
 
     pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
@@ -684,7 +711,7 @@ impl UserTestModel {
         msg.extend(&nonce);
 
         let msg = Sha3_256::digest(&msg).to_vec();
-        debug!("Using {} for verification.", pk);
+        debug!("Using root Pk {} for verification.", pk);
 
         let signature = sign(&vec![tk], &vec![pk], &msg).unwrap();
         assert!(verify(&signature, &vec![pk], &msg).is_ok());

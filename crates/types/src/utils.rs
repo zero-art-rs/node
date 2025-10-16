@@ -43,6 +43,9 @@ pub fn extract_branch_changes(
             Operation::KeyUpdate(branch_changes) => {
                 Ok(Some(decode_branch_changes(branch_changes)?))
             }
+            Operation::LeaveGroup(branch_changes) => {
+                Ok(Some(decode_branch_changes(branch_changes)?))
+            }
             _ => Ok(None),
         };
     }

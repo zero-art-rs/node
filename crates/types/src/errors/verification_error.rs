@@ -47,6 +47,10 @@ pub enum VerificationError {
     AddMemberUniqueness { epoch: u64 },
     #[error("Can't leave the group, because the node is already marked as blank")]
     UserAlreadyRemoved,
+    #[error("Aggregation isn't supported yet.")]
+    UnsupportedAggregation,
+    #[error("Can't remove the same user several times at the same epoch.")]
+    MergeUserRemove,
 }
 
 impl From<MessageServiceError> for VerificationError {

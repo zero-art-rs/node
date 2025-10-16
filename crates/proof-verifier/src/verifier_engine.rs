@@ -46,6 +46,7 @@ impl VerificationRequest {
     pub fn to_message(self) -> Result<ProofVerifierMessage, VerificationError> {
         match self.opcode {
             VerificationOpcode::KeyUpdate
+            | VerificationOpcode::LeaveGroup
             | VerificationOpcode::AddMember
             | VerificationOpcode::RemoveMember => {
                 let PublicInputs::ArtUpdateInput {

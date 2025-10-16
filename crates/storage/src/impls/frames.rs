@@ -198,22 +198,11 @@ impl FrameStorage for MongoFramesStorage {
                 Operation::KeyUpdate(branch_changes) => {
                     Ok(Some(decode_branch_changes(branch_changes)?))
                 }
+                Operation::LeaveGroup(branch_changes) => {
+                    Ok(Some(decode_branch_changes(branch_changes)?))
+                }
                 _ => Ok(None),
             };
-        }
-
-        Ok(None)
-    }
-
-    fn extract_leave_operation(messages: &FrameRecord) -> Result<Option<NodeIndex>, StorageError> {
-        let mut buf = BytesMut::new();
-        buf.put(messages.content.as_slice());
-        let frame = Frame::decode(buf)?;
-
-        if let Some(operation) = &types::utils::extract_operation(frame)? {
-            if let Operation::LeaveGroup(index) = operation {
-                return Ok(Some(NodeIndex::from(*index)));
-            }
         }
 
         Ok(None)
@@ -223,7 +212,7 @@ impl FrameStorage for MongoFramesStorage {
         &self,
         id: Uuid,
         epoch: u64,
-    ) -> Result<(Vec<BranchChanges<CortadoAffine>>, Vec<NodeIndex>), StorageError> {
+    ) -> Result<Vec<BranchChanges<CortadoAffine>>, StorageError> {
         let limit = types::DEFAULT_LIMIT;
         let mut skip = 0;
 
@@ -233,15 +222,10 @@ impl FrameStorage for MongoFramesStorage {
             .await?;
 
         let mut branch_changes = Vec::new();
-        let mut leave_changes = Vec::new();
         while !records.is_empty() {
             for record in &records {
                 if let Ok(Some(branch_change)) = Self::extract_branch_change(record) {
                     branch_changes.push(branch_change);
-                }
-
-                if let Ok(Some(leaved_node)) = Self::extract_leave_operation(record) {
-                    leave_changes.push(leaved_node);
                 }
             }
             skip += types::DEFAULT_LIMIT;
@@ -252,7 +236,7 @@ impl FrameStorage for MongoFramesStorage {
                 .await?;
         }
 
-        Ok((branch_changes, leave_changes))
+        Ok(branch_changes)
     }
 }
 

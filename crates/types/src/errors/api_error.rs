@@ -26,6 +26,7 @@ impl From<ServiceError> for ApiError {
             ServiceError::MessageServiceError(msg_err) => Self::from(msg_err),
             ServiceError::DecodeError(_) => ApiError::BadRequest(String::from("Invalid request")),
             ServiceError::ArtIsUpdating => ApiError::InternalServerError(value.to_string()),
+            ServiceError::NotImplemented => ApiError::BadRequest(String::from("Invalid request")),
         }
     }
 }

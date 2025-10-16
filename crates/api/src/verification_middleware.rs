@@ -16,7 +16,7 @@ use proof_verifier::verifier_engine::*;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
-use storage::{ARTStorage, MongoARTStorage};
+use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
 use tracing::{debug, error};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
@@ -26,7 +26,7 @@ use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
 use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, NodeIndex};
+use zrt_art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, LeafStatus, NodeIndex};
 
 /// Handle authentication request verification.
 pub async fn authenticate(
@@ -259,11 +259,11 @@ pub async fn send_frame(
     validate_frame_applicability(state.clone(), id, &tbs_frame).await?;
 
     let (opcode, public_inputs) = match &operation {
-        None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
         Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
         Some(Operation::AddMember(branch_changes_bytes))
         | Some(Operation::RemoveMember(branch_changes_bytes))
-        | Some(Operation::KeyUpdate(branch_changes_bytes)) => {
+        | Some(Operation::KeyUpdate(branch_changes_bytes))
+        | Some(Operation::LeaveGroup(branch_changes_bytes)) => {
             state
                 .start_updating(id)
                 .await
@@ -273,26 +273,13 @@ pub async fn send_frame(
                 state.clone(),
                 id,
                 branch_changes_bytes,
-                Some(tbs_frame.epoch - 1),
+                tbs_frame.epoch - 1,
             )
             .await
             {
                 Ok(result) => result,
                 Err(err) => {
-                    state.stop_updating(id).await;
-                    return Err(err);
-                }
-            }
-        }
-        Some(Operation::LeaveGroup(index)) => {
-            state
-                .start_updating(id)
-                .await
-                .map_err(VerificationError::from)?;
-
-            match get_opcode_and_input_for_leave_group(state.clone(), id, *index).await {
-                Ok(result) => result,
-                Err(err) => {
+                    error!("Failed to get opcode and operation");
                     state.stop_updating(id).await;
                     return Err(err);
                 }
@@ -301,8 +288,13 @@ pub async fn send_frame(
         Some(Operation::DropGroup(_)) => {
             get_opcode_and_input_for_drop_group(state.clone(), id).await?
         }
+        Some(Operation::Aggregated(_)) => {
+            return Err(VerificationError::UnsupportedAggregation);
+        }
+        None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
     };
 
+    debug!("create VerificationRequest");
     let verification_req = VerificationRequest {
         opcode,
         data: VerifierData {
@@ -312,6 +304,7 @@ pub async fn send_frame(
         },
     };
 
+    debug!("create response");
     let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
     match &operation {
         Some(Operation::AddMember(_))
@@ -346,14 +339,13 @@ async fn validate_frame_applicability(
         Some(Operation::AddMember(_)) => {
             vec![current_epoch + 1]
         }
-        Some(Operation::RemoveMember(_)) | Some(Operation::KeyUpdate(_)) => {
+        Some(Operation::RemoveMember(_))
+        | Some(Operation::KeyUpdate(_))
+        | Some(Operation::LeaveGroup(_)) => {
             match state.merge_changes {
                 true => vec![current_epoch, current_epoch + 1],
                 false => vec![current_epoch + 1],
             }
-        }
-        Some(Operation::LeaveGroup(_)) => {
-            vec![current_epoch]
         }
         _ => {
             // Allow all epochs. For validation allow the used one.
@@ -409,23 +401,52 @@ pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
-    epoch: Option<u64>,
+    epoch: u64,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes =
         BranchChanges::<CortadoAffine>::deserialize(branch_changes_bytes.as_slice())?;
 
-    let art = state.art_service.get_art(id, epoch).await?.art;
+    let art = state.art_service.get_art(id, Some(epoch)).await?.art;
     let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
+
+    if matches!(branch_changes.change_type, BranchChangesType::Leave)
+        || matches!(branch_changes.change_type, BranchChangesType::MakeBlank)
+    {
+        let frame_storage = MongoFramesStorage::new(&id).await?;
+        let epoch_changes = frame_storage.get_epoch_changes(id, epoch + 1).await?;
+
+        for change in epoch_changes {
+            if change.node_index.as_index()? == branch_changes.node_index.as_index()? {
+                if matches!(change.change_type, BranchChangesType::Leave)
+                    || matches!(change.change_type, BranchChangesType::MakeBlank)
+                {
+                    return Err(VerificationError::MergeUserRemove)
+                }
+            }
+        }
+
+    }
 
     let (opcode, aux_public_keys) = match branch_changes.change_type {
         BranchChangesType::UpdateKey => {
             let leaf = art.get_node(&branch_changes.node_index)?;
-            if !leaf.is_active() {
+            if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::KeyUpdate,
+                vec![art.get_node(&branch_changes.node_index)?.get_public_key()],
+            )
+        }
+        BranchChangesType::Leave => {
+            let leaf = art.get_node(&branch_changes.node_index)?;
+            if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
+                return Err(VerificationError::UserAlreadyRemoved);
+            }
+
+            (
+                VerificationOpcode::LeaveGroup,
                 vec![art.get_node(&branch_changes.node_index)?.get_public_key()],
             )
         }
@@ -436,11 +457,11 @@ pub async fn get_opcode_and_input_for_art_update(
         BranchChangesType::MakeBlank => {
             let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_active() {
                 false => {
-                    debug!("using art.root.public_key for verification");
+                    debug!("Using art.root.public_key for verification");
                     art.root.get_public_key()
                 }
                 true => {
-                    debug!("using get_left_most_leaf_public_key for verification");
+                    debug!("Using get_left_most_leaf_public_key for verification");
                     get_left_most_leaf_public_key(state, id).await?
                 }
             };
@@ -509,33 +530,6 @@ pub async fn get_opcode_and_input_for_send_message(
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
             public_keys: vec![art.root.get_public_key()],
-        },
-    ))
-}
-
-pub async fn get_opcode_and_input_for_leave_group(
-    state: Arc<Container>,
-    id: Uuid,
-    user_index: u64,
-) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state.art_service.get_art(id, None).await?.art;
-
-    if !art.get_node(&NodeIndex::from(user_index))?.is_active() {
-        error!("Node with index {} is already a blank node", user_index);
-        return Err(VerificationError::UserAlreadyRemoved);
-    }
-
-    let leaf = art.get_node(&NodeIndex::from(user_index))?;
-
-    if !leaf.is_leaf() {
-        error!("Provided index {} points on non leaf node", user_index);
-        return Err(VerificationError::InvalidInput);
-    }
-
-    Ok((
-        VerificationOpcode::LeaveGroup,
-        PublicInputs::Signature {
-            public_keys: vec![leaf.get_public_key()],
         },
     ))
 }

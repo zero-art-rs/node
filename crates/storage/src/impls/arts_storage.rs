@@ -5,12 +5,12 @@ use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Index
 use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
+use zrt_art::errors::ARTError;
 use zrt_art::types::{ARTNode, NodeIndex};
 use zrt_art::{
     traits::ARTPublicAPI,
     types::{BranchChanges, PublicART},
 };
-use zrt_art::errors::ARTError;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
 pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";

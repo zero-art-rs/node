@@ -103,7 +103,8 @@ impl Container {
             }
             Some(Operation::AddMember(changes))
             | Some(Operation::RemoveMember(changes))
-            | Some(Operation::KeyUpdate(changes)) => {
+            | Some(Operation::KeyUpdate(changes))
+            | Some(Operation::LeaveGroup(changes)) => {
                 self.update_art(id, changes, tbs_frame.epoch).await?
             }
             Some(Operation::DropGroup(_)) => {
@@ -113,7 +114,7 @@ impl Container {
                     .await
                     .map(|_| StatusCode::NO_CONTENT)?);
             }
-            Some(Operation::LeaveGroup(index)) => self.handle_self_removal(id, index).await?,
+            Some(Operation::Aggregated(_)) => return Err(ServiceError::NotImplemented),
             None => StatusCode::OK,
         };
 
@@ -164,7 +165,7 @@ impl Container {
             BranchChangesType::UpdateKey => Ok(StatusCode::OK),
             BranchChangesType::AppendNode => Ok(StatusCode::OK),
             BranchChangesType::MakeBlank => Ok(StatusCode::NO_CONTENT),
-            _ => Ok(StatusCode::NOT_IMPLEMENTED),
+            BranchChangesType::Leave => Ok(StatusCode::OK),
         }
     }
 

@@ -20,7 +20,7 @@ use types::protos;
 use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
 use types::utils::extract_branch_changes;
 use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{LeafStatus, PrivateART, PublicART};
+use zrt_art::types::{BranchChanges, LeafStatus, PrivateART, PublicART};
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -287,7 +287,8 @@ async fn test_remove_member() -> eyre::Result<()> {
             retrieval_context.art.get_root().get_weight() - 1
         );
 
-        retrieval_context.art = PrivateART::from_public_art_and_secret(received_art, context.art.secret_key)?;
+        retrieval_context.art =
+            PrivateART::from_public_art_and_secret(received_art, context.art.secret_key)?;
 
         let sk_to_use = retrieval_context.art.get_root_key()?.key;
         let received_art_check = retrieval_context
@@ -298,7 +299,10 @@ async fn test_remove_member() -> eyre::Result<()> {
             )
             .await?;
 
-        assert_eq!(received_art_check.root.as_ref(), retrieval_context.art.get_root());
+        assert_eq!(
+            received_art_check.root.as_ref(),
+            retrieval_context.art.get_root()
+        );
     }
 
     Ok(())
@@ -326,8 +330,10 @@ async fn test_get_art() -> eyre::Result<()> {
 
         assert_eq!(received_art.root.get_public_key(), art_roots[i]);
 
-        retrieval_context.art =
-            PrivateART::from_public_art_and_secret(received_art, retrieval_context.initial_secrets[1])?;
+        retrieval_context.art = PrivateART::from_public_art_and_secret(
+            received_art,
+            retrieval_context.initial_secrets[1],
+        )?;
     }
 
     Ok(())
@@ -492,18 +498,21 @@ async fn test_leave() -> eyre::Result<()> {
     let target_node_path = user0.art.get_node_index().get_path().unwrap();
 
     // sanity check
-    assert_eq!(user2.art, user0.art);
     assert_eq!(user1.art, user0.art);
+    assert_eq!(user2.art, user0.art);
     assert_eq!(user3.art, user0.art);
 
     debug!("User 0 leave the group ...");
     user0.leave_group(Some(StatusCode::OK)).await?;
+    user0.epoch -= 1;
 
     debug!("User 0 Fails to leave the second time ...");
-    user0.leave_group(Some(StatusCode::UNAUTHORIZED)).await?;
+    let mut tmp = user0.clone();
+    tmp.leave_group(Some(StatusCode::UNAUTHORIZED)).await?;
 
-    debug!("User 0 updates key, even if he is removed ...");
-    user0
+    debug!("User 0 fail to update key, as he is removed ...");
+    let mut tmp = user0.clone();
+    tmp
         .update_key(None, Some(StatusCode::UNAUTHORIZED))
         .await?;
 
@@ -514,26 +523,36 @@ async fn test_leave() -> eyre::Result<()> {
         .sp_frames;
     // let key_update = extract_branch_changes(&blank_user_0.pop().unwrap().frame.unwrap()).unwrap().unwrap();
     let leave_operation = UserTestModel::unwrap_operation(blank_user_0.pop().unwrap());
-    assert_eq!(
+    assert!(matches!(
         leave_operation,
-        Operation::LeaveGroup(user0.art.get_node_index().get_index()?)
-    );
+        Operation::LeaveGroup(_)
+    ));
 
-    assert_eq!(user1.art, user2.art);
-    user1.art.get_mut_node(&target_node_index)?.set_status(LeafStatus::PendingRemoval)?;
-    user2.art.get_mut_node(&target_node_index)?.set_status(LeafStatus::PendingRemoval);
-    user3.art.get_mut_node(&target_node_index)?.set_status(LeafStatus::PendingRemoval);
+    let leave_change = if let Operation::LeaveGroup(bytes) = leave_operation {
+        Some(BranchChanges::<CortadoAffine>::deserialize(&bytes)?)
+    } else {
+        None
+    }.unwrap();
+
+    user1.art.update_private_art(&leave_change)?;
+    user1.epoch += 1;
+
     debug!("User 1 blanks the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
 
     debug!("User 2 receive changes ...");
-    let blank_user_1 = user2
+    let changes = user2
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
-    user2.art.update_private_art(&blank_user_1[0]).unwrap();
-    user2.epoch += 1;
+
+    debug!("Changes received: {:?}", changes);
+
+    for change in &changes {
+        user2.art.update_private_art(change).unwrap();
+        user2.epoch += 1;
+    }
     // debug!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art, user1.art);
     assert_eq!(

@@ -8,9 +8,9 @@ use storage::{
 use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
-use zrt_art::traits::ARTPublicAPI;
-use zrt_art::types::{BranchChanges, BranchChangesType, LeafStatus, NodeIndex};
 use zrt_art::errors::ARTError;
+use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
+use zrt_art::types::{BranchChanges, BranchChangesType, LeafStatus, NodeIndex};
 
 use types::errors::ARTServiceError;
 use types::utils::decode_art;
@@ -60,18 +60,9 @@ impl ARTService {
 
         let mut art_record = self.get_initial_art(&id).await?;
 
-        // Apply all possible leaf operations on epoch 0.
-        let (_, leave_changes) = frame_storage.get_epoch_changes(id, 0).await?;
-        for node_index in leave_changes {
-            art_record.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
-        }
-
         // Apply other operations from remaining epochs.
         for i in 1..=epoch {
-            let (epoch_changes, leave_changes) = frame_storage.get_epoch_changes(id, i).await?;
-            for node_index in leave_changes {
-                art_record.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
-            }
+            let epoch_changes = frame_storage.get_epoch_changes(id, i).await?;
 
             match epoch_changes.len().cmp(&1) {
                 Ordering::Less => return Err(ARTServiceError::NotFound),
@@ -83,7 +74,8 @@ impl ARTService {
         art_record.epoch = epoch;
         debug!(
             "Successfully recomputed {} state of art. It has the next root PK: {}",
-            epoch, art_record.art.root.get_public_key()
+            epoch,
+            art_record.art.root.get_public_key()
         );
 
         Ok(art_record)
@@ -316,8 +308,9 @@ impl ARTService {
             art_record.epoch += 1;
 
             debug!(
-                "Updated art. New root PK is: {}",
-                &art_record.art.root.get_public_key()
+                "Updated art. New root PK is: {}, new epoch is: {}",
+                &art_record.art.root.get_public_key(),
+                art_record.epoch
             );
 
             arts_storage
@@ -373,12 +366,8 @@ impl ARTService {
         let frames_storage = MongoFramesStorage::get_existing_collection(id).await?;
 
         let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
-        let (mut target_changes, leave_changes) =
+        let mut target_changes =
             frames_storage.get_epoch_changes(id, new_epoch).await?;
-
-        for node_index in leave_changes {
-            latest_art.art.get_mut_node(&node_index)?.set_status(LeafStatus::PendingRemoval)?;
-        }
 
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
 

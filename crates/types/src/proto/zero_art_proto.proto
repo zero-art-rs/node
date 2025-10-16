@@ -5,19 +5,29 @@ import "google/protobuf/timestamp.proto";
 package zero_art_proto;
 
 enum Role {
-  READ = 0; // only read permission
+	READ = 0; // only read permission
 	WRITE = 1; // only write
 	OWNERSHIP = 2; // owner
 	ADMIN = 3; // administrator
 }
 
+enum Status {
+	ACTIVE = 0; // user accept invite and in group
+	INVITED = 1; // user invited to group
+	LEFT = 2; // user want to leave from group
+	PENDING_REMOVAL = 3; // user already deleted from group, but pending to others confirm his removal
+}
+
 // User definition
 message User {
-  string id = 1; // actor id
-  string name = 2; // user name
-  bytes public_key = 3; // user identity public key
-  bytes picture = 4; // user picture
-  Role role = 5; // user role
+	string id = 1; // actor id
+	string name = 2; // user name
+	bytes public_key = 3; // user identity public key
+	bytes picture = 4; // user picture
+	Role role = 5; // user role
+	bytes leaf_key = 10; // user leaf public key
+
+	Status status = 11; // user status
 }
 
 enum ContentAttachmentType {
@@ -52,11 +62,11 @@ message ChatPayload {
 }
 
 message GroupInfo {
-  string id = 1; // document id
-  string name = 2; // document name
-  google.protobuf.Timestamp created = 3; // document creation time
-  bytes picture = 4;
-  repeated User members = 10; // membership list of document
+	string id = 1; // document id
+	string name = 2; // document name
+	google.protobuf.Timestamp created = 3; // document creation time
+	bytes picture = 4;
+	repeated User members = 10; // membership list of document
 }
 
 // Protected (could be visible only inside group) group actions
@@ -68,21 +78,28 @@ message GroupActionPayload {
 	  User join_group = 4; // join group action
 	  User change_user = 5; // user changes they metadata
 	  GroupInfo change_group = 6; // group metadata change
-	  User leave_group = 7; // member leaves group
+	  User leave_group = 7; // member leafs group
 	  User finalize_removal = 8; // finalize removal of a member
 	  // TODO: add accusations
   }
 }
 
+// vector of Payloads
+message Payloads {
+	repeated Payload payloads = 1;
+}
+
 // Payload wrapper
 message Payload {
-  oneof content {
-    CRDTPayload crdt = 1;
-    ChatPayload chat = 2;
+	reserved 10;
 
-    // TODO: consider adding new payload types: message, media file, etc
-    GroupActionPayload action = 10;
-  }
+	oneof content {
+		CRDTPayload crdt = 1;
+		ChatPayload chat = 2;
+		
+		// TODO: consider adding new payload types: message, media file, etc
+		// GroupActionPayload action = 10;
+	}
 }
 
 // High level group operation visible by SP
@@ -92,8 +109,9 @@ message GroupOperation {
 		bytes add_member = 2; // branch_changes
 		bytes remove_member = 3; // branch_changes
 		bytes key_update = 4; // branch_changes
-		uint64 leave_group = 5; // null
+		bytes leave_group = 5; // branch_changes
 		bytes drop_group = 10; // challenge
+		bytes aggregated = 11; // aggregated group operation (combination of add_member, remove_member and key_update operations) 
 	}
 }
 
@@ -101,14 +119,14 @@ message FrameTBS {
 	string group_id = 1; // group identifier
 	uint64 epoch = 2; // epoch number
 	bytes nonce = 3; // random 16b nonce for replay attack protection
-  GroupOperation group_operation = 5; // group operation
-  bytes protected_payload = 6; // encrypted ProtectedPayload message
+	GroupOperation group_operation = 5; // group operation
+	bytes protected_payload = 6; // encrypted ProtectedPayload message
 }
 
 // main transport layer frame [client] -> [SP]
 message Frame {
-  FrameTBS frame = 1; // frame data included in proof transcript
-  bytes proof = 9; // proof of group_operation with included context of frame
+	FrameTBS frame = 1; // frame data included in proof transcript
+	bytes proof = 9; // proof of group_operation with included context of frame
 }
 
 // transport layer frame [SP] -> [client]
@@ -124,23 +142,25 @@ message SPFrames {
 }
 
 message ProtectedPayloadTBS {
-	uint64 seq_num = 1; // internal sequence number of message (might not be equal to SPFrame.seq_num)
-  oneof sender {
-	  string user_id = 2; // user identifier (User.id)
-	  string leaf_id = 3; // leaf identifier (masking user real identity)
-	  // null if user wants to post in anonymous mode
-  }
-  google.protobuf.Timestamp created = 4;
-  repeated Payload payload = 5;
+	reserved 5;
 
-  // GroupActionPayload group_action = 6;
-  // bytes content = 7;
+	uint64 seq_num = 1; // internal sequence number of message (might not be equal to SPFrame.seq_num)
+	oneof sender {
+		string user_id = 2; // user identifier (User.id)
+		string leaf_id = 3; // leaf identifier (masking user real identity)
+		// null if user wants to post in anonymous mode
+	}
+	google.protobuf.Timestamp created = 4;
+	// repeated Payload payload = 5;
+  
+  	repeated GroupActionPayload group_actions = 10; // changes to group info and members
+  	bytes content = 11; // application layer data
 }
 
 // protected application layer message(decrypted Frame.protected_payload)
 message ProtectedPayload {
 	ProtectedPayloadTBS payload = 1;
-  bytes signature = 9; // signature of payload using method defined in ProtectedPayloadTBS.sender field
+  	bytes signature = 9; // signature of payload using method defined in ProtectedPayloadTBS.sender field
 }
 
 // auxiliary protected invite data
