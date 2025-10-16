@@ -488,6 +488,7 @@ async fn test_leave() -> eyre::Result<()> {
         user0.art.public_key_of(&user0.art.get_secret_key())
     );
 
+    let target_node_index = user0.art.get_node_index().clone();
     let target_node_path = user0.art.get_node_index().get_path().unwrap();
 
     // sanity check
@@ -519,9 +520,9 @@ async fn test_leave() -> eyre::Result<()> {
     );
 
     assert_eq!(user1.art, user2.art);
-    user1.art.get_mut_node(user0.art.get_node_index())?.set_status(LeafStatus::Blank);
-    user2.art.get_mut_node(user0.art.get_node_index())?.set_status(LeafStatus::Blank);
-    user3.art.get_mut_node(user1.art.get_node_index())?.set_status(LeafStatus::Blank);
+    user1.art.get_mut_node(&target_node_index)?.set_status(LeafStatus::PendingRemoval)?;
+    user2.art.get_mut_node(&target_node_index)?.set_status(LeafStatus::PendingRemoval);
+    user3.art.get_mut_node(&target_node_index)?.set_status(LeafStatus::PendingRemoval);
     debug!("User 1 blanks the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))

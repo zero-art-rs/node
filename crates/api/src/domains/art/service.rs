@@ -287,7 +287,7 @@ impl ARTService {
         art_record
             .art
             .get_mut_node(&NodeIndex::from(index))?
-            .set_status(LeafStatus::Blank)?;
+            .set_status(LeafStatus::PendingRemoval)?;
 
         debug!("User with index {index} marked himself as removed.",);
         arts_storage.replace_art(id, art_record).await?;
