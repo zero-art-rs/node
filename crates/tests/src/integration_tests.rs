@@ -20,7 +20,7 @@ use types::protos;
 use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
 use types::utils::extract_branch_changes;
 use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{BranchChanges, LeafStatus, PrivateART, PublicART};
+use zrt_art::types::{BranchChanges, LeafStatus, PrivateART, PublicArt};
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]

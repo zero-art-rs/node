@@ -32,9 +32,9 @@ use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_art::traits::ARTPublicView;
 use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
 use zrt_art::{
-    errors::ARTError,
+    errors::ArtError,
     traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
-    types::{PrivateART, PublicART},
+    types::{PrivateART, PublicArt},
 };
 use zrt_crypto::schnorr::{sign, verify};
 use zrt_zk::art::{art_prove, art_verify};
@@ -58,7 +58,7 @@ pub enum UserTestModelError {
 fn get_co_path_values(
     art: &PrivateART<CortadoAffine>,
     index: &NodeIndex,
-) -> Result<Vec<CortadoAffine>, ARTError> {
+) -> Result<Vec<CortadoAffine>, ArtError> {
     let mut co_path_values = Vec::new();
 
     let mut parent = art.get_root();
@@ -106,7 +106,7 @@ impl UserTestModel {
         // Create new_group for testing
         let (response, init_message) = user
             .create_new_chat(
-                PublicART::new_art_from_secrets(&user.initial_secrets, &CortadoAffine::generator())
+                PublicArt::new_art_from_secrets(&user.initial_secrets, &CortadoAffine::generator())
                     .unwrap()
                     .0,
                 owner_id_key,
@@ -118,14 +118,14 @@ impl UserTestModel {
         (user, init_message)
     }
 
-    pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ARTError> {
+    pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ArtError> {
         Ok(NodeIndex::from(self.art.get_path_to_leaf(
             &self.art.public_key_of(&self.initial_secrets[member_id]),
         )?))
     }
 
     /// Clone this uses, and change this user secret key to the different one
-    pub fn derive_new(&self, index: usize) -> Result<Self, ARTError> {
+    pub fn derive_new(&self, index: usize) -> Result<Self, ArtError> {
         let art =
             PrivateART::from_public_art_and_secret(self.art.clone(), self.initial_secrets[index])?;
 
@@ -145,7 +145,7 @@ impl UserTestModel {
 
     pub async fn create_new_chat(
         &self,
-        art: PublicART<CortadoAffine>,
+        art: PublicArt<CortadoAffine>,
         sk: Fr,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let pk = art.public_key_of(&sk);
@@ -515,7 +515,7 @@ impl UserTestModel {
         epoch: u64,
         secret_key_to_use: Option<Fr>,
         proof_mode: String,
-    ) -> eyre::Result<PublicART<CortadoAffine>> {
+    ) -> eyre::Result<PublicArt<CortadoAffine>> {
         // Get challenge for proof
         let challenge = self.get_challenge().await?;
 
@@ -563,7 +563,7 @@ impl UserTestModel {
 
         assert_eq!(get_art_response.status(), StatusCode::OK);
 
-        let received_art = PublicART::<CortadoAffine>::deserialize(
+        let received_art = PublicArt::<CortadoAffine>::deserialize(
             &get_art_response.json::<GetARTResponse>().await?.art,
         )?;
 

@@ -3,7 +3,7 @@ use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
 use eyre::Report;
 use tracing::{debug, error};
-use zrt_art::errors::ARTError;
+use zrt_art::errors::ArtError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
@@ -12,7 +12,7 @@ pub enum VerificationError {
     #[error("Invalid input Provided")]
     InvalidInput,
     #[error("Failed to use zrt_art {0}")]
-    ArtError(#[from] ARTError),
+    ArtError(#[from] ArtError),
     #[error("ARTServiceError error: {0}")]
     ArtServiceError(#[from] ARTServiceError),
     #[error("Missing query string")]
@@ -51,6 +51,8 @@ pub enum VerificationError {
     UnsupportedAggregation,
     #[error("Can't remove the same user several times at the same epoch.")]
     MergeUserRemove,
+    #[error("Can't remove the same user several times at the same epoch.")]
+    Postcard(#[from] postcard::Error),
 }
 
 impl From<MessageServiceError> for VerificationError {

@@ -1,6 +1,6 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
-use zrt_art::errors::ARTError;
+use zrt_art::errors::ArtError;
 
 use crate::errors::{ARTServiceError, MessageServiceError, ServiceError};
 use serde_json::json;
@@ -37,8 +37,8 @@ impl From<ark_serialize::SerializationError> for ApiError {
     }
 }
 
-impl From<ARTError> for ApiError {
-    fn from(value: ARTError) -> Self {
+impl From<ArtError> for ApiError {
+    fn from(value: ArtError) -> Self {
         Self::InternalServerError(value.to_string())
     }
 }

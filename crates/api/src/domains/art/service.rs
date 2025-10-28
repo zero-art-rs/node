@@ -8,14 +8,17 @@ use storage::{
 use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
-use zrt_art::errors::ARTError;
-use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{BranchChanges, BranchChangesType, LeafStatus, NodeIndex};
+use zrt_art::errors::ArtError;
 
 use types::errors::ARTServiceError;
 use types::utils::decode_art;
 
 use mongodb::ClientSession;
+use zrt_art::art::art_node::LeafStatus;
+use zrt_art::changes::ApplicableChange;
+use zrt_art::changes::branch_change::{BranchChange, BranchChangeType, MergeBranchChange};
+use zrt_art::node_index::NodeIndex;
+use zrt_art::TreeMethods;
 
 pub struct ARTService {}
 
@@ -66,8 +69,11 @@ impl ARTService {
 
             match epoch_changes.len().cmp(&1) {
                 Ordering::Less => return Err(ARTServiceError::NotFound),
-                Ordering::Equal => art_record.art.update_public_art(&epoch_changes[0])?,
-                Ordering::Greater => art_record.art.merge_all(&epoch_changes)?,
+                Ordering::Equal => epoch_changes[0].update(&mut art_record.art)?,
+                Ordering::Greater => {
+                    let merge_all_change = MergeBranchChange::new_for_observer(epoch_changes.clone());
+                    merge_all_change.update(&mut art_record.art)?
+                },
             }
         }
 
@@ -75,7 +81,7 @@ impl ARTService {
         debug!(
             "Successfully recomputed {} state of art. It has the next root PK: {}",
             epoch,
-            art_record.art.root.get_public_key()
+            art_record.art.get_root().get_public_key()
         );
 
         Ok(art_record)
@@ -129,7 +135,7 @@ impl ARTService {
         }
 
         for change in &changes {
-            initial_art.update_public_art(change)?;
+            change.update(&mut initial_art)?;
         }
 
         debug!("Successfully recomputed {} state of art", epoch);
@@ -244,14 +250,14 @@ impl ARTService {
     pub async fn update_art(
         &self,
         id: Uuid,
-        changes: &BranchChanges<ARTGroup>,
+        changes: &BranchChange<ARTGroup>,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
 
         let latest_art = arts_storage.get_art(id).await?;
         if latest_art.is_private {
             match changes.change_type {
-                BranchChangesType::UpdateKey => {}
+                BranchChangeType::UpdateKey => {}
                 _ => return Err(ARTServiceError::InvalidChangeType),
             }
         }
@@ -273,24 +279,10 @@ impl ARTService {
         Ok(())
     }
 
-    pub async fn mark_as_removed(&self, id: Uuid, index: u64) -> Result<(), ARTServiceError> {
-        let arts_storage = MongoARTStorage::get_existing_storage().await?;
-        let mut art_record = arts_storage.get_art(id).await?;
-        art_record
-            .art
-            .get_mut_node(&NodeIndex::from(index))?
-            .set_status(LeafStatus::PendingRemoval)?;
-
-        debug!("User with index {index} marked himself as removed.",);
-        arts_storage.replace_art(id, art_record).await?;
-
-        Ok(())
-    }
-
     pub async fn update_art_in_session(
         &self,
         session: &mut ClientSession,
-        changes: BranchChanges<ARTGroup>,
+        changes: BranchChange<ARTGroup>,
         id: Uuid,
     ) -> Result<(), ARTServiceError> {
         let filter = doc! { "chat_id": id };
@@ -303,13 +295,13 @@ impl ARTService {
             .find_one(filter.clone())
             .await?
         {
-            art_record.art.update_public_art(&changes)?;
+            changes.update(&mut art_record.art)?;
 
             art_record.epoch += 1;
 
             debug!(
                 "Updated art. New root PK is: {}, new epoch is: {}",
-                &art_record.art.root.get_public_key(),
+                &art_record.art.get_root().get_public_key(),
                 art_record.epoch
             );
 
@@ -329,20 +321,20 @@ impl ARTService {
     pub fn check_if_can_merge(
         &self,
         art_record: &ARTRecord<CortadoAffine>,
-        change: &BranchChanges<CortadoAffine>,
-        applied_changes: &Vec<BranchChanges<CortadoAffine>>,
+        change: &BranchChange<CortadoAffine>,
+        applied_changes: &Vec<BranchChange<CortadoAffine>>,
     ) -> Result<(), ARTServiceError> {
         if art_record.is_private {
             match change.change_type {
-                BranchChangesType::UpdateKey => {}
+                BranchChangeType::UpdateKey => {}
                 _ => return Err(ARTServiceError::InvalidChangeType),
             }
         }
 
-        if let BranchChangesType::AppendNode = &change.change_type {
+        if let BranchChangeType::AddMember = &change.change_type {
             let mut there_was_add_member = false;
             for applied_change in applied_changes {
-                if let BranchChangesType::AppendNode = applied_change.change_type {
+                if let BranchChangeType::AddMember = applied_change.change_type {
                     there_was_add_member = true;
                     break;
                 }
@@ -359,7 +351,7 @@ impl ARTService {
     pub async fn merge_change(
         &self,
         id: Uuid,
-        change: BranchChanges<CortadoAffine>,
+        change: BranchChange<CortadoAffine>,
         new_epoch: u64,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
@@ -372,12 +364,13 @@ impl ARTService {
         self.check_if_can_merge(&latest_art, &change, &target_changes)?;
 
         target_changes.push(change);
-        latest_art.art.merge_all(&target_changes)?;
+        let merge_all_change = MergeBranchChange::new_for_observer(target_changes.clone());
+        merge_all_change.update(&mut latest_art.art)?;
         latest_art.epoch = new_epoch;
 
         debug!(
             "Finished to merge art. New root PK is: {}",
-            latest_art.art.root.get_public_key()
+            latest_art.art.get_root().get_public_key()
         );
 
         arts_storage.replace_art(id, latest_art).await?;

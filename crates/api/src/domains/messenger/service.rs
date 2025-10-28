@@ -9,7 +9,7 @@ use types::{
     protos::{Frame, SpFrame, SpFrames},
 };
 use uuid::Uuid;
-use zrt_art::types::BranchChangesType;
+use zrt_art::changes::branch_change::BranchChangeType;
 
 pub struct MessengerService {}
 
@@ -116,7 +116,7 @@ impl MessengerService {
         let changes = frame_storage.get_epoch_changes(id, epoch).await?;
 
         for applied_change in &changes {
-            if let BranchChangesType::AppendNode = applied_change.change_type {
+            if let BranchChangeType::AddMember = applied_change.change_type {
                 return Ok(true);
             }
         }

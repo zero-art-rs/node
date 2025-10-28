@@ -1,14 +1,27 @@
 use callbacks::{CallbackSender, CallbackWrapper};
 use cortado::CortadoAffine;
+use zrt_art::art::art_types::PublicZeroArt;
+use zrt_art::changes::branch_change::{BranchChange, VerifiableBranchChange};
+use zrt_art::changes::VerifiableChange;
+use zrt_zk::EligibilityRequirement;
 
-#[derive(Debug, Clone)]
 pub enum ProofVerifierMessage {
+    // ArtUpdate {
+    //     associated_data: Vec<u8>,
+    //     aux_public_keys: Vec<CortadoAffine>,
+    //     path: Vec<CortadoAffine>,
+    //     co_path: Vec<CortadoAffine>,
+    //     proof: Vec<u8>,
+    // },
     ArtUpdate {
+        change: VerifiableBranchChange,
+        art: PublicZeroArt,
         associated_data: Vec<u8>,
-        aux_public_keys: Vec<CortadoAffine>,
-        path: Vec<CortadoAffine>,
-        co_path: Vec<CortadoAffine>,
-        proof: Vec<u8>,
+        eligibility_requirement: EligibilityRequirement,
+        // aux_public_keys: Vec<CortadoAffine>,
+        // path: Vec<CortadoAffine>,
+        // co_path: Vec<CortadoAffine>,
+        // proof: Vec<u8>,
     },
     SchnorrSignature {
         signature: Vec<u8>,

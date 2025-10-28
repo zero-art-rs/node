@@ -1,9 +1,7 @@
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
-use ark_serialize::CanonicalDeserialize;
 use bulletproofs::PedersenGens;
 use cortado::{ALT_GENERATOR_X, ALT_GENERATOR_Y, CortadoAffine};
 use tokio::sync::mpsc;
-use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use types::callback_wrappers::{
@@ -11,8 +9,9 @@ use types::callback_wrappers::{
 };
 use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
+use zrt_art::changes::VerifiableChange;
 use zrt_crypto::schnorr;
-use zrt_zk::art::{ARTProof, art_verify};
+use zrt_zk::art::{art_verify};
 
 pub mod verifier_engine;
 
@@ -57,15 +56,21 @@ impl ProofVerifier {
         let (event, callback) = event.inner_owned();
 
         let result = match event {
-            ProofVerifierMessage::ArtUpdate {
-                associated_data,
-                aux_public_keys,
-                path,
-                co_path,
-                proof,
-            } => {
-                self.verify_art_update_proof(associated_data, aux_public_keys, path, co_path, proof)
-                    .await
+            // ProofVerifierMessage::ArtUpdate {
+            //     associated_data,
+            //     aux_public_keys,
+            //     path,
+            //     co_path,
+            //     proof,
+            // } => {
+            //     self.verify_art_update_proof(associated_data, aux_public_keys, path, co_path, proof)
+            //         .await
+            // }
+            ProofVerifierMessage::ArtUpdate { change, art, associated_data, eligibility_requirement } => {
+                match change.verify(&art, &associated_data, eligibility_requirement) {
+                    Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
+                    Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false })
+                }
             }
             ProofVerifierMessage::SchnorrSignature {
                 signature,
@@ -84,32 +89,6 @@ impl ProofVerifier {
         }
 
         Ok(())
-    }
-
-    async fn verify_art_update_proof(
-        &self,
-        associated_data: Vec<u8>,
-        aux_public_keys: Vec<CortadoAffine>,
-        path: Vec<CortadoAffine>,
-        co_path: Vec<CortadoAffine>,
-        proof: Vec<u8>,
-    ) -> eyre::Result<ProofVerifierResult> {
-        let verification_result = art_verify(
-            get_pedersen_basis(),
-            associated_data.as_slice(),
-            aux_public_keys,
-            path,
-            co_path,
-            ARTProof::deserialize_compressed(proof.reader())?,
-        );
-
-        match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
-            Err(e) => {
-                error!("Failed to verify art update proof: {}", e);
-                Ok(ProofVerifierResult::ArtUpdate { verdict: false })
-            }
-        }
     }
 
     async fn verify_schnorr_signature(

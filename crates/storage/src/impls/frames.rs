@@ -10,13 +10,12 @@ use mongodb::{
 };
 use prost::Message;
 use tracing::debug;
-use types::errors::ARTServiceError;
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
 use types::utils::decode_branch_changes;
 use types::FrameRecord;
 use uuid::Uuid;
-use zrt_art::types::{BranchChanges, BranchChangesType, NodeIndex};
+use zrt_art::changes::branch_change::BranchChange;
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
@@ -182,7 +181,7 @@ impl FrameStorage for MongoFramesStorage {
 
     fn extract_branch_change(
         messages: &FrameRecord,
-    ) -> Result<Option<BranchChanges<CortadoAffine>>, StorageError> {
+    ) -> Result<Option<BranchChange<CortadoAffine>>, StorageError> {
         let mut buf = BytesMut::new();
         buf.put(messages.content.as_slice());
         let frame = Frame::decode(buf)?;
@@ -212,7 +211,7 @@ impl FrameStorage for MongoFramesStorage {
         &self,
         id: Uuid,
         epoch: u64,
-    ) -> Result<Vec<BranchChanges<CortadoAffine>>, StorageError> {
+    ) -> Result<Vec<BranchChange<CortadoAffine>>, StorageError> {
         let limit = types::DEFAULT_LIMIT;
         let mut skip = 0;
 

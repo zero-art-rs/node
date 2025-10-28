@@ -25,8 +25,12 @@ use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
-use zrt_art::traits::{ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{BranchChanges, BranchChangesType, Direction, LeafIter, LeafStatus, NodeIndex};
+use zrt_art::art::art_node::{LeafIter, LeafStatus};
+use zrt_art::art::art_types::{PrivateZeroArt, PublicZeroArt};
+use zrt_art::changes::branch_change::{BranchChange, BranchChangeType, VerifiableBranchChange};
+use zrt_art::node_index::{NodeIndex, Direction};
+use zrt_art::TreeMethods;
+use zrt_zk::EligibilityRequirement;
 
 /// Handle authentication request verification.
 pub async fn authenticate(
@@ -72,7 +76,7 @@ pub async fn authenticate(
             public_inputs: PublicInputs::Signature {
                 public_keys: root_keys,
             },
-            context: Sha3_256::digest(auth_request.challenge).to_vec(),
+            associated_data: Sha3_256::digest(auth_request.challenge).to_vec(),
         },
     };
 
@@ -123,9 +127,9 @@ pub async fn list_messages(
         data: VerifierData {
             proof: payload.signature.clone(),
             public_inputs: PublicInputs::Signature {
-                public_keys: vec![art.root.get_public_key()],
+                public_keys: vec![art.get_root().get_public_key()],
             },
-            context: msg,
+            associated_data: msg,
         },
     };
 
@@ -210,7 +214,7 @@ pub async fn get_art(
             public_inputs: PublicInputs::Signature {
                 public_keys: vec![public_key],
             },
-            context: msg,
+            associated_data: msg,
         },
     };
 
@@ -300,7 +304,7 @@ pub async fn send_frame(
         data: VerifierData {
             proof: frame.proof,
             public_inputs,
-            context: associated_data,
+            associated_data: associated_data,
         },
     };
 
@@ -403,22 +407,20 @@ pub async fn get_opcode_and_input_for_art_update(
     branch_changes_bytes: &Vec<u8>,
     epoch: u64,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let branch_changes =
-        BranchChanges::<CortadoAffine>::deserialize(branch_changes_bytes.as_slice())?;
+    let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
     let art = state.art_service.get_art(id, Some(epoch)).await?.art;
-    let verification_artefacts = art.compute_artefacts_for_verification(&branch_changes)?;
 
-    if matches!(branch_changes.change_type, BranchChangesType::Leave)
-        || matches!(branch_changes.change_type, BranchChangesType::MakeBlank)
+    if matches!(branch_changes.change_type, BranchChangeType::Leave)
+        || matches!(branch_changes.change_type, BranchChangeType::RemoveMember)
     {
         let frame_storage = MongoFramesStorage::new(&id).await?;
         let epoch_changes = frame_storage.get_epoch_changes(id, epoch + 1).await?;
 
         for change in epoch_changes {
             if change.node_index.as_index()? == branch_changes.node_index.as_index()? {
-                if matches!(change.change_type, BranchChangesType::Leave)
-                    || matches!(change.change_type, BranchChangesType::MakeBlank)
+                if matches!(change.change_type, BranchChangeType::Leave)
+                    || matches!(change.change_type, BranchChangeType::RemoveMember)
                 {
                     return Err(VerificationError::MergeUserRemove)
                 }
@@ -427,8 +429,8 @@ pub async fn get_opcode_and_input_for_art_update(
 
     }
 
-    let (opcode, aux_public_keys) = match branch_changes.change_type {
-        BranchChangesType::UpdateKey => {
+    let (opcode, eligibility_requirement) = match branch_changes.change_type {
+        BranchChangeType::UpdateKey => {
             let leaf = art.get_node(&branch_changes.node_index)?;
             if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
@@ -436,10 +438,10 @@ pub async fn get_opcode_and_input_for_art_update(
 
             (
                 VerificationOpcode::KeyUpdate,
-                vec![art.get_node(&branch_changes.node_index)?.get_public_key()],
+                EligibilityRequirement::Member(art.get_node(&branch_changes.node_index)?.get_public_key())
             )
         }
-        BranchChangesType::Leave => {
+        BranchChangeType::Leave => {
             let leaf = art.get_node(&branch_changes.node_index)?;
             if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
@@ -447,35 +449,46 @@ pub async fn get_opcode_and_input_for_art_update(
 
             (
                 VerificationOpcode::LeaveGroup,
-                vec![art.get_node(&branch_changes.node_index)?.get_public_key()],
+                EligibilityRequirement::Member(art.get_node(&branch_changes.node_index)?.get_public_key()),
             )
         }
-        BranchChangesType::AppendNode => (
+        BranchChangeType::AddMember => (
             VerificationOpcode::AddMember,
-            vec![get_left_most_leaf_public_key(state, id).await?],
+            // vec![get_left_most_leaf_public_key(state, id).await?],
+            EligibilityRequirement::Previleged((
+                get_left_most_leaf_public_key(state, id).await?,
+                vec![]
+            ))
         ),
-        BranchChangesType::MakeBlank => {
-            let aux_public_key = match art.get_node(&branch_changes.node_index)?.is_active() {
-                false => {
-                    debug!("Using art.root.public_key for verification");
-                    art.root.get_public_key()
-                }
-                true => {
-                    debug!("Using get_left_most_leaf_public_key for verification");
-                    get_left_most_leaf_public_key(state, id).await?
-                }
+        BranchChangeType::RemoveMember => {
+            let target_leaf = art.get_node(&branch_changes.node_index)?;
+
+            if !target_leaf.is_leaf() {
+                error!("Target leaf for removal is not a leaf.");
+                return Err(VerificationError::InvalidInput);
+            }
+
+            let aux_public_key = if matches!(target_leaf.get_status(), Some(LeafStatus::Active)) {
+                debug!("Using left most leaf public key for verification");
+                EligibilityRequirement::Previleged((
+                    get_left_most_leaf_public_key(state, id).await?,
+                    vec![]
+                ))
+            } else {
+                debug!("Using art.root.public_key for verification");
+                EligibilityRequirement::Member(art.get_root().get_public_key())
             };
 
-            (VerificationOpcode::RemoveMember, vec![aux_public_key])
+            (VerificationOpcode::RemoveMember, aux_public_key)
         }
     };
 
     Ok((
         opcode,
         PublicInputs::ArtUpdateInput {
-            aux_public_keys,
-            path: verification_artefacts.path,
-            co_path: verification_artefacts.co_path,
+            change: branch_changes,
+            art: PublicZeroArt::new(art),
+            eligibility_requirement,
         },
     ))
 }
@@ -486,8 +499,8 @@ pub async fn get_left_most_leaf_public_key(
 ) -> Result<CortadoAffine, VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = art.root.as_ref();
-    while let Ok(node) = left_most_leaf.get_left() {
+    let mut left_most_leaf = art.get_root();
+    while let Some(node) = left_most_leaf.get_child(Direction::Left) {
         left_most_leaf = node;
     }
 
@@ -500,9 +513,9 @@ pub async fn get_opcode_and_input_for_drop_group(
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = art.root.as_ref();
+    let mut left_most_leaf = art.get_root();
     let mut path = Vec::new();
-    while let Ok(node) = left_most_leaf.get_left() {
+    while let Some(node) = left_most_leaf.get_child(Direction::Left) {
         path.push(Direction::Left);
         left_most_leaf = node;
     }
@@ -529,7 +542,7 @@ pub async fn get_opcode_and_input_for_send_message(
     Ok((
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
-            public_keys: vec![art.root.get_public_key()],
+            public_keys: vec![art.get_root().get_public_key()],
         },
     ))
 }

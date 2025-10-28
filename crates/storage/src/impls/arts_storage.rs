@@ -5,12 +5,13 @@ use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Index
 use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::errors::ARTError;
-use zrt_art::types::{ARTNode, NodeIndex};
-use zrt_art::{
-    traits::ARTPublicAPI,
-    types::{BranchChanges, PublicART},
-};
+use zrt_art::errors::ArtError;
+use zrt_art::art::art_node::ArtNode;
+use zrt_art::art::art_types::PublicArt;
+use zrt_art::changes::ApplicableChange;
+use zrt_art::changes::branch_change::BranchChange;
+use zrt_art::node_index::NodeIndex;
+use zrt_art::TreeMethods;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
 pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";
@@ -68,7 +69,7 @@ impl ARTStorage for MongoARTStorage {
     async fn new_chat(
         &self,
         session: &mut ClientSession,
-        art: PublicART<CortadoAffine>,
+        art: PublicArt<CortadoAffine>,
         chat_id: Uuid,
         is_private: bool,
     ) -> Result<(), mongodb::error::Error> {
@@ -151,14 +152,14 @@ impl ARTStorage for MongoARTStorage {
 
     async fn update_art(
         &self,
-        changes: BranchChanges<CortadoAffine>,
+        changes: BranchChange<CortadoAffine>,
         chat_id: Uuid,
     ) -> Result<(), StorageError> {
         let filter = doc! { "chat_id": chat_id };
 
         debug!("Updating art for chat: {}", chat_id);
         if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
-            art_record.art.update_public_art(&changes)?;
+            changes.update(&mut art_record.art)?;
 
             self.arts_collection
                 .find_one_and_replace(filter, art_record)
@@ -211,8 +212,8 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
         match art.art.get_mut_node(&NodeIndex::Index(node_index))? {
-            ARTNode::Leaf { metadata, .. } => *metadata = new_metadata,
-            ARTNode::Internal { .. } => return Err(StorageError::ARTError(ARTError::NonLeafNode)),
+            ArtNode::Leaf { metadata, .. } => *metadata = new_metadata,
+            ArtNode::Internal { .. } => return Err(StorageError::ArtError(ArtError::LeafOnly)),
         }
 
         self.replace_art(chat_id, art).await?;

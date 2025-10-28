@@ -16,7 +16,7 @@ use types::protos::Frame;
 use types::protos::group_operation::Operation;
 use types::utils::decode_branch_changes;
 use uuid::Uuid;
-use zrt_art::types::BranchChangesType;
+use zrt_art::changes::branch_change::BranchChangeType;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
@@ -125,17 +125,6 @@ impl Container {
         Ok(response)
     }
 
-    /// Marks the node with `index` as removed.
-    pub async fn handle_self_removal(
-        &self,
-        id: Uuid,
-        index: u64,
-    ) -> Result<StatusCode, ServiceError> {
-        self.art_service.mark_as_removed(id, index).await?;
-
-        Ok(StatusCode::OK)
-    }
-
     pub async fn update_art(
         &self,
         id: Uuid,
@@ -162,10 +151,10 @@ impl Container {
         }
 
         match branch_changes.change_type {
-            BranchChangesType::UpdateKey => Ok(StatusCode::OK),
-            BranchChangesType::AppendNode => Ok(StatusCode::OK),
-            BranchChangesType::MakeBlank => Ok(StatusCode::NO_CONTENT),
-            BranchChangesType::Leave => Ok(StatusCode::OK),
+            BranchChangeType::UpdateKey => Ok(StatusCode::OK),
+            BranchChangeType::AddMember => Ok(StatusCode::OK),
+            BranchChangeType::RemoveMember => Ok(StatusCode::NO_CONTENT),
+            BranchChangeType::Leave => Ok(StatusCode::OK),
         }
     }
 

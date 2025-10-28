@@ -63,10 +63,10 @@ eventsource-stream = { version = "0.2.3" }
 futures = { version = "0.3.31" }
 reqwest = { version = "0.12.23" }
 zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
-zrt-zk = { git = "https://github.com/zero-art-rs/core.git" }
-zrt-art = { git = "https://github.com/zero-art-rs/core.git" }
-zrt-crypto = { git = "https://github.com/zero-art-rs/core.git" }
-cortado = { git = "https://github.com/zero-art-rs/core.git" }
+zrt-zk = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/zrt-art-refactor" }
+zrt-art = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/zrt-art-refactor" }
+zrt-crypto = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/zrt-art-refactor" }
+cortado = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/zrt-art-refactor" }
 bulletproofs = { version = "5.0.0", git="https://github.com/zero-art-rs/bulletproofs", features=["yoloproofs"] }
 
 [workspace.lints.rust]

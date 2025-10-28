@@ -1,5 +1,5 @@
 use crate::errors::StorageError;
-use zrt_art::errors::{ARTError, ARTNodeError};
+use zrt_art::errors::ArtError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ARTServiceError {
@@ -24,15 +24,9 @@ pub enum ARTServiceError {
     #[error("Failed to initiate new session")]
     SessionInitiation,
     #[error("Failed to use zrt_art {0}")]
-    ArtError(#[from] ARTError),
+    ArtError(#[from] ArtError),
     #[error("No previous record found")]
     NoPreviousRecord,
     #[error("Failed to decode payload: {0}")]
     DecodeError(#[from] prost::DecodeError),
-}
-
-impl From<ARTNodeError> for ARTServiceError {
-    fn from(err: ARTNodeError) -> Self {
-        Self::from(ARTError::from(err))
-    }
 }
