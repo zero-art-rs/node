@@ -6,13 +6,12 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::{
     UniformRand,
     rand::prelude::StdRng,
-    rand::{SeedableRng, thread_rng},
+    rand::{SeedableRng},
 };
 use axum::body::Bytes;
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
 use cortado::{CortadoAffine, Fr};
-use curve25519_dalek::Scalar;
 use prost::Message;
 use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
@@ -26,23 +25,21 @@ use types::{
     protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation},
     utils::extract_branch_changes,
 };
-use utoipa::openapi::request_body::RequestBody;
 use uuid::Uuid;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use zrt_art::traits::ARTPublicView;
-use zrt_art::types::{BranchChanges, Direction, NodeIndex, ProverArtefacts};
-use zrt_art::{
-    errors::ArtError,
-    traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI},
-    types::{PrivateART, PublicArt},
-};
+use zrt_art::{errors::ArtError, TreeMethods};
+use zrt_art::art::art_types::{PrivateArt, PrivateZeroArt, PublicArt};
+use zrt_art::art::{ArtAdvancedOps};
+use zrt_art::changes::branch_change::BranchChange;
+use zrt_art::changes::ProvableChange;
+use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_crypto::schnorr::{sign, verify};
-use zrt_zk::art::{art_prove, art_verify};
+use zrt_zk::EligibilityRequirement;
 
 #[derive(Clone, Debug)]
 pub struct UserTestModel {
     pub client: reqwest::Client,
-    pub art: PrivateART<CortadoAffine>,
+    pub art: PrivateArt<CortadoAffine>,
     pub initial_secrets: Vec<Fr>,
     pub chat_uuid: Uuid,
     pub epoch: u64,
@@ -55,22 +52,6 @@ pub enum UserTestModelError {
     WrongStatusCode { got: String, expected: String },
 }
 
-fn get_co_path_values(
-    art: &PrivateART<CortadoAffine>,
-    index: &NodeIndex,
-) -> Result<Vec<CortadoAffine>, ArtError> {
-    let mut co_path_values = Vec::new();
-
-    let mut parent = art.get_root();
-    for direction in &index.get_path()? {
-        co_path_values.push(parent.get_other_child(direction)?.get_public_key());
-        parent = parent.get_child(direction)?;
-    }
-
-    co_path_values.reverse();
-    Ok(co_path_values)
-}
-
 impl From<(StatusCode, StatusCode)> for UserTestModelError {
     fn from((got, expected): (StatusCode, StatusCode)) -> Self {
         Self::WrongStatusCode {
@@ -79,6 +60,7 @@ impl From<(StatusCode, StatusCode)> for UserTestModelError {
         }
     }
 }
+
 #[allow(dead_code)]
 impl UserTestModel {
     pub async fn new(size: u64) -> (Self, BytesMut) {
@@ -86,11 +68,11 @@ impl UserTestModel {
         let seed = 0;
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect();
+        let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
         debug!("secrets: {:?}", secrets);
         let owner_id_key = Fr::rand(&mut rng);
-        let (art, _) =
-            PrivateART::new_art_from_secrets(&secrets, &CortadoAffine::generator()).unwrap();
+        let art = PrivateArt::setup(&secrets).unwrap();
+        let public_art = art.get_public_art().clone();
 
         let id = Uuid::now_v7();
 
@@ -106,9 +88,7 @@ impl UserTestModel {
         // Create new_group for testing
         let (response, init_message) = user
             .create_new_chat(
-                PublicArt::new_art_from_secrets(&user.initial_secrets, &CortadoAffine::generator())
-                    .unwrap()
-                    .0,
+                public_art,
                 owner_id_key,
             )
             .await
@@ -119,15 +99,15 @@ impl UserTestModel {
     }
 
     pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ArtError> {
-        Ok(NodeIndex::from(self.art.get_path_to_leaf(
-            &self.art.public_key_of(&self.initial_secrets[member_id]),
+        Ok(NodeIndex::from(self.art.get_path_to_leaf_with(
+            CortadoAffine::generator().mul(self.initial_secrets[member_id]).into_affine(),
         )?))
     }
 
     /// Clone this uses, and change this user secret key to the different one
     pub fn derive_new(&self, index: usize) -> Result<Self, ArtError> {
         let art =
-            PrivateART::from_public_art_and_secret(self.art.clone(), self.initial_secrets[index])?;
+            PrivateArt::new(self.art.get_public_art().clone(), self.initial_secrets[index])?;
 
         Ok(Self {
             client: reqwest::Client::new(),
@@ -148,7 +128,7 @@ impl UserTestModel {
         art: PublicArt<CortadoAffine>,
         sk: Fr,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
-        let pk = art.public_key_of(&sk);
+        let pk = CortadoAffine::generator().mul(sk).into_affine();
         let mut serialized_pk = Vec::new();
         pk.serialize_compressed(&mut serialized_pk)?;
 
@@ -157,7 +137,7 @@ impl UserTestModel {
             epoch: 0,
             nonce: serialized_pk,
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::Init(art.serialize()?)),
+                operation: Some(Operation::Init(postcard::to_allocvec(&art)?)),
             }),
             protected_payload: vec![],
         };
@@ -196,11 +176,16 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let secret_key = self.art.secret_key;
+        // let secret_key = self.art.get_leaf_secret_key()?;
         let new_secret_key = Fr::rand(&mut rng);
 
-        let mut art_clone = self.art.clone();
-        let (_, key_update_changes, artefacts) = art_clone.update_key(&new_secret_key)?;
+        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
+        let mut zero_art = PrivateZeroArt::new(
+            self.art.clone(),
+            &mut zero_art_rng
+        );
+        let branch_change_output = zero_art.update_key(new_secret_key)?;
+        let branch_change = branch_change_output.get_branch_change().clone();
 
         debug!(
             "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
@@ -213,18 +198,26 @@ impl UserTestModel {
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::KeyUpdate(key_update_changes.serialize()?)),
+                operation: Some(Operation::KeyUpdate(postcard::to_allocvec(&branch_change)?)),
             }),
             protected_payload: payload.unwrap_or_default(),
         };
 
-        let proof_bytes = self.prove_and_check_art_update(
-            &art_clone,
-            secret_key,
-            &artefacts,
-            &tbs_frame,
-            &key_update_changes,
-        )?;
+        let mut buf = BytesMut::new();
+        tbs_frame.encode(&mut buf)?;
+        let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        let mut proof_bytes = Vec::new();
+        let proof = branch_change_output.prove(&mut zero_art, associated_data, None)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
+
+        // let proof_bytes = self.prove_and_check_art_update(
+        //     &zero_art,
+        //     secret_key,
+        //     &artefacts,
+        //     &tbs_frame,
+        //     &key_update_changes,
+        // )?;
 
         let update_key_response = self
             .send_frame(Frame {
@@ -242,7 +235,7 @@ impl UserTestModel {
             }
         }
 
-        self.art = art_clone;
+        self.art = zero_art.get_private_art().clone();
         self.epoch += 1;
 
         Ok(update_key_response)
@@ -256,11 +249,20 @@ impl UserTestModel {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
         // let old_tk = self.art.get_root_key()?.key;
-        let old_tk = self.art.secret_key;
+        // let old_tk = self.art.get_leaf_secret_key()?;
         let new_user_secret_key = Fr::rand(&mut rng);
-        let mut art_clone = self.art.clone();
-        let (_, append_user_changes, artefacts) =
-            art_clone.append_or_replace_node(&new_user_secret_key)?;
+
+        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
+        let mut zero_art = PrivateZeroArt::new(
+            self.art.clone(),
+            &mut zero_art_rng
+        );
+
+        let append_user_changes_output =
+            zero_art.add_member(new_user_secret_key)?;
+        let append_user_changes = append_user_changes_output
+            .get_branch_change()
+            .clone();
 
         debug!(
             "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
@@ -274,18 +276,31 @@ impl UserTestModel {
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::AddMember(append_user_changes.serialize()?)),
+                operation: Some(Operation::AddMember(postcard::to_allocvec(&append_user_changes)?)),
             }),
             protected_payload: vec![],
         };
 
-        let proof_bytes = self.prove_and_check_art_update(
-            &art_clone,
-            old_tk,
-            &artefacts,
-            &tbs_frame,
-            &append_user_changes,
-        )?;
+        let mut buf = BytesMut::new();
+        tbs_frame.encode(&mut buf)?;
+        let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        // let eligibility = EligibilityArtefact::Owner()
+        //     EligibilityRequirement::Previleged((
+        //     get_left_most_leaf_public_key(state, id).await?,
+        //     vec![]
+        // ))
+        let mut proof_bytes = Vec::new();
+        let proof = append_user_changes_output.prove(&mut zero_art, associated_data, None)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
+
+        // let proof_bytes = self.prove_and_check_art_update(
+        //     &art_clone,
+        //     old_tk,
+        //     &artefacts,
+        //     &tbs_frame,
+        //     &append_user_changes,
+        // )?;
 
         let (request_response, request_bytes) = self
             .send_frame(Frame {
@@ -298,7 +313,7 @@ impl UserTestModel {
             assert_eq!(request_response.status(), status_code);
         }
 
-        self.art = art_clone;
+        self.art = zero_art.get_private_art().clone();
         self.epoch += 1;
 
         Ok((request_response, request_bytes))
@@ -309,17 +324,24 @@ impl UserTestModel {
         user_to_remove: &Vec<Direction>,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        let user_to_remove_index = NodeIndex::from(user_to_remove.clone());
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let old_tk = if !self
-            .art
-            .get_node(&NodeIndex::Direction(user_to_remove.clone()))?
-            .is_active()
-        {
-            self.art.get_root_key()?.key
-        } else {
-            self.art.secret_key
-        };
+        // let old_tk = if matches!(self.art.get_node(&NodeIndex::Direction(user_to_remove.clone())).unwrap().get_status(), Some(LeafStatus::Active)) {
+        //     self.art.get_leaf_secret_key()?
+        // } else {
+        //     self.art.get_root_secret_key()?
+        // };
+
+        // let old_tk = if !self
+        //     .art
+        //     .get_node(&NodeIndex::Direction(user_to_remove.clone()))?
+        //     .is_active()
+        // {
+        //     self.art.get_root_key()?.key
+        // } else {
+        //     self.art.secret_key
+        // };
 
         let temporary_secret_key = Fr::rand(&mut rng);
 
@@ -336,29 +358,43 @@ impl UserTestModel {
             user_to_remove
         );
 
-        let mut art_clone = self.art.clone();
-        let (_, remove_user_changes, artefacts) =
-            art_clone.make_blank(user_to_remove, &temporary_secret_key)?;
+        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
+        let mut zero_art = PrivateZeroArt::new(
+            self.art.clone(),
+            &mut zero_art_rng
+        );
+        // let mut art_clone = self.art.clone();
+        let remove_user_changes_output =
+            zero_art.remove_member(&user_to_remove_index, temporary_secret_key)?;
+        let remove_user_changes = remove_user_changes_output.get_branch_change().clone();
 
-        debug!("New root TK: {}", art_clone.get_root().get_public_key());
+        debug!("New root TK: {}", zero_art.get_root().get_public_key());
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::RemoveMember(remove_user_changes.serialize()?)),
+                operation: Some(Operation::RemoveMember(postcard::to_allocvec(&remove_user_changes)?)),
             }),
             protected_payload: vec![],
         };
 
-        let proof_bytes = self.prove_and_check_art_update(
-            &art_clone,
-            old_tk,
-            &artefacts,
-            &tbs_frame,
-            &remove_user_changes,
-        )?;
+        let mut buf = BytesMut::new();
+        tbs_frame.encode(&mut buf)?;
+        let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        let mut proof_bytes = Vec::new();
+        let proof = remove_user_changes_output.prove(&mut zero_art, associated_data, None)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
+
+        // let proof_bytes = self.prove_and_check_art_update(
+        //     &art_clone,
+        //     old_tk,
+        //     &artefacts,
+        //     &tbs_frame,
+        //     &remove_user_changes,
+        // )?;
 
         let make_blank_result = self
             .send_frame(Frame {
@@ -375,7 +411,7 @@ impl UserTestModel {
             );
         }
 
-        self.art = art_clone;
+        self.art = zero_art.get_private_art().clone();
         self.epoch += 1;
 
         Ok(make_blank_result)
@@ -387,11 +423,18 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let secret_key = self.art.secret_key;
+        // let secret_key = self.art.get_leaf_secret_key();
         let new_secret_key = Fr::rand(&mut rng);
 
-        let mut art_clone = self.art.clone();
-        let (_, key_update_changes, artefacts) = art_clone.leave(new_secret_key)?;
+        // let mut art_clone = self.art.clone();
+        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
+        let mut zero_art = PrivateZeroArt::new(
+            self.art.clone(),
+            &mut zero_art_rng
+        );
+
+        let key_update_changes_output = zero_art.leave_group(new_secret_key)?;
+        let key_update_changes = key_update_changes_output.get_branch_change().clone();
 
         debug!(
             "LeaveGroup debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
@@ -404,18 +447,26 @@ impl UserTestModel {
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::LeaveGroup(key_update_changes.serialize()?)),
+                operation: Some(Operation::LeaveGroup(postcard::to_allocvec(&key_update_changes)?)),
             }),
             protected_payload: Self::new_nonce(),
         };
 
-        let proof_bytes = self.prove_and_check_art_update(
-            &art_clone,
-            secret_key,
-            &artefacts,
-            &tbs_frame,
-            &key_update_changes,
-        )?;
+        let mut buf = BytesMut::new();
+        tbs_frame.encode(&mut buf)?;
+        let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        let mut proof_bytes = Vec::new();
+        let proof = key_update_changes_output.prove(&mut zero_art, associated_data, None)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
+
+        // let proof_bytes = self.prove_and_check_art_update(
+        //     &art_clone,
+        //     secret_key,
+        //     &artefacts,
+        //     &tbs_frame,
+        //     &key_update_changes,
+        // )?;
 
         let leave_result = self
             .send_frame(Frame {
@@ -434,15 +485,15 @@ impl UserTestModel {
             );
         }
 
-        self.art = art_clone;
+        self.art = zero_art.get_private_art().clone();
         self.epoch += 1;
 
         Ok(leave_result)
     }
 
     pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
-        let sk = self.art.get_root_key()?.key;
-        let pk = self.art.public_key_of(&sk);
+        let sk = self.art.get_root_secret_key()?;
+        let pk = CortadoAffine::generator().mul(sk).into_affine();
 
         let nonce = Self::new_nonce();
 
@@ -486,8 +537,9 @@ impl UserTestModel {
 
     pub async fn get_challenge(&self) -> reqwest::Result<Vec<u8>> {
         let mut serialized_public_key = Vec::new();
-        self.art
-            .public_key_of(&self.art.secret_key)
+        self
+            .art
+            .get_leaf_public_key().unwrap()
             .serialize_compressed(&mut serialized_public_key)
             .unwrap();
 
@@ -530,13 +582,14 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        let sk = secret_key_to_use.unwrap_or(self.art.secret_key);
+        let sk = secret_key_to_use.unwrap_or(self.art.get_leaf_secret_key()?);
         // let sk = match secret_key_to_use {
         //     Some(secret_key) => secret_key,
         //     None => self.art.secret_key,
         // };
 
-        let pk = self.art.public_key_of(&sk);
+        let pk = CortadoAffine::generator().mul(sk).into_affine();
+        // let pk = self.art.public_key_of(&sk);
 
         let signature = sign(&vec![sk], &vec![pk], &msg).unwrap();
         let verification_result = verify(&signature, &vec![pk], &msg);
@@ -563,9 +616,9 @@ impl UserTestModel {
 
         assert_eq!(get_art_response.status(), StatusCode::OK);
 
-        let received_art = PublicArt::<CortadoAffine>::deserialize(
+        let received_art = postcard::from_bytes(
             &get_art_response.json::<GetARTResponse>().await?.art,
-        )?;
+        ).map_err(ArtError::from)?;
 
         Ok(received_art)
     }
@@ -589,8 +642,8 @@ impl UserTestModel {
         tbs_frame.encode(&mut buf).unwrap();
         let msg = &*Sha3_256::digest(&*buf).to_vec();
 
-        let pk = vec![self.art.public_key_of(&self.art.secret_key)];
-        let signature = sign(&vec![self.art.secret_key], &pk, msg).unwrap();
+        let pk = vec![self.art.get_leaf_public_key()?];
+        let signature = sign(&vec![self.art.get_leaf_secret_key()?], &pk, msg).unwrap();
         let verification_result = verify(&signature, &pk, msg);
         assert!(verification_result.is_ok());
 
@@ -608,7 +661,8 @@ impl UserTestModel {
     }
 
     fn sign_and_check_signature(&self, msg: &[u8], sk: Fr) -> eyre::Result<Vec<u8>> {
-        let pk = self.art.public_key_of(&sk);
+        // let pk = self.art.public_key_of(&sk);
+        let pk = CortadoAffine::generator().mul(sk).into_affine();
 
         let signature = sign(&vec![sk], &vec![pk], msg)?;
         let verification_result = verify(&signature, &vec![pk], msg);
@@ -624,7 +678,7 @@ impl UserTestModel {
     ) -> eyre::Result<Vec<u8>> {
         let public_keys = secret_keys
             .iter()
-            .map(|sk| self.art.public_key_of(sk))
+            .map(|sk| CortadoAffine::generator().mul(sk).into_affine())
             .collect::<Vec<_>>();
         let msg = Sha3_256::digest(&tbs_frame.encode_to_vec());
         let signature = sign(&secret_keys, &public_keys, &msg)?;
@@ -634,52 +688,55 @@ impl UserTestModel {
         Ok(signature)
     }
 
-    fn prove_and_check_art_update(
-        &self,
-        test_art: &PrivateART<CortadoAffine>,
-        secret_key: Fr,
-        artefacts: &ProverArtefacts<CortadoAffine>,
-        tbs_frame: &FrameTbs,
-        changes: &BranchChanges<CortadoAffine>,
-    ) -> eyre::Result<Vec<u8>> {
-        let mut buf = BytesMut::new();
-        tbs_frame.encode(&mut buf)?;
-        let associated_data = &*Sha3_256::digest(&buf).to_vec();
-
-        let blindings: Vec<_> = (0..=artefacts.co_path.len())
-            .map(|_| Scalar::random(&mut thread_rng()))
-            .collect();
-
-        let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
-
-        let proof = art_prove(
-            Self::get_pedersen_basis(),
-            associated_data,
-            vec![public_key],
-            artefacts.path.clone(),
-            artefacts.co_path.clone(),
-            artefacts.secrets.clone(),
-            vec![secret_key],
-            blindings,
-        )?;
-
-        let verification_result = art_verify(
-            Self::get_pedersen_basis(),
-            associated_data,
-            vec![public_key],
-            changes.public_keys.iter().rev().copied().collect(),
-            get_co_path_values(&test_art, &changes.node_index)?,
-            proof.clone(),
-        )
-        .is_ok();
-
-        assert!(verification_result);
-
-        let mut proof_bytes = Vec::new();
-        proof.serialize_compressed(&mut proof_bytes)?;
-
-        Ok(proof_bytes)
-    }
+    // fn prove_and_check_art_update<'a, R>(
+    //     &self,
+    //     zero_art: &'a PrivateZeroArt<'a, R>,
+    //     secret_key: Fr,
+    //     artefacts: &ProverArtefacts<CortadoAffine>,
+    //     tbs_frame: &FrameTbs,
+    //     changes: &BranchChanges<CortadoAffine>,
+    // ) -> eyre::Result<Vec<u8>>
+    // where
+    //     R: Rng + ?Sized,
+    // {
+    //     let mut buf = BytesMut::new();
+    //     tbs_frame.encode(&mut buf)?;
+    //     let associated_data = &*Sha3_256::digest(&buf).to_vec();
+    //
+    //     let blindings: Vec<_> = (0..=artefacts.co_path.len())
+    //         .map(|_| Scalar::random(&mut thread_rng()))
+    //         .collect();
+    //
+    //     let public_key = CortadoAffine::generator().mul(secret_key).into_affine();
+    //
+    //     let proof = art_prove(
+    //         Self::get_pedersen_basis(),
+    //         associated_data,
+    //         vec![public_key],
+    //         artefacts.path.clone(),
+    //         artefacts.co_path.clone(),
+    //         artefacts.secrets.clone(),
+    //         vec![secret_key],
+    //         blindings,
+    //     )?;
+    //
+    //     let verification_result = art_verify(
+    //         Self::get_pedersen_basis(),
+    //         associated_data,
+    //         vec![public_key],
+    //         changes.public_keys.iter().rev().copied().collect(),
+    //         get_co_path_values(&test_art, &changes.node_index)?,
+    //         proof.clone(),
+    //     )
+    //     .is_ok();
+    //
+    //     assert!(verification_result);
+    //
+    //     let mut proof_bytes = Vec::new();
+    //     proof.serialize_compressed(&mut proof_bytes)?;
+    //
+    //     Ok(proof_bytes)
+    // }
 
     pub fn unwrap_operation(frame: SpFrame) -> Operation {
         frame
@@ -700,7 +757,7 @@ impl UserTestModel {
         epoch: Option<u64>,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<SpFrames> {
-        let tk = self.art.get_root_key()?.key;
+        let tk = self.art.get_root_secret_key()?;
         let pk = self.art.get_root().get_public_key();
 
         let mut msg = Vec::new();
@@ -749,7 +806,7 @@ impl UserTestModel {
         skip: i64,
         epoch: Option<u64>,
         status_check: Option<StatusCode>,
-    ) -> eyre::Result<Vec<BranchChanges<CortadoAffine>>> {
+    ) -> eyre::Result<Vec<BranchChange<CortadoAffine>>> {
         let sp_frames = self
             .get_frames(limit, skip, epoch, status_check)
             .await?

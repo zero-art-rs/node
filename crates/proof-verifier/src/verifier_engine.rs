@@ -1,7 +1,7 @@
 use ark_serialize::CanonicalDeserialize;
 use cortado::CortadoAffine;
 use zrt_art::art::art_types::PublicZeroArt;
-use zrt_art::changes::branch_change::{BranchChange, VerifiableBranchChange};
+use zrt_art::changes::branch_change::{BranchChange};
 use zrt_art::changes::VerifiableChange;
 use zrt_zk::art::ArtProof;
 use zrt_zk::EligibilityRequirement;
@@ -59,17 +59,12 @@ impl VerificationRequest {
                     return Err(VerificationError::InvalidInput);
                 };
 
-
-                let change = VerifiableBranchChange::new(
-                    change,
-                    ArtProof::deserialize_compressed(&*self.data.proof)?
-                );
-
                 Ok(ProofVerifierMessage::ArtUpdate {
                     change,
                     art,
                     eligibility_requirement,
                     associated_data: self.data.associated_data,
+                    proof: ArtProof::deserialize_compressed(&*self.data.proof)?,
                 })
             }
             _ => {

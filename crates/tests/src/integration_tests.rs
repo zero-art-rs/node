@@ -1,3 +1,5 @@
+use std::ops::Mul;
+use zrt_art::changes::ApplicableChange;
 use crate::{CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
 use crate::{user_test_model::UserTestModel, utils::*};
 use ark_std::rand::SeedableRng;
@@ -12,15 +14,16 @@ use futures::StreamExt;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::time::Duration;
-use tracing::debug;
-use tracing::field::debug;
+use ark_ec::{AffineRepr, CurveGroup};
+use tracing::info;
+use zrt_art::art::art_types::PrivateArt;
+use zrt_art::changes::branch_change::{BranchChange, MergeBranchChange};
+use zrt_art::TreeMethods;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::centrifugo_schemas::AuthRequest;
 use types::protos;
 use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
 use types::utils::extract_branch_changes;
-use zrt_art::traits::{ARTPrivateAPI, ARTPrivateView, ARTPublicAPI, ARTPublicView};
-use zrt_art::types::{BranchChanges, LeafStatus, PrivateART, PublicArt};
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -30,7 +33,7 @@ async fn test_send_message() -> eyre::Result<()> {
     // let sender = get_integration_test_sender();
 
     let (context, init_message) = UserTestModel::new(GROUP_SIZE).await;
-    debug!("chat_uuid: {:?}", context.chat_uuid);
+    info!("chat_uuid: {:?}", context.chat_uuid);
 
     let challenge = context.get_challenge().await?;
 
@@ -38,7 +41,7 @@ async fn test_send_message() -> eyre::Result<()> {
         .take(DEFAULT_NONCE_LENGTH as usize)
         .collect::<Vec<u8>>();
 
-    let tk = context.art.get_root_key().unwrap().key;
+    let tk = context.art.get_root_secret_key().unwrap();
     let pk = context.art.get_root().get_public_key();
 
     let signature = sign(&vec![tk], &vec![pk], &*Sha3_256::digest(&challenge)).unwrap();
@@ -89,7 +92,7 @@ async fn test_send_message() -> eyre::Result<()> {
     };
 
     let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
-    let tk = context.art.get_root_key()?.key;
+    let tk = context.art.get_root_secret_key()?;
     let pk = vec![context.art.get_root().get_public_key()];
 
     let signature = sign(&vec![tk], &pk, &msg)?;
@@ -112,14 +115,14 @@ async fn test_send_message() -> eyre::Result<()> {
                     match centrifugo_event {
                         CentrifugoEvent::Connect(_connect_msg) => {
                             // Connection established, continue waiting for messages
-                            debug!(
+                            info!(
                                 "send_message: Connection established, continue waiting for messages"
                             );
-                            // debug!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
+                            // info!("send_message: _connect_msg: {:#?}", _connect_msg.connect);
                         }
                         CentrifugoEvent::ChannelMessage(channel_msg) => {
                             let sp_frame = SpFrame::decode(&*channel_msg.publication.data).unwrap();
-                            debug!("sp_frame.frame: {:?}", sp_frame.frame);
+                            info!("sp_frame.frame: {:?}", sp_frame.frame);
 
                             let content_string = sp_frame.frame.unwrap().encode_to_vec();
 
@@ -155,7 +158,7 @@ async fn test_send_message() -> eyre::Result<()> {
 async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let (mut context, init_message) = UserTestModel::new(GROUP_SIZE).await;
+    let (mut context, _) = UserTestModel::new(GROUP_SIZE).await;
     let mut test_context = context.derive_new(2)?;
 
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
@@ -180,7 +183,7 @@ async fn test_get_message() -> eyre::Result<()> {
 async fn test_init_group() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
+    let _ = UserTestModel::new(GROUP_SIZE).await.0;
 
     Ok(())
 }
@@ -221,7 +224,7 @@ async fn test_concurrent_art_update() -> eyre::Result<()> {
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
-    debug!("{:?}", context.chat_uuid);
+    info!("{:?}", context.chat_uuid);
 
     let mut user1 = context.derive_new(1).unwrap();
     let mut user2 = context.derive_new(2).unwrap();
@@ -283,14 +286,14 @@ async fn test_remove_member() -> eyre::Result<()> {
             .await?;
 
         assert_eq!(
-            received_art.root.get_weight(),
+            received_art.get_root().get_weight(),
             retrieval_context.art.get_root().get_weight() - 1
         );
 
         retrieval_context.art =
-            PrivateART::from_public_art_and_secret(received_art, context.art.secret_key)?;
+            PrivateArt::new(received_art, context.art.get_leaf_secret_key()?)?;
 
-        let sk_to_use = retrieval_context.art.get_root_key()?.key;
+        let sk_to_use = retrieval_context.art.get_root_secret_key()?;
         let received_art_check = retrieval_context
             .get_art(
                 (i + 1) as u64,
@@ -300,7 +303,7 @@ async fn test_remove_member() -> eyre::Result<()> {
             .await?;
 
         assert_eq!(
-            received_art_check.root.as_ref(),
+            received_art_check.get_root(),
             retrieval_context.art.get_root()
         );
     }
@@ -328,9 +331,9 @@ async fn test_get_art() -> eyre::Result<()> {
             .get_art(i as u64, None, ProofMode::UseLeafKey.to_string())
             .await?;
 
-        assert_eq!(received_art.root.get_public_key(), art_roots[i]);
+        assert_eq!(received_art.get_root().get_public_key(), art_roots[i]);
 
-        retrieval_context.art = PrivateART::from_public_art_and_secret(
+        retrieval_context.art = PrivateArt::new(
             received_art,
             retrieval_context.initial_secrets[1],
         )?;
@@ -356,39 +359,43 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     assert_eq!(user1.art.get_root(), user0.art.get_root());
     assert_eq!(user3.art.get_root(), user0.art.get_root());
 
-    debug!("User 1 update key ...");
+    info!("User 1 update key ...");
     user1
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    debug!("User1 TK: {}", user1.art.get_root().get_public_key());
+    info!("User1 TK: {}", user1.art.get_root().get_public_key());
 
-    debug!("User 3 add member ...");
+    info!("User 3 add member ...");
     user3
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    debug!("User3 TK: {}", user3.art.get_root().get_public_key());
+    info!("User3 TK: {}", user3.art.get_root().get_public_key());
 
     let changes = user2
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
 
-    debug!("User 2 merge changes locally ...");
-    user2.art.merge_for_observer(&changes);
-    user0.art.merge_for_observer(&changes);
+    let observer_merge = MergeBranchChange::new_for_observer(changes.clone());
+
+    info!("User 2 merge changes locally ...");
+    observer_merge.update(&mut user2.art)?;
+    observer_merge.update(&mut user0.art)?;
+    // user2.art.merge_for_observer(&changes);
+    // user0.art.merge_for_observer(&changes);
     user2.epoch += 1;
     user0.epoch += 1;
-    debug!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
+    info!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
 
-    debug!("User 2 update and send update request with merge resolved");
+    info!("User 2 update and send update request with merge resolved");
     user2
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    debug!("User2 TK_x: {}", user2.art.get_root().get_public_key());
+    info!("User2 TK_x: {}", user2.art.get_root().get_public_key());
 
-    debug!("User 0 fail to append member ...");
+    info!("User 0 fail to append member ...");
     user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("User0 TK: {}", user0.art.get_root().get_public_key());
+    info!("User0 TK: {}", user0.art.get_root().get_public_key());
 
     Ok(())
 }
@@ -401,9 +408,9 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
     let user3 = user0.derive_new(1)?;
-    debug!(
+    info!(
         "User0 pk: {}",
-        user0.art.public_key_of(&user0.art.get_secret_key())
+        &user0.art.get_leaf_public_key()?
     );
 
     // sanity check
@@ -413,7 +420,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     let target_node_path = user0.index_of(4).unwrap().get_path().unwrap();
 
-    debug!(
+    info!(
         "User 0 blanking the user on path {:?} ...",
         &target_node_path
     );
@@ -421,63 +428,63 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("User0 TK: {}", user0.art.get_root().get_public_key());
-    debug!("User0 tk: {}", user0.art.get_root_key().unwrap().key);
+    info!("User0 TK: {}", user0.art.get_root().get_public_key());
+    info!("User0 tk: {}", user0.art.get_root_secret_key().unwrap());
 
-    debug!("User1 receive changes ..");
+    info!("User1 receive changes ..");
     let blank_user_0 = user1
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
     assert_eq!(user1.art, user2.art);
-    user1.art.update_private_art(&blank_user_0[0]).unwrap();
+    blank_user_0[0].update(&mut user1.art).unwrap();
     assert_eq!(user1.art, user0.art);
     user1.epoch += 1;
-    debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
+    info!("User1 tk: {}", user1.art.get_root_secret_key().unwrap());
     assert_eq!(user1.art, user0.art);
 
-    debug!("User 1 blanking the target node ...");
+    info!("User 1 blanking the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
-    debug!("User1 TK: {}", user1.art.get_root().get_public_key());
-    debug!("User1 tk: {}", user1.art.get_root_key().unwrap().key);
+    info!("User1 TK: {}", user1.art.get_root().get_public_key());
+    info!("User1 tk: {}", user1.art.get_root_secret_key().unwrap());
     assert_eq!(
-        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+        CortadoAffine::generator().mul(&user1.art.get_root_secret_key()?).into_affine(),
         user1.art.get_root().get_public_key()
     );
 
-    debug!("User 2 receive changes ...");
+    info!("User 2 receive changes ...");
     let blank_user_1 = user2
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
-    user2.art.update_private_art(&blank_user_1[0]).unwrap();
+    blank_user_1[0].update(&mut user2.art).unwrap();
     user2.epoch += 1;
-    debug!("User2 tk: {}", user2.art.get_root_key().unwrap().key);
-    // debug!("art2:\n{}", user2.art.get_root());
+    info!("User2 tk: {}", user2.art.get_root_secret_key().unwrap());
+    // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art, user0.art);
     assert_eq!(
-        user2.art.public_key_of(&user2.art.get_root_key()?.key),
-        user0.art.public_key_of(&user0.art.get_root_key()?.key),
+        CortadoAffine::generator().mul(user2.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(user0.art.get_root_secret_key()?).into_affine(),
     );
 
-    debug!("User 2 receive seccond changes ...");
-    user2.art.update_private_art(&blank_user_1[1])?;
-    debug!("User2 tk: {}", user2.art.get_root_key().unwrap().key);
+    info!("User 2 receive seccond changes ...");
+    blank_user_1[1].update(&mut user2.art)?;
+    info!("User2 tk: {}", user2.art.get_root_secret_key().unwrap());
     user2.epoch += 1;
-    // debug!("art2:\n{}", user2.art.get_root());
+    // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art.get_root(), user1.art.get_root());
     assert_eq!(
-        user2.art.public_key_of(&user2.art.get_root_key()?.key),
-        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+        CortadoAffine::generator().mul(&user2.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(&user1.art.get_root_secret_key()?).into_affine(),
     );
     assert_eq!(
-        user2.art.public_key_of(&user2.art.get_root_key()?.key),
+        CortadoAffine::generator().mul(user2.art.get_root_secret_key()?).into_affine(),
         user1.art.get_root().get_public_key()
     );
 
-    debug!("User 2 update key ...");
+    info!("User 2 update key ...");
     user2.update_key(None, Some(StatusCode::OK)).await?;
-    debug!("New TK: {}", user2.art.get_root().get_public_key());
+    info!("New TK: {}", user2.art.get_root().get_public_key());
     Ok(())
 }
 
@@ -489,12 +496,12 @@ async fn test_leave() -> eyre::Result<()> {
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(1)?;
-    debug!(
+    info!(
         "User0 pk: {}",
-        user0.art.public_key_of(&user0.art.get_secret_key())
+        CortadoAffine::generator().mul(user0.art.get_leaf_secret_key()?).into_affine()
     );
 
-    let target_node_index = user0.art.get_node_index().clone();
+    // let target_node_index = user0.art.get_node_index().clone();
     let target_node_path = user0.art.get_node_index().get_path().unwrap();
 
     // sanity check
@@ -502,21 +509,21 @@ async fn test_leave() -> eyre::Result<()> {
     assert_eq!(user2.art, user0.art);
     assert_eq!(user3.art, user0.art);
 
-    debug!("User 0 leave the group ...");
+    info!("User 0 leave the group ...");
     user0.leave_group(Some(StatusCode::OK)).await?;
     user0.epoch -= 1;
 
-    debug!("User 0 Fails to leave the second time ...");
+    info!("User 0 Fails to leave the second time ...");
     let mut tmp = user0.clone();
     tmp.leave_group(Some(StatusCode::UNAUTHORIZED)).await?;
 
-    debug!("User 0 fail to update key, as he is removed ...");
+    info!("User 0 fail to update key, as he is removed ...");
     let mut tmp = user0.clone();
     tmp
         .update_key(None, Some(StatusCode::UNAUTHORIZED))
         .await?;
 
-    debug!("User1 receive changes ..");
+    info!("User1 receive changes ..");
     let mut blank_user_0 = user1
         .get_frames(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?
@@ -529,38 +536,39 @@ async fn test_leave() -> eyre::Result<()> {
     ));
 
     let leave_change = if let Operation::LeaveGroup(bytes) = leave_operation {
-        Some(BranchChanges::<CortadoAffine>::deserialize(&bytes)?)
+        // Some(BranchChange::<CortadoAffine>::deserialize(&bytes)?)
+        Some(postcard::from_bytes::<BranchChange<CortadoAffine>>(&bytes)?)
     } else {
         None
     }.unwrap();
 
-    user1.art.update_private_art(&leave_change)?;
+    leave_change.update(&mut user1.art)?;
     user1.epoch += 1;
 
-    debug!("User 1 blanks the target node ...");
+    info!("User 1 blanks the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
 
-    debug!("User 2 receive changes ...");
+    info!("User 2 receive changes ...");
     let changes = user2
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
 
-    debug!("Changes received: {:?}", changes);
+    info!("Changes received: {:?}", changes);
 
     for change in &changes {
-        user2.art.update_private_art(change).unwrap();
+        change.update(&mut user2.art).unwrap();
         user2.epoch += 1;
     }
-    // debug!("art2:\n{}", user2.art.get_root());
+    // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art, user1.art);
     assert_eq!(
-        user2.art.public_key_of(&user2.art.get_root_key()?.key),
-        user1.art.public_key_of(&user1.art.get_root_key()?.key),
+        CortadoAffine::generator().mul(&user2.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(&user1.art.get_root_secret_key()?).into_affine(),
     );
 
-    debug!("User 2 blank the target node ...");
+    info!("User 2 blank the target node ...");
     user2
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
@@ -573,28 +581,28 @@ async fn test_leave_after_removal() -> eyre::Result<()> {
 
     let (mut user0, _) = UserTestModel::new(7).await;
     let mut user1 = user0.derive_new(5)?;
-    let mut user2 = user0.derive_new(2)?;
+    // let mut user2 = user0.derive_new(2)?;
     let mut user3 = user0.derive_new(1)?;
     let target_node_path = user3.art.get_node_index().get_path().unwrap();
 
-    debug!("User 0 blanks the target node ...");
+    info!("User 0 blanks the target node ...");
     user0
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
 
-    debug!("User1 receive changes ..");
+    info!("User1 receive changes ..");
     let blank_user_3_0 = user1
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
     assert_eq!(blank_user_3_0.len(), 1);
 
-    debug!("User 3 fails to leave the group ...");
+    info!("User 3 fails to leave the group ...");
     user3.leave_group(Some(StatusCode::UNAUTHORIZED)).await?;
 
-    user1.art.update_private_art(&blank_user_3_0[0]).unwrap();
+    blank_user_3_0[0].update(&mut user1.art).unwrap();
     user1.epoch += 1;
 
-    debug!("User 2 blank the target node ...");
+    info!("User 2 blank the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;

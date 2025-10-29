@@ -27,7 +27,7 @@ use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
 use zrt_art::art::art_node::{LeafIter, LeafStatus};
 use zrt_art::art::art_types::{PrivateZeroArt, PublicZeroArt};
-use zrt_art::changes::branch_change::{BranchChange, BranchChangeType, VerifiableBranchChange};
+use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 use zrt_art::node_index::{NodeIndex, Direction};
 use zrt_art::TreeMethods;
 use zrt_zk::EligibilityRequirement;
@@ -304,7 +304,7 @@ pub async fn send_frame(
         data: VerifierData {
             proof: frame.proof,
             public_inputs,
-            associated_data: associated_data,
+            associated_data,
         },
     };
 
@@ -454,7 +454,6 @@ pub async fn get_opcode_and_input_for_art_update(
         }
         BranchChangeType::AddMember => (
             VerificationOpcode::AddMember,
-            // vec![get_left_most_leaf_public_key(state, id).await?],
             EligibilityRequirement::Previleged((
                 get_left_most_leaf_public_key(state, id).await?,
                 vec![]
@@ -472,7 +471,7 @@ pub async fn get_opcode_and_input_for_art_update(
                 debug!("Using left most leaf public key for verification");
                 EligibilityRequirement::Previleged((
                     get_left_most_leaf_public_key(state, id).await?,
-                    vec![]
+                    vec![],
                 ))
             } else {
                 debug!("Using art.root.public_key for verification");

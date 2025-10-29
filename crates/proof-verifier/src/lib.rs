@@ -66,8 +66,8 @@ impl ProofVerifier {
             //     self.verify_art_update_proof(associated_data, aux_public_keys, path, co_path, proof)
             //         .await
             // }
-            ProofVerifierMessage::ArtUpdate { change, art, associated_data, eligibility_requirement } => {
-                match change.verify(&art, &associated_data, eligibility_requirement) {
+            ProofVerifierMessage::ArtUpdate { change, art, associated_data, eligibility_requirement, proof } => {
+                match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
                     Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
                     Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false })
                 }
@@ -105,17 +105,4 @@ impl ProofVerifier {
             }
         }
     }
-}
-
-fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
-    let g_1 = CortadoAffine::generator();
-    let h_1 = CortadoAffine::new_unchecked(ALT_GENERATOR_X, ALT_GENERATOR_Y);
-
-    let gens = PedersenGens::default();
-    PedersenBasis::<CortadoAffine, Ed25519Affine>::new(
-        g_1,
-        h_1,
-        ristretto255_to_ark(gens.B).unwrap(),
-        ristretto255_to_ark(gens.B_blinding).unwrap(),
-    )
 }
