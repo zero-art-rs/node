@@ -41,7 +41,7 @@ async fn test_send_message() -> eyre::Result<()> {
         .take(DEFAULT_NONCE_LENGTH as usize)
         .collect::<Vec<u8>>();
 
-    let tk = context.art.get_root_secret_key().unwrap();
+    let tk = context.art.get_root_secret_key();
     let pk = context.art.get_root().get_public_key();
 
     let signature = sign(&vec![tk], &vec![pk], &*Sha3_256::digest(&challenge)).unwrap();
@@ -92,7 +92,7 @@ async fn test_send_message() -> eyre::Result<()> {
     };
 
     let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
-    let tk = context.art.get_root_secret_key()?;
+    let tk = context.art.get_root_secret_key();
     let pk = vec![context.art.get_root().get_public_key()];
 
     let signature = sign(&vec![tk], &pk, &msg)?;
@@ -291,9 +291,9 @@ async fn test_remove_member() -> eyre::Result<()> {
         );
 
         retrieval_context.art =
-            PrivateArt::new(received_art, context.art.get_leaf_secret_key()?)?;
+            PrivateArt::new(received_art, context.art.get_leaf_secret_key())?;
 
-        let sk_to_use = retrieval_context.art.get_root_secret_key()?;
+        let sk_to_use = retrieval_context.art.get_root_secret_key();
         let received_art_check = retrieval_context
             .get_art(
                 (i + 1) as u64,
@@ -410,7 +410,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     let user3 = user0.derive_new(1)?;
     info!(
         "User0 pk: {}",
-        &user0.art.get_leaf_public_key()?
+        user0.art.get_leaf_public_key()
     );
 
     // sanity check
@@ -429,7 +429,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
     info!("User0 TK: {}", user0.art.get_root().get_public_key());
-    info!("User0 tk: {}", user0.art.get_root_secret_key().unwrap());
+    info!("User0 tk: {}", user0.art.get_root_secret_key());
 
     info!("User1 receive changes ..");
     let blank_user_0 = user1
@@ -439,7 +439,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     blank_user_0[0].update(&mut user1.art).unwrap();
     assert_eq!(user1.art, user0.art);
     user1.epoch += 1;
-    info!("User1 tk: {}", user1.art.get_root_secret_key().unwrap());
+    info!("User1 tk: {}", user1.art.get_root_secret_key());
     assert_eq!(user1.art, user0.art);
 
     info!("User 1 blanking the target node ...");
@@ -447,9 +447,9 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
     info!("User1 TK: {}", user1.art.get_root().get_public_key());
-    info!("User1 tk: {}", user1.art.get_root_secret_key().unwrap());
+    info!("User1 tk: {}", user1.art.get_root_secret_key());
     assert_eq!(
-        CortadoAffine::generator().mul(&user1.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(user1.art.get_root_secret_key()).into_affine(),
         user1.art.get_root().get_public_key()
     );
 
@@ -459,26 +459,26 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .await?;
     blank_user_1[0].update(&mut user2.art).unwrap();
     user2.epoch += 1;
-    info!("User2 tk: {}", user2.art.get_root_secret_key().unwrap());
+    info!("User2 tk: {}", user2.art.get_root_secret_key());
     // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art, user0.art);
     assert_eq!(
-        CortadoAffine::generator().mul(user2.art.get_root_secret_key()?).into_affine(),
-        CortadoAffine::generator().mul(user0.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(user2.art.get_root_secret_key()).into_affine(),
+        CortadoAffine::generator().mul(user0.art.get_root_secret_key()).into_affine(),
     );
 
     info!("User 2 receive seccond changes ...");
     blank_user_1[1].update(&mut user2.art)?;
-    info!("User2 tk: {}", user2.art.get_root_secret_key().unwrap());
+    info!("User2 tk: {}", user2.art.get_root_secret_key());
     user2.epoch += 1;
     // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art.get_root(), user1.art.get_root());
     assert_eq!(
-        CortadoAffine::generator().mul(&user2.art.get_root_secret_key()?).into_affine(),
-        CortadoAffine::generator().mul(&user1.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(user2.art.get_root_secret_key()).into_affine(),
+        CortadoAffine::generator().mul(user1.art.get_root_secret_key()).into_affine(),
     );
     assert_eq!(
-        CortadoAffine::generator().mul(user2.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(user2.art.get_root_secret_key()).into_affine(),
         user1.art.get_root().get_public_key()
     );
 
@@ -498,7 +498,7 @@ async fn test_leave() -> eyre::Result<()> {
     let mut user3 = user0.derive_new(1)?;
     info!(
         "User0 pk: {}",
-        CortadoAffine::generator().mul(user0.art.get_leaf_secret_key()?).into_affine()
+        CortadoAffine::generator().mul(user0.art.get_leaf_secret_key()).into_affine()
     );
 
     // let target_node_index = user0.art.get_node_index().clone();
@@ -564,8 +564,8 @@ async fn test_leave() -> eyre::Result<()> {
     // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art, user1.art);
     assert_eq!(
-        CortadoAffine::generator().mul(&user2.art.get_root_secret_key()?).into_affine(),
-        CortadoAffine::generator().mul(&user1.art.get_root_secret_key()?).into_affine(),
+        CortadoAffine::generator().mul(user2.art.get_root_secret_key()).into_affine(),
+        CortadoAffine::generator().mul(user1.art.get_root_secret_key()).into_affine(),
     );
 
     info!("User 2 blank the target node ...");

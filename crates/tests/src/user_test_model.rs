@@ -179,10 +179,9 @@ impl UserTestModel {
         // let secret_key = self.art.get_leaf_secret_key()?;
         let new_secret_key = Fr::rand(&mut rng);
 
-        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
         let mut zero_art = PrivateZeroArt::new(
             self.art.clone(),
-            &mut zero_art_rng
+            Box::new(StdRng::seed_from_u64(rand::random()))
         );
         let branch_change_output = zero_art.update_key(new_secret_key)?;
         let branch_change = branch_change_output.get_branch_change().clone();
@@ -252,10 +251,9 @@ impl UserTestModel {
         // let old_tk = self.art.get_leaf_secret_key()?;
         let new_user_secret_key = Fr::rand(&mut rng);
 
-        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
         let mut zero_art = PrivateZeroArt::new(
             self.art.clone(),
-            &mut zero_art_rng
+            Box::new(StdRng::seed_from_u64(rand::random()))
         );
 
         let append_user_changes_output =
@@ -358,10 +356,9 @@ impl UserTestModel {
             user_to_remove
         );
 
-        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
         let mut zero_art = PrivateZeroArt::new(
             self.art.clone(),
-            &mut zero_art_rng
+            Box::new(StdRng::seed_from_u64(rand::random()))
         );
         // let mut art_clone = self.art.clone();
         let remove_user_changes_output =
@@ -427,10 +424,9 @@ impl UserTestModel {
         let new_secret_key = Fr::rand(&mut rng);
 
         // let mut art_clone = self.art.clone();
-        let mut zero_art_rng = StdRng::seed_from_u64(rand::random());
         let mut zero_art = PrivateZeroArt::new(
             self.art.clone(),
-            &mut zero_art_rng
+            Box::new(StdRng::seed_from_u64(rand::random()))
         );
 
         let key_update_changes_output = zero_art.leave_group(new_secret_key)?;
@@ -492,7 +488,7 @@ impl UserTestModel {
     }
 
     pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
-        let sk = self.art.get_root_secret_key()?;
+        let sk = self.art.get_root_secret_key();
         let pk = CortadoAffine::generator().mul(sk).into_affine();
 
         let nonce = Self::new_nonce();
@@ -539,7 +535,7 @@ impl UserTestModel {
         let mut serialized_public_key = Vec::new();
         self
             .art
-            .get_leaf_public_key().unwrap()
+            .get_leaf_public_key()
             .serialize_compressed(&mut serialized_public_key)
             .unwrap();
 
@@ -582,7 +578,7 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        let sk = secret_key_to_use.unwrap_or(self.art.get_leaf_secret_key()?);
+        let sk = secret_key_to_use.unwrap_or(self.art.get_leaf_secret_key());
         // let sk = match secret_key_to_use {
         //     Some(secret_key) => secret_key,
         //     None => self.art.secret_key,
@@ -642,8 +638,8 @@ impl UserTestModel {
         tbs_frame.encode(&mut buf).unwrap();
         let msg = &*Sha3_256::digest(&*buf).to_vec();
 
-        let pk = vec![self.art.get_leaf_public_key()?];
-        let signature = sign(&vec![self.art.get_leaf_secret_key()?], &pk, msg).unwrap();
+        let pk = vec![self.art.get_leaf_public_key()];
+        let signature = sign(&vec![self.art.get_leaf_secret_key()], &pk, msg).unwrap();
         let verification_result = verify(&signature, &pk, msg);
         assert!(verification_result.is_ok());
 
@@ -757,7 +753,7 @@ impl UserTestModel {
         epoch: Option<u64>,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<SpFrames> {
-        let tk = self.art.get_root_secret_key()?;
+        let tk = self.art.get_root_secret_key();
         let pk = self.art.get_root().get_public_key();
 
         let mut msg = Vec::new();
