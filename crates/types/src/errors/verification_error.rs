@@ -49,7 +49,7 @@ pub enum VerificationError {
     UserAlreadyRemoved,
     #[error("Aggregation isn't supported yet.")]
     UnsupportedAggregation,
-    #[error("Can't remove the same user several times at the same epoch.")]
+    #[error("Can't remove the same user several times at the same epoch or cant update his key.")]
     MergeUserRemove,
     #[error("Can't remove the same user several times at the same epoch.")]
     Postcard(#[from] postcard::Error),

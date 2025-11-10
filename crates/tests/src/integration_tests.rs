@@ -400,6 +400,65 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "merge_changes")]
+#[tokio::test]
+async fn test_merge_remove_key_update() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let payload = UserTestModel::new_nonce();
+
+    let (mut user0, _) = UserTestModel::new(GROUP_SIZE).await;
+    let mut user1 = user0.derive_new(1)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(5)?;
+
+    // sanity check
+    assert_eq!(user2.art.get_root(), user0.art.get_root());
+    assert_eq!(user1.art.get_root(), user0.art.get_root());
+    assert_eq!(user3.art.get_root(), user0.art.get_root());
+
+    let target_user_index = user1.art.get_node_index();
+    let target_user_path = target_user_index.get_path().unwrap();
+
+    info!("User 0 remove user 1 ...");
+    user0
+        .make_blank(&target_user_path, Some(StatusCode::NO_CONTENT))
+        .await?;
+
+    info!("User 1 fails to updates his key ...");
+    user1
+        .update_key(Some(payload.clone()), Some(StatusCode::UNAUTHORIZED))
+        .await?;
+
+    let changes = user2
+        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+        .await?;
+
+    // let observer_merge = MergeBranchChange::new_for_observer(changes.clone());
+    //
+    // info!("User 2 merge changes locally ...");
+    // observer_merge.update(&mut user2.art)?;
+    // observer_merge.update(&mut user0.art)?;
+    // // user2.art.merge_for_observer(&changes);
+    // // user0.art.merge_for_observer(&changes);
+    // user2.epoch += 1;
+    // user0.epoch += 1;
+    // info!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
+    //
+    // info!("User 2 update and send update request with merge resolved");
+    // user2
+    //     .update_key(Some(payload.clone()), Some(StatusCode::OK))
+    //     .await?;
+    // info!("User2 TK_x: {}", user2.art.get_root().get_public_key());
+    //
+    // info!("User 0 fail to append member ...");
+    // user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
+    // // user0.update_key(None, Some(StatusCode::OK)).await?;
+    // info!("User0 TK: {}", user0.art.get_root().get_public_key());
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_merge_for_removal() -> eyre::Result<()> {
     init_tracing_for_test();

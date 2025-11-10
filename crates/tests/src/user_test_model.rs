@@ -400,12 +400,21 @@ impl UserTestModel {
             })
             .await?;
 
-        if let Some(status_code) = status_check {
-            assert_eq!(
-                make_blank_result.0.status(),
-                status_code,
-                "Check if remove member result status is correct."
-            );
+        // if let Some(status_code) = status_check {
+        //     assert_eq!(
+        //         make_blank_result.0.status(),
+        //         status_code,
+        //         "Check if remove member result status is correct."
+        //     );
+        // }
+
+        if let Some(status_check) = status_check {
+            if make_blank_result.0.status() != status_check {
+                Err(UserTestModelError::from((
+                    make_blank_result.0.status(),
+                    status_check,
+                )))?;
+            }
         }
 
         self.art = zero_art.get_private_art().clone();

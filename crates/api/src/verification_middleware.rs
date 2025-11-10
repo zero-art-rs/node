@@ -314,6 +314,7 @@ pub async fn send_frame(
         Some(Operation::AddMember(_))
         | Some(Operation::RemoveMember(_))
         | Some(Operation::KeyUpdate(_))
+        | Some(Operation::Aggregated(_))
         | Some(Operation::LeaveGroup(_)) => {
             state.stop_updating(id).await;
         }
@@ -353,7 +354,7 @@ async fn validate_frame_applicability(
         }
         _ => {
             // Allow all epochs. For validation allow the used one.
-            vec![tbs_frame.epoch]
+            vec![current_epoch, current_epoch + 1]
         }
     };
 
@@ -413,6 +414,7 @@ pub async fn get_opcode_and_input_for_art_update(
 
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
         || matches!(branch_changes.change_type, BranchChangeType::RemoveMember)
+        || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
     {
         let frame_storage = MongoFramesStorage::new(&id).await?;
         let epoch_changes = frame_storage.get_epoch_changes(id, epoch + 1).await?;
