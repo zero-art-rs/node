@@ -11,7 +11,7 @@ pub enum VerificationError {
     InvalidEpoch { current: u64, provided: u64 },
     #[error("Invalid input Provided")]
     InvalidInput,
-    #[error("Failed to use zrt_art {0}")]
+    #[error("ArtError: {0}")]
     ArtError(#[from] ArtError),
     #[error("ARTServiceError error: {0}")]
     ArtServiceError(#[from] ARTServiceError),
@@ -45,6 +45,8 @@ pub enum VerificationError {
     ServiceError(#[from] ServiceError),
     #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has one.")]
     AddMemberUniqueness { epoch: u64 },
+    #[error("Exclusive operation for epoch: {0} already exists.")]
+    ExclusiveOperationAlreadyExists(u64),
     #[error("Can't perform operation as the user is already removed.")]
     UserAlreadyRemoved,
     #[error("Aggregation isn't supported yet.")]

@@ -23,9 +23,10 @@ use types::centrifugo_schemas::AuthRequest;
 use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
+use types::utils::ArtUpdate;
 use uuid::Uuid;
 use zrt_art::art::PublicZeroArt;
-use zrt_art::art_node::{TreeMethods, LeafIter, LeafStatus};
+use zrt_art::art_node::{LeafIter, LeafStatus, TreeMethods};
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 use zrt_art::node_index::{Direction, NodeIndex};
@@ -285,7 +286,7 @@ pub async fn send_frame(
             {
                 Ok(result) => result,
                 Err(err) => {
-                    error!("Failed to get opcode and operation");
+                    error!("Failed to get opcode and operation: {}", err.to_string());
                     state.stop_updating(id).await;
                     return Err(err);
                 }
@@ -445,13 +446,13 @@ pub async fn get_opcode_and_input_for_aggregation(
         .await?;
 
     if !epoch_changes.is_empty() {
-        return Err(VerificationError::UnsupportedMerge(current_epoch));
+        return Err(VerificationError::ExclusiveOperationAlreadyExists(
+            current_epoch,
+        ));
     }
 
-    let eligibility_requirement = EligibilityRequirement::Previleged((
-        get_left_most_leaf_public_key(state, id).await?,
-        vec![],
-    ));
+    let eligibility_requirement =
+        EligibilityRequirement::Previleged((get_left_most_leaf_public_key(&art).await?, vec![]));
 
     Ok((
         VerificationOpcode::Aggregation,
@@ -484,9 +485,25 @@ pub async fn get_opcode_and_input_for_art_update(
         let frame_storage = MongoFramesStorage::new(&id).await?;
         let epoch_changes = frame_storage
             .get_epoch_changes(id, current_epoch + 1)
-            .await?;
+            .await
+            .inspect_err(|err| {
+                error!(
+                    "Failed to get changes for epoch {}: {}",
+                    current_epoch + 1,
+                    err
+                )
+            })?;
 
-        debug!("epoch_changes: {:#?}", epoch_changes);
+        // debug!("epoch_changes: {:#?}", epoch_changes);
+        let ArtUpdate::BranchChange(epoch_changes) = epoch_changes else {
+            error!(
+                "Epoch {} already contain aggregated operation, so no other changes can be applied.",
+                current_epoch + 1,
+            );
+            return Err(VerificationError::ExclusiveOperationAlreadyExists(
+                current_epoch + 1,
+            ));
+        };
 
         for change in epoch_changes {
             if change.node_index.as_index()? == branch_changes.node_index.as_index()? {
@@ -539,7 +556,7 @@ pub async fn get_opcode_and_input_for_art_update(
         BranchChangeType::AddMember => (
             VerificationOpcode::AddMember,
             EligibilityRequirement::Previleged((
-                get_left_most_leaf_public_key(state, id).await?,
+                get_left_most_leaf_public_key(&art).await?,
                 vec![],
             )),
         ),
@@ -554,7 +571,7 @@ pub async fn get_opcode_and_input_for_art_update(
             let aux_public_key = if matches!(target_leaf.get_status(), Some(LeafStatus::Active)) {
                 debug!("Using left most leaf public key for verification");
                 EligibilityRequirement::Previleged((
-                    get_left_most_leaf_public_key(state, id).await?,
+                    get_left_most_leaf_public_key(&art).await?,
                     vec![],
                 ))
             } else {
@@ -577,11 +594,8 @@ pub async fn get_opcode_and_input_for_art_update(
 }
 
 pub async fn get_left_most_leaf_public_key(
-    state: Arc<Container>,
-    id: Uuid,
+    art: &PublicZeroArt<CortadoAffine>,
 ) -> Result<CortadoAffine, VerificationError> {
-    let art = state.art_service.get_art(id, None).await?.art;
-
     let mut left_most_leaf = art.get_base_art().get_root();
     while let Some(node) = left_most_leaf.get_child(Direction::Left) {
         left_most_leaf = node;

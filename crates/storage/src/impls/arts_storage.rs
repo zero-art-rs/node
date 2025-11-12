@@ -5,12 +5,12 @@ use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Index
 use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::art::{PublicZeroArt, PublicArt};
+use zrt_art::art::{PublicArt, PublicZeroArt};
+use zrt_art::art_node::{ArtNode, TreeMethods};
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::errors::ArtError;
 use zrt_art::node_index::NodeIndex;
-use zrt_art::art_node::{TreeMethods, ArtNode};
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
 pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";

@@ -2,6 +2,7 @@ use crate::StorageError;
 use cortado::CortadoAffine;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;
+use types::utils::ArtUpdate;
 use types::FrameRecord;
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
@@ -36,9 +37,5 @@ pub trait FrameStorage: Send + Sync + Sized {
         messages: &FrameRecord,
     ) -> Result<Option<BranchChange<CortadoAffine>>, StorageError>;
 
-    async fn get_epoch_changes(
-        &self,
-        id: Uuid,
-        epoch: u64,
-    ) -> Result<Vec<BranchChange<CortadoAffine>>, StorageError>;
+    async fn get_epoch_changes(&self, id: Uuid, epoch: u64) -> Result<ArtUpdate, StorageError>;
 }

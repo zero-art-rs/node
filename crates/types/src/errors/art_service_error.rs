@@ -23,7 +23,7 @@ pub enum ARTServiceError {
     DatabaseRetrieval,
     #[error("Failed to initiate new session")]
     SessionInitiation,
-    #[error("Failed to use zrt_art {0}")]
+    #[error("ArtError: {0}")]
     ArtError(#[from] ArtError),
     #[error("No previous record found")]
     NoPreviousRecord,

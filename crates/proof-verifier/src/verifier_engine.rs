@@ -4,7 +4,6 @@ use tracing::error;
 use types::callback_wrappers::ProofVerifierMessage;
 use types::errors::VerificationError;
 use zrt_art::art::PublicZeroArt;
-use zrt_art::changes::VerifiableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_zk::EligibilityRequirement;
@@ -26,6 +25,7 @@ pub enum VerificationOpcode {
     DeleteChat,
 }
 
+#[derive(Debug)]
 pub enum PublicInputs {
     ArtUpdateInput {
         change: BranchChange<CortadoAffine>,

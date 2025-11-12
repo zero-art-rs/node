@@ -1,24 +1,17 @@
-use ark_ed25519::EdwardsAffine as Ed25519Affine;
-use bulletproofs::PedersenGens;
-use cortado::{ALT_GENERATOR_X, ALT_GENERATOR_Y, CortadoAffine};
+use cortado::CortadoAffine;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
-use zkp::ark_ec::AffineRepr;
-use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_art::changes::VerifiableChange;
 use zrt_crypto::schnorr;
-use zrt_zk::art::art_verify;
 
 pub mod verifier_engine;
-
 pub use types::errors::VerificationError;
 
 pub type ProofVerifierSender = mpsc::Sender<ProofVerifierMessageWrapper>;
-
 pub type ProofVerifierReceiver = mpsc::Receiver<ProofVerifierMessageWrapper>;
 
 #[derive(Debug)]

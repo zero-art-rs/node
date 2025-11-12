@@ -12,8 +12,8 @@ use prost::Message;
 use tracing::debug;
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
-use types::utils::decode_branch_change;
-use types::FrameRecord;
+use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
+use types::{utils, FrameRecord};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
 
@@ -201,11 +201,7 @@ impl FrameStorage for MongoFramesStorage {
         Ok(None)
     }
 
-    async fn get_epoch_changes(
-        &self,
-        id: Uuid,
-        epoch: u64,
-    ) -> Result<Vec<BranchChange<CortadoAffine>>, StorageError> {
+    async fn get_epoch_changes(&self, id: Uuid, epoch: u64) -> Result<ArtUpdate, StorageError> {
         let limit = types::DEFAULT_LIMIT;
         let mut skip = 0;
 
@@ -216,9 +212,26 @@ impl FrameStorage for MongoFramesStorage {
 
         let mut branch_changes = Vec::new();
         while !records.is_empty() {
-            for record in &records {
-                if let Ok(Some(branch_change)) = Self::extract_branch_change(record) {
-                    branch_changes.push(branch_change);
+            for record in records {
+                let mut buf = BytesMut::new();
+                buf.put(record.content.as_slice());
+                let frame = Frame::decode(buf)?;
+
+                let operation = utils::extract_operation(frame)?;
+
+                match operation {
+                    Some(Operation::KeyUpdate(branch_change_bytes))
+                    | Some(Operation::AddMember(branch_change_bytes))
+                    | Some(Operation::RemoveMember(branch_change_bytes))
+                    | Some(Operation::LeaveGroup(branch_change_bytes)) => {
+                        branch_changes.push(decode_branch_change(&branch_change_bytes)?);
+                    }
+                    Some(Operation::Aggregated(aggregation_change_data)) => {
+                        return Ok(ArtUpdate::AggregatedChange(decode_aggregated_change(
+                            &aggregation_change_data,
+                        )?))
+                    }
+                    _ => {}
                 }
             }
             skip += types::DEFAULT_LIMIT;
@@ -229,7 +242,7 @@ impl FrameStorage for MongoFramesStorage {
                 .await?;
         }
 
-        Ok(branch_changes)
+        Ok(ArtUpdate::BranchChange(branch_changes))
     }
 }
 

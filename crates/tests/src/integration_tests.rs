@@ -15,15 +15,15 @@ use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use std::time::Duration;
 use tokio_util::context;
-use tracing::info;
+use tracing::{debug, info};
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::centrifugo_schemas::AuthRequest;
 use types::protos;
 use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
 use types::utils::extract_branch_changes;
 use zkp::rand::thread_rng;
+use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt, PrivateZeroArt};
 use zrt_art::art_node::TreeMethods;
-use zrt_art::art::{ArtAdvancedOps, PrivateZeroArt, PrivateArt, AggregationContext};
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_crypto::schnorr::{sign, verify};
@@ -741,9 +741,10 @@ async fn test_send_aggregated_change() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let mut rng = StdRng::seed_from_u64(42);
-    let (mut context, _) = UserTestModel::new(GROUP_SIZE).await;
+    let (mut context, _) = UserTestModel::new(7).await;
 
     let zero_art = context.art.clone_without_rng(Box::new(thread_rng()));
+    info!("zero_art leaf pk: {}", zero_art.get_leaf_public_key());
 
     let mut agg = AggregationContext::from_private_zero_art(&zero_art, Box::new(thread_rng()));
 
@@ -752,10 +753,17 @@ async fn test_send_aggregated_change() -> eyre::Result<()> {
     }
 
     context
-        .send_aggregation(agg, zero_art, None, Some(StatusCode::OK))
+        .send_aggregation(&agg, zero_art, None, Some(StatusCode::OK))
         .await?;
-    
-    context.send
+
+    for i in 0..3 {
+        context.update_key(None, Some(StatusCode::OK)).await?;
+        context.add_member(Some(StatusCode::OK)).await?;
+    }
+
+    for i in 0..3 {
+        context.update_key(None, Some(StatusCode::OK)).await?;
+    }
 
     Ok(())
 }

@@ -26,13 +26,13 @@ use types::{
 use uuid::Uuid;
 use zkp::rand::thread_rng;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use zrt_art::art_node::{TreeMethods};
-use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateZeroArt, PrivateArt, PublicArt};
+use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt, PrivateZeroArt, PublicArt};
+use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::BranchChange;
-use zrt_art::changes::{ApplicableChange, ProvableChange};
-use zrt_art::node_index::{Direction, NodeIndex};
+use zrt_art::changes::{ApplicableChange, ProvableChange, VerifiableChange};
 use zrt_art::errors::ArtError;
+use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_crypto::schnorr::{sign, verify};
 use zrt_zk::{EligibilityRequirement, art::ArtProof};
 
@@ -193,17 +193,12 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
+        debug!("art: {}", self.art.get_base_art().get_root());
+
         let new_secret_key = Fr::rand(&mut rng);
 
         let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
         zero_art.commit().unwrap();
-
-        debug!(
-            "UpdateKey creation debug data:\n\tnew epoch: {}\n\tOld Tk: {:#?}...\n\tOld commited Tk: {:#?}...",
-            self.epoch + 1,
-            stringify_option(self.art.get_root_public_key().x().as_ref()),
-            stringify_option(zero_art.get_root_public_key().x().as_ref()),
-        );
 
         let branch_change_output = zero_art.update_key(new_secret_key)?;
         let branch_change = branch_change_output.get_branch_change().clone();
@@ -221,6 +216,22 @@ impl UserTestModel {
         let mut buf = BytesMut::new();
         tbs_frame.encode(&mut buf)?;
         let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        let eligibility_requirement =
+            EligibilityRequirement::Member(zero_art.get_leaf_public_key());
+        debug!(
+            "UpdateKey creation debug data:\
+            \n\tnew epoch: {}\
+            \n\tOld Tk: {:#?}...\
+            \n\tOld commited Tk: {:#?}...\
+            \n\tassociated_data: {:?}\
+            \n\teligibility_requirement: {:?}",
+            self.epoch + 1,
+            stringify_option(self.art.get_root_public_key().x().as_ref()),
+            stringify_option(zero_art.get_root_public_key().x().as_ref()),
+            associated_data,
+            eligibility_requirement,
+        );
 
         let mut proof_bytes = Vec::new();
         let proof = branch_change_output.prove(associated_data, None)?;
@@ -241,6 +252,9 @@ impl UserTestModel {
             }
         }
 
+        branch_change
+            .verify(&self.art, &associated_data, eligibility_requirement, &proof)
+            .unwrap();
         branch_change_output.apply(&mut zero_art).unwrap();
 
         debug!(
@@ -274,7 +288,7 @@ impl UserTestModel {
         debug!(
             "SendAggregation debug data:\n\
             \tepoch: {}\n\
-            \tNew TK: {:#?}",
+            \tOld TK: {:#?}",
             self.epoch + 1,
             self.art.get_root().get_public_key()
         );
@@ -320,7 +334,9 @@ impl UserTestModel {
         aggregation_change.apply(&mut zero_art).unwrap();
 
         debug!(
-            "UpdateKey apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
+            "SendAggregation comit debug data:\n\
+            \tepoch: {}\n\
+            \tNew TK: {:#?}",
             self.epoch + 1,
             stringify_option(
                 zero_art
@@ -328,7 +344,7 @@ impl UserTestModel {
                     .get_root_public_key()
                     .x()
                     .as_ref()
-            ),
+            )
         );
 
         self.art = zero_art;
@@ -397,13 +413,6 @@ impl UserTestModel {
         let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
         zero_art.commit().unwrap();
 
-        debug!(
-            "AddMember creation debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
-            self.epoch + 1,
-            stringify_option(self.art.get_base_art().get_root_public_key().x().as_ref()),
-            status_check,
-        );
-
         let append_user_changes_output = zero_art.add_member(new_user_secret_key)?;
         let append_user_changes = append_user_changes_output.get_branch_change().clone();
 
@@ -426,6 +435,31 @@ impl UserTestModel {
         let mut proof_bytes = Vec::new();
         let proof = append_user_changes_output.prove(associated_data, None)?;
         proof.serialize_compressed(&mut proof_bytes)?;
+
+        let eligibility_requirement =
+            EligibilityRequirement::Previleged((zero_art.get_leaf_public_key(), vec![]));
+        append_user_changes
+            .verify(
+                &self.art,
+                &associated_data,
+                eligibility_requirement.clone(),
+                &proof,
+            )
+            .unwrap();
+
+        debug!(
+            "AddMember creation debug data:\
+            \n\tnew epoch: {}\
+            \n\tOld Tk: {:#?}...\
+            \n\tOld commited Tk: {:#?}...\
+            \n\tassociated_data: {:?}\
+            \n\teligibility_requirement: {:?}",
+            self.epoch + 1,
+            stringify_option(self.art.get_root_public_key().x().as_ref()),
+            stringify_option(zero_art.get_root_public_key().x().as_ref()),
+            associated_data,
+            eligibility_requirement,
+        );
 
         let (request_response, request_bytes) = self
             .send_frame(Frame {

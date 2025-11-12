@@ -13,8 +13,8 @@ use types::errors::{ARTServiceError, ServiceError};
 use types::utils::{decode_art, decode_branch_change};
 
 use mongodb::ClientSession;
-use zrt_art::art_node::TreeMethods;
 use zrt_art::art::PublicZeroArt;
+use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
@@ -41,11 +41,16 @@ impl ARTService {
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         let record = match epoch {
-            Some(epoch) => self.get_art_by_epoch(id, epoch).await?,
-            None => arts_storage
-                .get_art(id)
-                .await
-                .map_err(|_| ARTServiceError::NotFound)?,
+            Some(epoch) => self.get_art_by_epoch(id, epoch).await.inspect_err(|err| {
+                error!(
+                    "Failed to get art by id {id} and epoch {epoch}: {}",
+                    err.to_string()
+                )
+            })?,
+            None => arts_storage.get_art(id).await.map_err(|err| {
+                error!("Failed to get latest art by id {}: {}", id, err.to_string());
+                ARTServiceError::NotFound
+            })?,
         };
 
         Ok(record)
@@ -69,9 +74,7 @@ impl ARTService {
                 return Err(ARTServiceError::NotFound);
             }
 
-            for change in epoch_changes {
-                change.apply(&mut art_record.art)?;
-            }
+            epoch_changes.apply(&mut art_record.art)?;
 
             art_record.art.commit()?;
         }

@@ -3,6 +3,7 @@ use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
+use types::utils::ArtUpdate;
 use types::{
     FrameRecord,
     errors::MessageServiceError,
@@ -113,7 +114,10 @@ impl MessengerService {
         epoch: u64,
     ) -> Result<bool, MessageServiceError> {
         let frame_storage = MongoFramesStorage::new(&id).await?;
-        let changes = frame_storage.get_epoch_changes(id, epoch).await?;
+        let ArtUpdate::BranchChange(changes) = frame_storage.get_epoch_changes(id, epoch).await?
+        else {
+            return Ok(false);
+        };
 
         for applied_change in &changes {
             if let BranchChangeType::AddMember = applied_change.change_type {

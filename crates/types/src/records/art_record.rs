@@ -5,8 +5,8 @@ use bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
-use zrt_art::art_node::TreeMethods;
 use zrt_art::art::PublicZeroArt;
+use zrt_art::art_node::TreeMethods;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(bound = "")]
