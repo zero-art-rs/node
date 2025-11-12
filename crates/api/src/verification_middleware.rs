@@ -418,7 +418,6 @@ pub async fn get_opcode_and_input_for_art_update(
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
         || matches!(branch_changes.change_type, BranchChangeType::RemoveMember)
         || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
-        || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
     {
         let frame_storage = MongoFramesStorage::new(&id).await?;
         let epoch_changes = frame_storage.get_epoch_changes(id, current_epoch + 1).await?;

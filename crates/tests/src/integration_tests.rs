@@ -460,25 +460,25 @@ async fn test_merge_operations_after_removal() -> eyre::Result<()> {
         .await?;
 
     info!("User 1 fails to updates his key");
-    let mut user1_clone = user1.clone();
+    let mut user1_clone = user1.clone_without_rng(Box::new(thread_rng()));
     user1_clone
         .update_key(Some(payload.clone()), Some(StatusCode::UNAUTHORIZED))
         .await?;
 
     info!("User 1 fails to add member");
-    let mut user1_clone = user1.clone();
+    let mut user1_clone = user1.clone_without_rng(Box::new(thread_rng()));
     user1_clone
         .add_member(Some(StatusCode::UNAUTHORIZED))
         .await?;
 
     info!("User 1 fails to leave the group as he already removed.");
-    let mut user1_clone = user1.clone();
+    let mut user1_clone = user1.clone_without_rng(Box::new(thread_rng()));
     user1_clone
         .leave_group(Some(StatusCode::UNAUTHORIZED))
         .await?;
 
     info!("User 1 fails to send message, as he is in previous epoch.");
-    let mut user1_clone = user1.clone();
+    let mut user1_clone = user1.clone_without_rng(Box::new(thread_rng()));
     user1_clone
         .send_payload(b"User 1 still can send message.".to_vec(), Some(StatusCode::UNAUTHORIZED))
         .await?;
@@ -499,7 +499,6 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     let mut user1 = user0.derive_new(5)?;
     let mut user2 = user0.derive_new(2)?;
     let user3 = user0.derive_new(1)?;
-    info!("User0 pk: {}", user0.art.get_leaf_public_key());
 
     // sanity check
     assert_eq!(user2.art, user0.art);
@@ -509,39 +508,30 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
     let target_node_path = user0.index_of(4).unwrap().get_path().unwrap();
 
     info!(
-        "User 0 blanking the user on path {:?} ...",
+        "User 0 removing the user on path {:?} ...",
         &target_node_path
     );
     user0
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
-    // user0.update_key(None, Some(StatusCode::OK)).await?;
-    info!(
-        "User0 TK: {}",
-        user0.art.get_base_art().get_root().get_public_key()
-    );
-    info!("User0 tk: {}", user0.art.get_root_secret_key());
+    user0.art.commit().unwrap();
 
     info!("User1 receive changes ..");
     let blank_user_0 = user1
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
+
     assert_eq!(user1.art, user2.art);
     blank_user_0[0].apply(&mut user1.art).unwrap();
+    user1.art.commit().unwrap();
     assert_eq!(user1.art, user0.art);
     user1.epoch += 1;
-    info!("User1 tk: {}", user1.art.get_root_secret_key());
-    assert_eq!(user1.art, user0.art);
 
-    info!("User 1 blanking the target node ...");
+    info!("User 1 remove the target node ...");
     user1
         .make_blank(&target_node_path, Some(StatusCode::NO_CONTENT))
         .await?;
-    info!(
-        "User1 TK: {}",
-        user1.art.get_base_art().get_root().get_public_key()
-    );
-    info!("User1 tk: {}", user1.art.get_root_secret_key());
+    user1.art.commit().unwrap();
     assert_eq!(
         CortadoAffine::generator()
             .mul(user1.art.get_root_secret_key())
@@ -554,9 +544,8 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
     blank_user_1[0].apply(&mut user2.art).unwrap();
+    user2.art.commit().unwrap();
     user2.epoch += 1;
-    info!("User2 tk: {}", user2.art.get_root_secret_key());
-    // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(user2.art, user0.art);
     assert_eq!(
         CortadoAffine::generator()
@@ -569,13 +558,12 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     info!("User 2 receive second changes ...");
     blank_user_1[1].apply(&mut user2.art)?;
-    info!("User2 tk: {}", user2.art.get_root_secret_key());
+    user2.art.commit().unwrap();
     user2.epoch += 1;
-    // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(
         user1.art.get_base_art().get_root(),
         user2.art.get_base_art().get_root(),
-        "Users have different view on the state of the art.\nUser1",
+        "Users have different view on the state of the art.\nUser1\n{}\nUser2\n{}",
         user1.art.get_base_art().get_root(),
         user2.art.get_base_art().get_root(),
     );
@@ -596,10 +584,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
 
     info!("User 2 update key ...");
     user2.update_key(None, Some(StatusCode::OK)).await?;
-    info!(
-        "New TK: {}",
-        user2.art.get_base_art().get_root().get_public_key()
-    );
+
     Ok(())
 }
 
