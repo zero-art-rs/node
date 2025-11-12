@@ -45,7 +45,7 @@ pub enum VerificationError {
     ServiceError(#[from] ServiceError),
     #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has some.")]
     AddMemberUniqueness { epoch: u64 },
-    #[error("Can't leave the group, because the node is already marked as blank")]
+    #[error("Can't perform operation as the user is already removed.")]
     UserAlreadyRemoved,
     #[error("Aggregation isn't supported yet.")]
     UnsupportedAggregation,

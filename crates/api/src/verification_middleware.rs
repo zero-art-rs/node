@@ -424,7 +424,13 @@ pub async fn get_opcode_and_input_for_art_update(
                 if matches!(change.change_type, BranchChangeType::Leave)
                     || matches!(change.change_type, BranchChangeType::RemoveMember)
                 {
-                    return Err(VerificationError::MergeUserRemove)
+                    if branch_changes.change_type == BranchChangeType::UpdateKey {
+                        error!("Can't update key, as the user will be removed after merge.");
+                        return Err(VerificationError::UserAlreadyRemoved);
+                    } else {
+                        error!("Can't remove the user for a second time.");
+                        return Err(VerificationError::MergeUserRemove)
+                    }
                 }
             }
         }

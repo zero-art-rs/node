@@ -241,6 +241,54 @@ impl UserTestModel {
     }
 
     // add node to the art, and send updates to the chat
+    pub async fn send_payload(
+        &mut self,
+        payload: Vec<u8>,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        debug!(
+            "Send payload debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
+            self.epoch,
+            self.art.get_root().get_public_key(),
+            status_check,
+        );
+
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch,
+            nonce: (0..DEFAULT_NONCE_LENGTH)
+                .map(|_| rand::random::<u8>())
+                .collect::<Vec<u8>>(),
+            group_operation: None,
+            protected_payload: payload,
+        };
+
+        let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
+        let tk = self.art.get_root_secret_key();
+        let pk = vec![self.art.get_root().get_public_key()];
+
+        let signature = sign(&vec![tk], &pk, &msg)?;
+
+        let (request_response, request_bytes) = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: signature,
+            })
+            .await?;
+
+        if let Some(status_check) = status_check {
+            if request_response.status() != status_check {
+                Err(UserTestModelError::from((
+                    request_response.status(),
+                    status_check,
+                )))?;
+            }
+        }
+
+        Ok((request_response, request_bytes))
+    }
+
+    // add node to the art, and send updates to the chat
     pub async fn add_member(
         &mut self,
         status_check: Option<StatusCode>,

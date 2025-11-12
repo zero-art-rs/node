@@ -402,7 +402,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
 
 #[cfg(feature = "merge_changes")]
 #[tokio::test]
-async fn test_merge_remove_key_update() -> eyre::Result<()> {
+async fn test_merge_operations_after_removal() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let payload = UserTestModel::new_nonce();
@@ -420,41 +420,39 @@ async fn test_merge_remove_key_update() -> eyre::Result<()> {
     let target_user_index = user1.art.get_node_index();
     let target_user_path = target_user_index.get_path().unwrap();
 
-    info!("User 0 remove user 1 ...");
+    info!("User 0 remove user 1");
     user0
         .make_blank(&target_user_path, Some(StatusCode::NO_CONTENT))
         .await?;
 
-    info!("User 1 fails to updates his key ...");
-    user1
+    info!("User 1 fails to updates his key");
+    let mut user1_clone = user1.clone();
+    user1_clone
         .update_key(Some(payload.clone()), Some(StatusCode::UNAUTHORIZED))
         .await?;
 
-    let changes = user2
-        .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
+    info!("User 1 fails to add member");
+    let mut user1_clone = user1.clone();
+    user1_clone
+        .add_member(Some(StatusCode::UNAUTHORIZED))
         .await?;
 
-    // let observer_merge = MergeBranchChange::new_for_observer(changes.clone());
-    //
-    // info!("User 2 merge changes locally ...");
-    // observer_merge.update(&mut user2.art)?;
-    // observer_merge.update(&mut user0.art)?;
-    // // user2.art.merge_for_observer(&changes);
-    // // user0.art.merge_for_observer(&changes);
-    // user2.epoch += 1;
-    // user0.epoch += 1;
-    // info!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
-    //
-    // info!("User 2 update and send update request with merge resolved");
-    // user2
-    //     .update_key(Some(payload.clone()), Some(StatusCode::OK))
-    //     .await?;
-    // info!("User2 TK_x: {}", user2.art.get_root().get_public_key());
-    //
-    // info!("User 0 fail to append member ...");
-    // user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
-    // // user0.update_key(None, Some(StatusCode::OK)).await?;
-    // info!("User0 TK: {}", user0.art.get_root().get_public_key());
+    info!("User 1 fails to leave the group as he already removed.");
+    let mut user1_clone = user1.clone();
+    user1_clone
+        .leave_group(Some(StatusCode::UNAUTHORIZED))
+        .await?;
+
+    info!("User 1 fails to send message, as he is in previous epoch.");
+    let mut user1_clone = user1.clone();
+    user1_clone
+        .send_payload(b"User 1 still can send message.".to_vec(), Some(StatusCode::UNAUTHORIZED))
+        .await?;
+
+    info!("User 0 can send messages.");
+    user0
+        .send_payload(b"User 1 still can send message.".to_vec(), Some(StatusCode::OK))
+        .await?;
 
     Ok(())
 }
