@@ -25,11 +25,11 @@ use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
-use zrt_art::art::art_node::{LeafIter, LeafStatus};
-use zrt_art::art::art_types::{PrivateZeroArt, PublicZeroArt};
-use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
-use zrt_art::node_index::{NodeIndex, Direction};
 use zrt_art::TreeMethods;
+use zrt_art::art::art_node::{LeafIter, LeafStatus};
+use zrt_art::art::{PrivateZeroArt, PublicZeroArt};
+use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
+use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_zk::EligibilityRequirement;
 
 /// Handle authentication request verification.
@@ -66,7 +66,7 @@ pub async fn authenticate(
     for (chat_id, epoch) in auth_request.chat_ids.iter().zip(auth_request.epochs.iter()) {
         let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
-        root_keys.push(art.get_root().get_public_key());
+        root_keys.push(art.get_base_art().get_root().get_public_key());
     }
 
     let verification_req = VerificationRequest {
@@ -127,7 +127,7 @@ pub async fn list_messages(
         data: VerifierData {
             proof: payload.signature.clone(),
             public_inputs: PublicInputs::Signature {
-                public_keys: vec![art.get_root().get_public_key()],
+                public_keys: vec![art.get_base_art().get_root().get_public_key()],
             },
             associated_data: msg,
         },
@@ -175,7 +175,7 @@ pub async fn get_art(
     match ProofMode::try_from(payload.proof_mode.as_str())? {
         ProofMode::UseLeafKey => {
             let mut public_key_is_wrong = true;
-            for node in LeafIter::new(art.get_root()) {
+            for node in LeafIter::new(art.get_base_art().get_root()) {
                 if node.get_public_key().eq(&public_key) {
                     public_key_is_wrong = false;
                 }
@@ -187,7 +187,7 @@ pub async fn get_art(
             }
         }
         ProofMode::UseRootKey => {
-            if art.get_root().get_public_key() != public_key {
+            if art.get_base_art().get_root().get_public_key() != public_key {
                 error!("Provided public key doesn't match with root key.");
                 return Err(VerificationError::InvalidInput);
             }
@@ -249,7 +249,11 @@ pub async fn send_frame(
     let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
 
     if tbs_frame.group_id != id.to_string() {
-        error!("Group ID mismatch");
+        error!(
+            "Group ID mismatch: tbs_frame.group_id is {}, while id in path is {}",
+            tbs_frame.group_id,
+            id
+        );
         return Err(VerificationError::InvalidInput);
     }
 
@@ -260,7 +264,7 @@ pub async fn send_frame(
         Some(val) => val.operation.as_ref(),
     };
 
-    validate_frame_applicability(state.clone(), id, &tbs_frame).await?;
+    verify_frame_applicability_by_epoch(state.clone(), id, &tbs_frame).await?;
 
     let (opcode, public_inputs) = match &operation {
         Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
@@ -298,7 +302,6 @@ pub async fn send_frame(
         None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
     };
 
-    debug!("create VerificationRequest");
     let verification_req = VerificationRequest {
         opcode,
         data: VerifierData {
@@ -308,7 +311,6 @@ pub async fn send_frame(
         },
     };
 
-    debug!("create response");
     let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
     match &operation {
         Some(Operation::AddMember(_))
@@ -324,7 +326,7 @@ pub async fn send_frame(
     response
 }
 
-async fn validate_frame_applicability(
+async fn verify_frame_applicability_by_epoch(
     state: Arc<Container>,
     id: Uuid,
     tbs_frame: &FrameTbs,
@@ -346,12 +348,10 @@ async fn validate_frame_applicability(
         }
         Some(Operation::RemoveMember(_))
         | Some(Operation::KeyUpdate(_))
-        | Some(Operation::LeaveGroup(_)) => {
-            match state.merge_changes {
-                true => vec![current_epoch, current_epoch + 1],
-                false => vec![current_epoch + 1],
-            }
-        }
+        | Some(Operation::LeaveGroup(_)) => match state.merge_changes {
+            true => vec![current_epoch, current_epoch + 1],
+            false => vec![current_epoch + 1],
+        },
         _ => {
             // Allow all epochs. For validation allow the used one.
             vec![current_epoch, current_epoch + 1]
@@ -379,7 +379,10 @@ pub async fn verify_and_send(
     parts: Parts,
     bytes: Bytes,
 ) -> Result<Response, VerificationError> {
-    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
+    let verification_message = verification_req
+        .to_message()
+        .inspect_err(|err| error!("Failed to send frame: {}", err))?;
+    verify(verification_message, &state.proof_verifier_sender).await?;
 
     Ok(next
         .run(Request::from_parts(
@@ -406,18 +409,21 @@ pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
-    epoch: u64,
+    current_epoch: u64,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
-    let art = state.art_service.get_art(id, Some(epoch)).await?.art;
+    let art = state.art_service.get_art(id, Some(current_epoch)).await?.art;
 
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
         || matches!(branch_changes.change_type, BranchChangeType::RemoveMember)
         || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
+        || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
     {
         let frame_storage = MongoFramesStorage::new(&id).await?;
-        let epoch_changes = frame_storage.get_epoch_changes(id, epoch + 1).await?;
+        let epoch_changes = frame_storage.get_epoch_changes(id, current_epoch + 1).await?;
+
+        debug!("epoch_changes: {:#?}", epoch_changes);
 
         for change in epoch_changes {
             if change.node_index.as_index()? == branch_changes.node_index.as_index()? {
@@ -434,41 +440,48 @@ pub async fn get_opcode_and_input_for_art_update(
                 }
             }
         }
-
     }
 
     let (opcode, eligibility_requirement) = match branch_changes.change_type {
         BranchChangeType::UpdateKey => {
-            let leaf = art.get_node(&branch_changes.node_index)?;
+            let leaf = art.get_base_art().get_node(&branch_changes.node_index)?;
             if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::KeyUpdate,
-                EligibilityRequirement::Member(art.get_node(&branch_changes.node_index)?.get_public_key())
+                EligibilityRequirement::Member(
+                    art.get_base_art()
+                        .get_node(&branch_changes.node_index)?
+                        .get_public_key(),
+                ),
             )
         }
         BranchChangeType::Leave => {
-            let leaf = art.get_node(&branch_changes.node_index)?;
+            let leaf = art.get_base_art().get_node(&branch_changes.node_index)?;
             if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::LeaveGroup,
-                EligibilityRequirement::Member(art.get_node(&branch_changes.node_index)?.get_public_key()),
+                EligibilityRequirement::Member(
+                    art.get_base_art()
+                        .get_node(&branch_changes.node_index)?
+                        .get_public_key(),
+                ),
             )
         }
         BranchChangeType::AddMember => (
             VerificationOpcode::AddMember,
             EligibilityRequirement::Previleged((
                 get_left_most_leaf_public_key(state, id).await?,
-                vec![]
-            ))
+                vec![],
+            )),
         ),
         BranchChangeType::RemoveMember => {
-            let target_leaf = art.get_node(&branch_changes.node_index)?;
+            let target_leaf = art.get_base_art().get_node(&branch_changes.node_index)?;
 
             if !target_leaf.is_leaf() {
                 error!("Target leaf for removal is not a leaf.");
@@ -483,7 +496,7 @@ pub async fn get_opcode_and_input_for_art_update(
                 ))
             } else {
                 debug!("Using art.root.public_key for verification");
-                EligibilityRequirement::Member(art.get_root().get_public_key())
+                EligibilityRequirement::Member(art.get_base_art().get_root().get_public_key())
             };
 
             (VerificationOpcode::RemoveMember, aux_public_key)
@@ -494,7 +507,7 @@ pub async fn get_opcode_and_input_for_art_update(
         opcode,
         PublicInputs::ArtUpdateInput {
             change: branch_changes,
-            art: PublicZeroArt::new(art),
+            art,
             eligibility_requirement,
         },
     ))
@@ -506,7 +519,7 @@ pub async fn get_left_most_leaf_public_key(
 ) -> Result<CortadoAffine, VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = art.get_root();
+    let mut left_most_leaf = art.get_base_art().get_root();
     while let Some(node) = left_most_leaf.get_child(Direction::Left) {
         left_most_leaf = node;
     }
@@ -520,14 +533,14 @@ pub async fn get_opcode_and_input_for_drop_group(
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = art.get_root();
+    let mut left_most_leaf = art.get_base_art().get_root();
     let mut path = Vec::new();
     while let Some(node) = left_most_leaf.get_child(Direction::Left) {
         path.push(Direction::Left);
         left_most_leaf = node;
     }
 
-    let leaf = art.get_node(&NodeIndex::Direction(path))?;
+    let leaf = art.get_base_art().get_node(&NodeIndex::Direction(path))?;
     if !leaf.is_leaf() {
         return Err(VerificationError::InvalidProof);
     }
@@ -549,7 +562,7 @@ pub async fn get_opcode_and_input_for_send_message(
     Ok((
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
-            public_keys: vec![art.get_root().get_public_key()],
+            public_keys: vec![art.get_base_art().get_root().get_public_key()],
         },
     ))
 }

@@ -5,11 +5,12 @@ use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Index
 use tracing::{debug, error, warn};
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::errors::ArtError;
 use zrt_art::art::art_node::ArtNode;
 use zrt_art::art::art_types::PublicArt;
-use zrt_art::changes::ApplicableChange;
+use zrt_art::art::PublicZeroArt;
 use zrt_art::changes::branch_change::BranchChange;
+use zrt_art::changes::ApplicableChange;
+use zrt_art::errors::ArtError;
 use zrt_art::node_index::NodeIndex;
 use zrt_art::TreeMethods;
 
@@ -69,17 +70,8 @@ impl ARTStorage for MongoARTStorage {
     async fn new_chat(
         &self,
         session: &mut ClientSession,
-        art: PublicArt<CortadoAffine>,
-        chat_id: Uuid,
-        is_private: bool,
+        initial_art_record: ARTRecord<CortadoAffine>,
     ) -> Result<(), mongodb::error::Error> {
-        let initial_art_record = ARTRecord {
-            chat_id,
-            art: art.clone(),
-            is_private,
-            epoch: 0,
-        };
-
         self.arts_collection
             .insert_one(initial_art_record.clone())
             .session(&mut *session)
@@ -100,11 +92,11 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        debug!("Deleting art for chat: {chat_id}");
         self.arts_collection
             .delete_one(filter.clone())
             .session(session)
-            .await?;
+            .await
+            .inspect_err(|_| error!("Failed to delete art in group: {chat_id}"))?;
 
         Ok(())
     }
@@ -116,36 +108,33 @@ impl ARTStorage for MongoARTStorage {
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "chat_id": chat_id };
 
-        debug!("Deleting initial art for chat: {chat_id}");
         self.initial_arts_collection
             .delete_one(filter)
             .session(session)
-            .await?;
+            .await
+            .inspect_err(|_| error!("Failed to delete initial art in group: {chat_id}"))?;
 
         Ok(())
     }
 
     /// return the latest art
-    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
-        debug!("Retrieving latest art for chat: {chat_id}");
+    async fn get_art(&self, id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
         let art = self
             .arts_collection
-            .find_one(doc! {"chat_id": chat_id})
-            .await?;
+            .find_one(doc! {"chat_id": id})
+            .await
+            .inspect_err(|_| error!("Failed to retrieve latest art for group: {}", id))?;
 
         art.ok_or_else(|| StorageError::NotFound)
     }
 
     /// Return the first art state in the chat
-    async fn get_initial_art(
-        &self,
-        chat_id: Uuid,
-    ) -> Result<ARTRecord<CortadoAffine>, StorageError> {
-        debug!("Retrieving initial art for chat: {chat_id}");
+    async fn get_initial_art(&self, id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
         let art = self
             .initial_arts_collection
-            .find_one(doc! {"chat_id": chat_id})
-            .await?;
+            .find_one(doc! {"chat_id": id})
+            .await
+            .inspect_err(|_| error!("Failed to retrieve latest art for group: {}", id))?;
 
         art.ok_or_else(|| StorageError::NotFound)
     }
@@ -159,7 +148,7 @@ impl ARTStorage for MongoARTStorage {
 
         debug!("Updating art for chat: {}", chat_id);
         if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
-            changes.update(&mut art_record.art)?;
+            changes.apply(&mut art_record.art)?;
 
             self.arts_collection
                 .find_one_and_replace(filter, art_record)
@@ -211,7 +200,11 @@ impl ARTStorage for MongoARTStorage {
         node_index: u64,
     ) -> Result<(), StorageError> {
         let mut art = self.get_art(chat_id).await?;
-        match art.art.get_mut_node(&NodeIndex::Index(node_index))? {
+        match art
+            .art
+            .get_mut_upstream_art()
+            .get_mut_node(&NodeIndex::Index(node_index))?
+        {
             ArtNode::Leaf { metadata, .. } => *metadata = new_metadata,
             ArtNode::Internal { .. } => return Err(StorageError::ArtError(ArtError::LeafOnly)),
         }
@@ -226,11 +219,11 @@ impl ARTStorage for MongoARTStorage {
         id: Uuid,
         new_art_record: ARTRecord<CortadoAffine>,
     ) -> Result<(), StorageError> {
-        debug!("Retrieving latest art for chat: {}", id);
         let art = self
             .arts_collection
             .find_one_and_replace(doc! {"chat_id": id}, new_art_record)
-            .await?;
+            .await
+            .inspect_err(|_| error!("Failed to retrieve latest art for group with id: {}", id))?;
 
         if art.is_none() {
             error!("No art found for chat: {id}");

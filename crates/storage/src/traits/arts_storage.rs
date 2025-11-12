@@ -1,10 +1,10 @@
-use uuid::Uuid;
 use crate::StorageError;
 use cortado::CortadoAffine;
 use mongodb::ClientSession;
+use types::ARTRecord;
+use uuid::Uuid;
 use zrt_art::art::art_types::PublicArt;
 use zrt_art::changes::branch_change::BranchChange;
-use types::ARTRecord;
 
 /// Storage for art full states
 #[async_trait::async_trait]
@@ -12,9 +12,7 @@ pub trait ARTStorage: Send + Sync {
     async fn new_chat(
         &self,
         session: &mut ClientSession,
-        art: PublicArt<CortadoAffine>,
-        chat_id: Uuid,
-        is_private: bool,
+        initial_art_record: ARTRecord<CortadoAffine>,
     ) -> Result<(), mongodb::error::Error>;
 
     async fn delete_art(
@@ -30,7 +28,10 @@ pub trait ARTStorage: Send + Sync {
     ) -> Result<(), mongodb::error::Error>;
 
     async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError>;
-    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError>;
+    async fn get_initial_art(
+        &self,
+        chat_id: Uuid,
+    ) -> Result<ARTRecord<CortadoAffine>, StorageError>;
     async fn update_art(
         &self,
         changes: BranchChange<CortadoAffine>,

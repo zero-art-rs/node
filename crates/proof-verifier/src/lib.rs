@@ -11,7 +11,7 @@ use zkp::ark_ec::AffineRepr;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_art::changes::VerifiableChange;
 use zrt_crypto::schnorr;
-use zrt_zk::art::{art_verify};
+use zrt_zk::art::art_verify;
 
 pub mod verifier_engine;
 
@@ -66,12 +66,16 @@ impl ProofVerifier {
             //     self.verify_art_update_proof(associated_data, aux_public_keys, path, co_path, proof)
             //         .await
             // }
-            ProofVerifierMessage::ArtUpdate { change, art, associated_data, eligibility_requirement, proof } => {
-                match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
-                    Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
-                    Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false })
-                }
-            }
+            ProofVerifierMessage::ArtUpdate {
+                change,
+                art,
+                associated_data,
+                eligibility_requirement,
+                proof,
+            } => match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
+                Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
+                Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false }),
+            },
             ProofVerifierMessage::SchnorrSignature {
                 signature,
                 public_keys,

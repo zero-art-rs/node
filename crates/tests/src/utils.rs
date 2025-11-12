@@ -79,6 +79,17 @@ pub fn init_tracing_for_test() {
     _ = tracing_subscriber::fmt()
         .with_timer(LocalTimer)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(false)
+        .with_target(true)
         .try_init();
+}
+
+pub fn stringify_option<T>(any: Option<&T>) -> String
+where
+    T: ToString,
+{
+    if let Some(t) = any {
+        t.to_string().to_string()[0..30].to_string()
+    } else {
+        "None".to_string()
+    }
 }

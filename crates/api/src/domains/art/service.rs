@@ -1,6 +1,6 @@
+use axum::http::StatusCode;
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
-use std::cmp::Ordering;
 use storage::{
     ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
     MongoKeysStorage, StorageError,
@@ -8,17 +8,15 @@ use storage::{
 use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
-use zrt_art::errors::ArtError;
 
-use types::errors::ARTServiceError;
-use types::utils::decode_art;
+use types::errors::{ARTServiceError, ServiceError};
+use types::utils::{decode_art, decode_branch_change};
 
 use mongodb::ClientSession;
-use zrt_art::art::art_node::LeafStatus;
-use zrt_art::changes::ApplicableChange;
-use zrt_art::changes::branch_change::{BranchChange, BranchChangeType, MergeBranchChange};
-use zrt_art::node_index::NodeIndex;
 use zrt_art::TreeMethods;
+use zrt_art::art::PublicZeroArt;
+use zrt_art::changes::ApplicableChange;
+use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 
 pub struct ARTService {}
 
@@ -57,94 +55,39 @@ impl ARTService {
         id: Uuid,
         epoch: u64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        debug!("Recomputing {} state of the art in the chat: {}", epoch, id);
+        debug!("Retrieve ART on {} epoch in group: {}", epoch, id);
 
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
         let mut art_record = self.get_initial_art(&id).await?;
-
         // Apply other operations from remaining epochs.
         for i in 1..=epoch {
             let epoch_changes = frame_storage.get_epoch_changes(id, i).await?;
 
-            match epoch_changes.len().cmp(&1) {
-                Ordering::Less => return Err(ARTServiceError::NotFound),
-                Ordering::Equal => epoch_changes[0].update(&mut art_record.art)?,
-                Ordering::Greater => {
-                    let merge_all_change = MergeBranchChange::new_for_observer(epoch_changes.clone());
-                    merge_all_change.update(&mut art_record.art)?
-                },
+            if epoch_changes.is_empty() {
+                return Err(ARTServiceError::NotFound);
             }
+
+            for change in epoch_changes {
+                change.apply(&mut art_record.art)?;
+            }
+
+            art_record.art.commit()?;
         }
 
         art_record.epoch = epoch;
         debug!(
-            "Successfully recomputed {} state of art. It has the next root PK: {}",
+            "Retrieved ART on epoch {} in chat {} with root PK: {}",
             epoch,
-            art_record.art.get_root().get_public_key()
+            id,
+            art_record
+                .art
+                .get_upstream_art()
+                .get_root()
+                .get_public_key()
         );
 
         Ok(art_record)
-    }
-
-    pub async fn get_art_by_epoch_iterative(
-        &self,
-        id: &Uuid,
-        epoch: u64,
-    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        let message_storage = MongoFramesStorage::new(id).await?;
-
-        let art_record = self.get_initial_art(id).await?;
-        let mut initial_art = art_record.art;
-
-        debug!(
-            "Recomputing {} state of the art in the group: {}",
-            epoch, id
-        );
-        let filter = doc! { "epoch": { "$lte": epoch as i64 } };
-
-        let mut changes = Vec::with_capacity(epoch as usize);
-
-        let mut skip = 0;
-        while changes.len() < epoch as usize {
-            let messages = message_storage
-                .list(filter.clone(), types::DEFAULT_LIMIT, skip)
-                .await?;
-            skip += types::DEFAULT_LIMIT;
-
-            if messages.is_empty() {
-                break;
-            }
-
-            for message in &messages {
-                if let Ok(Some(branch_changes)) = MongoFramesStorage::extract_branch_change(message)
-                {
-                    changes.push(branch_changes);
-                }
-            }
-        }
-
-        if changes.len() < epoch as usize {
-            error!(
-                "Haven't reached state {} in chat {} yet. Current state is {}",
-                epoch,
-                id,
-                changes.len()
-            );
-            return Err(ARTServiceError::NotFound);
-        }
-
-        for change in &changes {
-            change.update(&mut initial_art)?;
-        }
-
-        debug!("Successfully recomputed {} state of art", epoch);
-        Ok(ARTRecord {
-            chat_id: *id,
-            art: initial_art,
-            is_private: art_record.is_private,
-            epoch,
-        })
     }
 
     pub async fn get_current_epoch(&self, id: Uuid) -> Result<u64, ARTServiceError> {
@@ -236,9 +179,16 @@ impl ARTService {
             .start_session()
             .await?;
 
+        let initial_art_record = ARTRecord {
+            chat_id: id,
+            art: PublicZeroArt::new(art)?,
+            is_private,
+            epoch: 0,
+        };
+
         session.start_transaction().await?;
         arts_storage
-            .new_chat(&mut session, art, id, is_private)
+            .new_chat(&mut session, initial_art_record)
             .await?;
         session.commit_transaction().await?;
 
@@ -247,7 +197,7 @@ impl ARTService {
         Ok(())
     }
 
-    pub async fn update_art(
+    pub async fn update_art_tmp(
         &self,
         id: Uuid,
         changes: &BranchChange<ARTGroup>,
@@ -282,7 +232,7 @@ impl ARTService {
     pub async fn update_art_in_session(
         &self,
         session: &mut ClientSession,
-        changes: BranchChange<ARTGroup>,
+        change: BranchChange<ARTGroup>,
         id: Uuid,
     ) -> Result<(), ARTServiceError> {
         let filter = doc! { "chat_id": id };
@@ -295,13 +245,17 @@ impl ARTService {
             .find_one(filter.clone())
             .await?
         {
-            changes.update(&mut art_record.art)?;
+            change.apply(&mut art_record.art)?;
 
             art_record.epoch += 1;
 
             debug!(
                 "Updated art. New root PK is: {}, new epoch is: {}",
-                &art_record.art.get_root().get_public_key(),
+                &art_record
+                    .art
+                    .get_upstream_art()
+                    .get_root()
+                    .get_public_key(),
                 art_record.epoch
             );
 
@@ -318,62 +272,55 @@ impl ARTService {
         Ok(())
     }
 
-    pub fn check_if_can_merge(
-        &self,
-        art_record: &ARTRecord<CortadoAffine>,
-        change: &BranchChange<CortadoAffine>,
-        applied_changes: &Vec<BranchChange<CortadoAffine>>,
-    ) -> Result<(), ARTServiceError> {
-        if art_record.is_private {
-            match change.change_type {
-                BranchChangeType::UpdateKey => {}
-                _ => return Err(ARTServiceError::InvalidChangeType),
-            }
-        }
-
-        if let BranchChangeType::AddMember = &change.change_type {
-            let mut there_was_add_member = false;
-            for applied_change in applied_changes {
-                if let BranchChangeType::AddMember = applied_change.change_type {
-                    there_was_add_member = true;
-                    break;
-                }
-            }
-
-            if there_was_add_member {
-                return Err(ARTServiceError::InvalidChangeType);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn merge_change(
+    pub async fn update_art(
         &self,
         id: Uuid,
-        change: BranchChange<CortadoAffine>,
+        change: &BranchChange<CortadoAffine>,
         new_epoch: u64,
     ) -> Result<(), ARTServiceError> {
+        let current_epoch = self.get_current_epoch(id).await?;
+
+        let filter = doc! { "chat_id": id };
+
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
-        let frames_storage = MongoFramesStorage::get_existing_collection(id).await?;
+        let Some(mut art_record) = arts_storage
+            .arts_collection
+            .find_one(filter.clone())
+            .await?
+        else {
+            error!("Art not found");
+            return Err(ARTServiceError::NotFound);
+        };
 
-        let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
-        let mut target_changes =
-            frames_storage.get_epoch_changes(id, new_epoch).await?;
+        match new_epoch {
+            e if e == current_epoch => {
+                change.apply(&mut art_record.art)?;
+            }
+            e if e == current_epoch + 1 => {
+                art_record.art.commit()?;
+                art_record.epoch += 1;
 
-        self.check_if_can_merge(&latest_art, &change, &target_changes)?;
+                change.apply(&mut art_record.art)?;
+            }
+            _ => return Err(ARTServiceError::InvalidInput.into()),
+        }
 
-        target_changes.push(change);
-        let merge_all_change = MergeBranchChange::new_for_observer(target_changes.clone());
-        merge_all_change.update(&mut latest_art.art)?;
-        latest_art.epoch = new_epoch;
+        let mut session = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+            .client()
+            .start_session()
+            .await?;
 
-        debug!(
-            "Finished to merge art. New root PK is: {}",
-            latest_art.art.get_root().get_public_key()
-        );
+        session.start_transaction().await?;
 
-        arts_storage.replace_art(id, latest_art).await?;
+        arts_storage
+            .arts_collection
+            .find_one_and_replace(filter, art_record)
+            .session(&mut session)
+            .await?;
+
+        session.commit_transaction().await?;
 
         Ok(())
     }

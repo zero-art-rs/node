@@ -6,7 +6,7 @@ use zrt_art::changes::branch_change::BranchChange;
 use zrt_art::errors::ArtError;
 
 /// Decode branch changes from base64 string
-pub fn decode_branch_changes(
+pub fn decode_branch_change(
     branch_changes_bytes: &[u8],
 ) -> Result<BranchChange<CortadoAffine>, ArtError> {
     postcard::from_bytes(branch_changes_bytes).map_err(ArtError::from)
@@ -35,17 +35,13 @@ pub fn extract_branch_changes(
         && let Some(operation) = &group_operation.operation
     {
         return match operation {
-            Operation::AddMember(branch_changes) => {
-                Ok(Some(decode_branch_changes(branch_changes)?))
-            }
+            Operation::AddMember(branch_changes) => Ok(Some(decode_branch_change(branch_changes)?)),
             Operation::RemoveMember(branch_changes) => {
-                Ok(Some(decode_branch_changes(branch_changes)?))
+                Ok(Some(decode_branch_change(branch_changes)?))
             }
-            Operation::KeyUpdate(branch_changes) => {
-                Ok(Some(decode_branch_changes(branch_changes)?))
-            }
+            Operation::KeyUpdate(branch_changes) => Ok(Some(decode_branch_change(branch_changes)?)),
             Operation::LeaveGroup(branch_changes) => {
-                Ok(Some(decode_branch_changes(branch_changes)?))
+                Ok(Some(decode_branch_change(branch_changes)?))
             }
             _ => Ok(None),
         };

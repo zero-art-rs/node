@@ -1,13 +1,10 @@
-use crate::utils::CentrifugoTokenResponse;
+use crate::utils::{stringify_option, CentrifugoTokenResponse};
 use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
-use ark_std::{
-    UniformRand,
-    rand::prelude::StdRng,
-    rand::{SeedableRng},
-};
+use ark_std::rand::prelude::ThreadRng;
+use ark_std::{UniformRand, rand::SeedableRng, rand::prelude::StdRng};
 use axum::body::Bytes;
 use bulletproofs::PedersenGens;
 use bytes::BytesMut;
@@ -26,20 +23,19 @@ use types::{
     utils::extract_branch_changes,
 };
 use uuid::Uuid;
+use zkp::rand::thread_rng;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use zrt_art::{errors::ArtError, TreeMethods};
-use zrt_art::art::art_types::{PrivateArt, PrivateZeroArt, PublicArt};
-use zrt_art::art::{ArtAdvancedOps};
+use zrt_art::art::art_types::{PrivateArt, PublicArt};
+use zrt_art::art::{ArtAdvancedOps, PrivateZeroArt};
 use zrt_art::changes::branch_change::BranchChange;
-use zrt_art::changes::ProvableChange;
+use zrt_art::changes::{ApplicableChange, ProvableChange};
 use zrt_art::node_index::{Direction, NodeIndex};
+use zrt_art::{TreeMethods, errors::ArtError};
 use zrt_crypto::schnorr::{sign, verify};
-use zrt_zk::EligibilityRequirement;
 
-#[derive(Clone, Debug)]
 pub struct UserTestModel {
     pub client: reqwest::Client,
-    pub art: PrivateArt<CortadoAffine>,
+    pub art: PrivateZeroArt<CortadoAffine, ThreadRng>,
     pub initial_secrets: Vec<Fr>,
     pub chat_uuid: Uuid,
     pub epoch: u64,
@@ -64,12 +60,11 @@ impl From<(StatusCode, StatusCode)> for UserTestModelError {
 #[allow(dead_code)]
 impl UserTestModel {
     pub async fn new(size: u64) -> (Self, BytesMut) {
-        // let seed = rand::random();
         let seed = 0;
         let mut rng = StdRng::seed_from_u64(seed);
 
         let secrets = (0..size).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
-        debug!("secrets: {:?}", secrets);
+        debug!("Group secrets: {:#?}", secrets);
         let owner_id_key = Fr::rand(&mut rng);
         let art = PrivateArt::setup(&secrets).unwrap();
         let public_art = art.get_public_art().clone();
@@ -78,19 +73,21 @@ impl UserTestModel {
 
         let user = Self {
             client: reqwest::Client::new(),
-            art,
+            art: PrivateZeroArt::new(art, Box::new(thread_rng())).unwrap(),
             initial_secrets: secrets,
             chat_uuid: id,
             epoch: 0, // init request is already one epoch
             owner_id_key: Some(owner_id_key),
         };
 
+        debug!(
+            "Root secret: {}...",
+            stringify_option(public_art.get_root().get_public_key().x().as_ref())
+        );
+
         // Create new_group for testing
         let (response, init_message) = user
-            .create_new_chat(
-                public_art,
-                owner_id_key,
-            )
+            .create_new_chat(public_art, owner_id_key)
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CREATED);
@@ -99,24 +96,41 @@ impl UserTestModel {
     }
 
     pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ArtError> {
-        Ok(NodeIndex::from(self.art.get_path_to_leaf_with(
-            CortadoAffine::generator().mul(self.initial_secrets[member_id]).into_affine(),
-        )?))
+        Ok(NodeIndex::from(
+            self.art.get_base_art().get_path_to_leaf_with(
+                CortadoAffine::generator()
+                    .mul(self.initial_secrets[member_id])
+                    .into_affine(),
+            )?,
+        ))
     }
 
     /// Clone this uses, and change this user secret key to the different one
     pub fn derive_new(&self, index: usize) -> Result<Self, ArtError> {
-        let art =
-            PrivateArt::new(self.art.get_public_art().clone(), self.initial_secrets[index])?;
+        let art = PrivateArt::new(
+            self.art.get_base_art().get_public_art().clone(),
+            self.initial_secrets[index],
+        )?;
 
         Ok(Self {
             client: reqwest::Client::new(),
-            art,
+            art: PrivateZeroArt::new(art, Box::new(thread_rng())).unwrap(),
             initial_secrets: self.initial_secrets.clone(),
             chat_uuid: self.chat_uuid,
             epoch: self.epoch,
             owner_id_key: None,
         })
+    }
+
+    pub fn clone_without_rng(&self, rng: Box<ThreadRng>) -> Self {
+        Self {
+            client: self.client.clone(),
+            art: self.art.clone_without_rng(rng),
+            initial_secrets: self.initial_secrets.clone(),
+            chat_uuid: self.chat_uuid.clone(),
+            epoch: self.epoch.clone(),
+            owner_id_key: self.owner_id_key.clone(),
+        }
     }
 
     pub const fn is_owner(&self) -> bool {
@@ -179,18 +193,18 @@ impl UserTestModel {
         // let secret_key = self.art.get_leaf_secret_key()?;
         let new_secret_key = Fr::rand(&mut rng);
 
-        let mut zero_art = PrivateZeroArt::new(
-            self.art.clone(),
-            Box::new(StdRng::seed_from_u64(rand::random()))
-        );
-        let branch_change_output = zero_art.update_key(new_secret_key)?;
-        let branch_change = branch_change_output.get_branch_change().clone();
+        let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
+        zero_art.commit().unwrap();
 
         debug!(
-            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
+            "UpdateKey creation debug data:\n\tnew epoch: {}\n\tOld Tk: {:#?}...\n\tOld commited Tk: {:#?}...",
             self.epoch + 1,
-            self.art.get_root().get_public_key()
+            stringify_option(self.art.get_root_public_key().x().as_ref()),
+            stringify_option(zero_art.get_root_public_key().x().as_ref()),
         );
+
+        let branch_change_output = zero_art.update_key(new_secret_key)?;
+        let branch_change = branch_change_output.get_branch_change().clone();
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -207,17 +221,8 @@ impl UserTestModel {
         let associated_data = &Sha3_256::digest(&buf).to_vec();
 
         let mut proof_bytes = Vec::new();
-        let proof = branch_change_output.prove(&mut zero_art, associated_data, None)?;
+        let proof = branch_change_output.prove(associated_data, None)?;
         proof.serialize_compressed(&mut proof_bytes)?;
-
-        // let proof_bytes = self.prove_and_check_art_update(
-        //     &zero_art,
-        //     secret_key,
-        //     &artefacts,
-        //     &tbs_frame,
-        //     &key_update_changes,
-        // )?;
-
         let update_key_response = self
             .send_frame(Frame {
                 frame: Some(tbs_frame),
@@ -234,7 +239,15 @@ impl UserTestModel {
             }
         }
 
-        self.art = zero_art.get_private_art().clone();
+        branch_change_output.apply(&mut zero_art).unwrap();
+
+        debug!(
+            "UpdateKey apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
+            self.epoch + 1,
+            stringify_option(zero_art.get_upstream_art().get_root_public_key().x().as_ref()),
+        );
+
+        self.art = zero_art;
         self.epoch += 1;
 
         Ok(update_key_response)
@@ -294,35 +307,30 @@ impl UserTestModel {
         status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
-
-        // let old_tk = self.art.get_root_key()?.key;
-        // let old_tk = self.art.get_leaf_secret_key()?;
         let new_user_secret_key = Fr::rand(&mut rng);
 
-        let mut zero_art = PrivateZeroArt::new(
-            self.art.clone(),
-            Box::new(StdRng::seed_from_u64(rand::random()))
-        );
-
-        let append_user_changes_output =
-            zero_art.add_member(new_user_secret_key)?;
-        let append_user_changes = append_user_changes_output
-            .get_branch_change()
-            .clone();
+        let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
+        zero_art.commit().unwrap();
 
         debug!(
-            "UpdateKey debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
+            "AddMember creation debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
             self.epoch + 1,
-            self.art.get_root().get_public_key(),
+            stringify_option(self.art.get_base_art().get_root_public_key().x().as_ref()),
             status_check,
         );
+
+        let append_user_changes_output = zero_art.add_member(new_user_secret_key)?;
+        let append_user_changes = append_user_changes_output.get_branch_change().clone();
+
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::AddMember(postcard::to_allocvec(&append_user_changes)?)),
+                operation: Some(Operation::AddMember(postcard::to_allocvec(
+                    &append_user_changes,
+                )?)),
             }),
             protected_payload: vec![],
         };
@@ -331,22 +339,9 @@ impl UserTestModel {
         tbs_frame.encode(&mut buf)?;
         let associated_data = &Sha3_256::digest(&buf).to_vec();
 
-        // let eligibility = EligibilityArtefact::Owner()
-        //     EligibilityRequirement::Previleged((
-        //     get_left_most_leaf_public_key(state, id).await?,
-        //     vec![]
-        // ))
         let mut proof_bytes = Vec::new();
-        let proof = append_user_changes_output.prove(&mut zero_art, associated_data, None)?;
+        let proof = append_user_changes_output.prove(associated_data, None)?;
         proof.serialize_compressed(&mut proof_bytes)?;
-
-        // let proof_bytes = self.prove_and_check_art_update(
-        //     &art_clone,
-        //     old_tk,
-        //     &artefacts,
-        //     &tbs_frame,
-        //     &append_user_changes,
-        // )?;
 
         let (request_response, request_bytes) = self
             .send_frame(Frame {
@@ -359,7 +354,15 @@ impl UserTestModel {
             assert_eq!(request_response.status(), status_code);
         }
 
-        self.art = zero_art.get_private_art().clone();
+        append_user_changes.apply(&mut zero_art)?;
+
+        debug!(
+            "AddMember apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
+            self.epoch + 1,
+            stringify_option(zero_art.get_upstream_art().get_root_public_key().x().as_ref()),
+        );
+
+        self.art = zero_art;
         self.epoch += 1;
 
         Ok((request_response, request_bytes))
@@ -372,55 +375,37 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let user_to_remove_index = NodeIndex::from(user_to_remove.clone());
         let mut rng = StdRng::seed_from_u64(rand::random());
-
-        // let old_tk = if matches!(self.art.get_node(&NodeIndex::Direction(user_to_remove.clone())).unwrap().get_status(), Some(LeafStatus::Active)) {
-        //     self.art.get_leaf_secret_key()?
-        // } else {
-        //     self.art.get_root_secret_key()?
-        // };
-
-        // let old_tk = if !self
-        //     .art
-        //     .get_node(&NodeIndex::Direction(user_to_remove.clone()))?
-        //     .is_active()
-        // {
-        //     self.art.get_root_key()?.key
-        // } else {
-        //     self.art.secret_key
-        // };
-
         let temporary_secret_key = Fr::rand(&mut rng);
 
         debug!(
-            "MakeBlank debug data:
+            "MakeBlank creation debug data:
             epoch: {}
-            Old TK: {:#?}
+            Old TK: {}
             temporary_secret_key: {}
             target_node_path: {:?}
             ",
             self.epoch + 1,
-            self.art.get_root().get_public_key(),
-            temporary_secret_key,
+            stringify_option(self.art.get_base_art().get_root_public_key().x().as_ref()),
+            stringify_option(Some(&temporary_secret_key)),
             user_to_remove
         );
 
-        let mut zero_art = PrivateZeroArt::new(
-            self.art.clone(),
-            Box::new(StdRng::seed_from_u64(rand::random()))
-        );
+        let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
+        zero_art.commit().unwrap();
+
         // let mut art_clone = self.art.clone();
         let remove_user_changes_output =
             zero_art.remove_member(&user_to_remove_index, temporary_secret_key)?;
         let remove_user_changes = remove_user_changes_output.get_branch_change().clone();
-
-        debug!("New root TK: {}", zero_art.get_root().get_public_key());
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::RemoveMember(postcard::to_allocvec(&remove_user_changes)?)),
+                operation: Some(Operation::RemoveMember(postcard::to_allocvec(
+                    &remove_user_changes,
+                )?)),
             }),
             protected_payload: vec![],
         };
@@ -430,16 +415,9 @@ impl UserTestModel {
         let associated_data = &Sha3_256::digest(&buf).to_vec();
 
         let mut proof_bytes = Vec::new();
-        let proof = remove_user_changes_output.prove(&mut zero_art, associated_data, None)?;
+        let proof = remove_user_changes_output.prove(associated_data, None)?;
         proof.serialize_compressed(&mut proof_bytes)?;
 
-        // let proof_bytes = self.prove_and_check_art_update(
-        //     &art_clone,
-        //     old_tk,
-        //     &artefacts,
-        //     &tbs_frame,
-        //     &remove_user_changes,
-        // )?;
 
         let make_blank_result = self
             .send_frame(Frame {
@@ -465,7 +443,14 @@ impl UserTestModel {
             }
         }
 
-        self.art = zero_art.get_private_art().clone();
+        remove_user_changes.apply(&mut zero_art)?;
+        debug!(
+            "RemoveMember apply debug data:\n\tnew epoch: {}\n\tNew TK from change: {:#?}...",
+            self.epoch + 1,
+            stringify_option(zero_art.get_upstream_art().get_root_public_key().x().as_ref()),
+        );
+
+        self.art = zero_art;
         self.epoch += 1;
 
         Ok(make_blank_result)
@@ -481,26 +466,27 @@ impl UserTestModel {
         let new_secret_key = Fr::rand(&mut rng);
 
         // let mut art_clone = self.art.clone();
-        let mut zero_art = PrivateZeroArt::new(
-            self.art.clone(),
-            Box::new(StdRng::seed_from_u64(rand::random()))
-        );
-
-        let key_update_changes_output = zero_art.leave_group(new_secret_key)?;
-        let key_update_changes = key_update_changes_output.get_branch_change().clone();
+        let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
+        zero_art.commit().unwrap();
 
         debug!(
-            "LeaveGroup debug data:\n\tepoch: {}\n\tNew TK: {:#?}",
+            "LeaveGroup creation debug data:\n\tnew epoch: {}\n\tOld Tk: {:#?}...\n\tOld commited Tk: {:#?}...",
             self.epoch + 1,
-            self.art.get_root().get_public_key()
+            stringify_option(self.art.get_root_public_key().x().as_ref()),
+            stringify_option(zero_art.get_root_public_key().x().as_ref()),
         );
+
+        let leve_group_changes_output = zero_art.leave_group(new_secret_key)?;
+        let leve_group_changes = leve_group_changes_output.get_branch_change().clone();
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
             epoch: self.epoch + 1,
             nonce: vec![],
             group_operation: Some(GroupOperation {
-                operation: Some(Operation::LeaveGroup(postcard::to_allocvec(&key_update_changes)?)),
+                operation: Some(Operation::LeaveGroup(postcard::to_allocvec(
+                    &leve_group_changes,
+                )?)),
             }),
             protected_payload: Self::new_nonce(),
         };
@@ -510,16 +496,8 @@ impl UserTestModel {
         let associated_data = &Sha3_256::digest(&buf).to_vec();
 
         let mut proof_bytes = Vec::new();
-        let proof = key_update_changes_output.prove(&mut zero_art, associated_data, None)?;
+        let proof = leve_group_changes_output.prove(associated_data, None)?;
         proof.serialize_compressed(&mut proof_bytes)?;
-
-        // let proof_bytes = self.prove_and_check_art_update(
-        //     &art_clone,
-        //     secret_key,
-        //     &artefacts,
-        //     &tbs_frame,
-        //     &key_update_changes,
-        // )?;
 
         let leave_result = self
             .send_frame(Frame {
@@ -538,14 +516,21 @@ impl UserTestModel {
             );
         }
 
-        self.art = zero_art.get_private_art().clone();
+        debug!(
+            "LeaveGroup apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
+            self.epoch + 1,
+            stringify_option(leve_group_changes.public_keys.first()),
+            // stringify_option(&zero_art.get_upstream_art().get_root_public_key().x()),
+        );
+
+        self.art = zero_art;
         self.epoch += 1;
 
         Ok(leave_result)
     }
 
     pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
-        let sk = self.art.get_root_secret_key();
+        let sk = self.art.get_base_art().get_root_secret_key();
         let pk = CortadoAffine::generator().mul(sk).into_affine();
 
         let nonce = Self::new_nonce();
@@ -590,8 +575,8 @@ impl UserTestModel {
 
     pub async fn get_challenge(&self) -> reqwest::Result<Vec<u8>> {
         let mut serialized_public_key = Vec::new();
-        self
-            .art
+        self.art
+            .get_base_art()
             .get_leaf_public_key()
             .serialize_compressed(&mut serialized_public_key)
             .unwrap();
@@ -635,7 +620,7 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        let sk = secret_key_to_use.unwrap_or(self.art.get_leaf_secret_key());
+        let sk = secret_key_to_use.unwrap_or(self.art.get_base_art().get_leaf_secret_key());
         // let sk = match secret_key_to_use {
         //     Some(secret_key) => secret_key,
         //     None => self.art.secret_key,
@@ -669,9 +654,9 @@ impl UserTestModel {
 
         assert_eq!(get_art_response.status(), StatusCode::OK);
 
-        let received_art = postcard::from_bytes(
-            &get_art_response.json::<GetARTResponse>().await?.art,
-        ).map_err(ArtError::from)?;
+        let received_art =
+            postcard::from_bytes(&get_art_response.json::<GetARTResponse>().await?.art)
+                .map_err(ArtError::from)?;
 
         Ok(received_art)
     }
@@ -695,8 +680,13 @@ impl UserTestModel {
         tbs_frame.encode(&mut buf).unwrap();
         let msg = &*Sha3_256::digest(&*buf).to_vec();
 
-        let pk = vec![self.art.get_leaf_public_key()];
-        let signature = sign(&vec![self.art.get_leaf_secret_key()], &pk, msg).unwrap();
+        let pk = vec![self.art.get_base_art().get_leaf_public_key()];
+        let signature = sign(
+            &vec![self.art.get_base_art().get_leaf_secret_key()],
+            &pk,
+            msg,
+        )
+        .unwrap();
         let verification_result = verify(&signature, &pk, msg);
         assert!(verification_result.is_ok());
 
@@ -810,8 +800,8 @@ impl UserTestModel {
         epoch: Option<u64>,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<SpFrames> {
-        let tk = self.art.get_root_secret_key();
-        let pk = self.art.get_root().get_public_key();
+        let tk = self.art.get_base_art().get_root_secret_key();
+        let pk = self.art.get_base_art().get_root().get_public_key();
 
         let mut msg = Vec::new();
         let nonce = (0..DEFAULT_NONCE_LENGTH)

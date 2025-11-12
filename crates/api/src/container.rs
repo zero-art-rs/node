@@ -4,17 +4,19 @@ use crate::domains::{
 };
 use axum::body::Bytes;
 use axum::http::StatusCode;
+use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
+use storage::MongoARTStorage;
 use tokio::sync::RwLock;
 use tracing::field::debug;
 use tracing::{debug, error};
 use types::errors::{ARTServiceError, ServiceError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
-use types::utils::decode_branch_changes;
+use types::utils::decode_branch_change;
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
 
@@ -105,7 +107,7 @@ impl Container {
             | Some(Operation::RemoveMember(changes))
             | Some(Operation::KeyUpdate(changes))
             | Some(Operation::LeaveGroup(changes)) => {
-                self.update_art(id, changes, tbs_frame.epoch).await?
+                self.update_art(id, &changes, tbs_frame.epoch).await?
             }
             Some(Operation::DropGroup(_)) => {
                 return Ok(self
@@ -128,29 +130,14 @@ impl Container {
     pub async fn update_art(
         &self,
         id: Uuid,
-        branch_changes_bytes: Vec<u8>,
+        change_bytes: &[u8],
         new_epoch: u64,
     ) -> Result<StatusCode, ServiceError> {
-        let branch_changes =
-            decode_branch_changes(&branch_changes_bytes).map_err(ARTServiceError::from)?;
+        let change = decode_branch_change(change_bytes).map_err(ARTServiceError::from)?;
 
-        let current_epoch = self.art_service.get_current_epoch(id).await?;
+        self.art_service.update_art(id, &change, new_epoch).await?;
 
-        match new_epoch {
-            e if e == current_epoch => {
-                // resolve merge conflict
-                self.art_service
-                    .merge_change(id, branch_changes.clone(), new_epoch)
-                    .await?;
-            }
-            e if e == current_epoch + 1 => {
-                // update art and increment epoch
-                self.art_service.update_art(id, &branch_changes).await?;
-            }
-            _ => return Err(ARTServiceError::InvalidInput.into()),
-        }
-
-        match branch_changes.change_type {
+        match change.change_type {
             BranchChangeType::UpdateKey => Ok(StatusCode::OK),
             BranchChangeType::AddMember => Ok(StatusCode::OK),
             BranchChangeType::RemoveMember => Ok(StatusCode::NO_CONTENT),

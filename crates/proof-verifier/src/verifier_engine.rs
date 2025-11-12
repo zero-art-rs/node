@@ -1,12 +1,12 @@
 use ark_serialize::CanonicalDeserialize;
 use cortado::CortadoAffine;
-use zrt_art::art::art_types::PublicZeroArt;
-use zrt_art::changes::branch_change::{BranchChange};
-use zrt_art::changes::VerifiableChange;
-use zrt_zk::art::ArtProof;
-use zrt_zk::EligibilityRequirement;
 use types::callback_wrappers::ProofVerifierMessage;
 use types::errors::VerificationError;
+use zrt_art::art::PublicZeroArt;
+use zrt_art::changes::VerifiableChange;
+use zrt_art::changes::branch_change::BranchChange;
+use zrt_zk::EligibilityRequirement;
+use zrt_zk::art::ArtProof;
 
 #[derive(Clone, Debug)]
 pub enum VerificationOpcode {
@@ -26,7 +26,7 @@ pub enum VerificationOpcode {
 pub enum PublicInputs {
     ArtUpdateInput {
         change: BranchChange<CortadoAffine>,
-        art: PublicZeroArt,
+        art: PublicZeroArt<CortadoAffine>,
         eligibility_requirement: EligibilityRequirement,
     },
     Signature {
@@ -53,7 +53,9 @@ impl VerificationRequest {
             | VerificationOpcode::AddMember
             | VerificationOpcode::RemoveMember => {
                 let PublicInputs::ArtUpdateInput {
-                    change, art, eligibility_requirement
+                    change,
+                    art,
+                    eligibility_requirement,
                 } = self.data.public_inputs
                 else {
                     return Err(VerificationError::InvalidInput);

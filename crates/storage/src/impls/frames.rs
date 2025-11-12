@@ -12,7 +12,7 @@ use prost::Message;
 use tracing::debug;
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
-use types::utils::decode_branch_changes;
+use types::utils::decode_branch_change;
 use types::FrameRecord;
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
@@ -189,16 +189,16 @@ impl FrameStorage for MongoFramesStorage {
         if let Some(operation) = &types::utils::extract_operation(frame)? {
             return match operation {
                 Operation::AddMember(branch_changes) => {
-                    Ok(Some(decode_branch_changes(branch_changes)?))
+                    Ok(Some(decode_branch_change(branch_changes)?))
                 }
                 Operation::RemoveMember(branch_changes) => {
-                    Ok(Some(decode_branch_changes(branch_changes)?))
+                    Ok(Some(decode_branch_change(branch_changes)?))
                 }
                 Operation::KeyUpdate(branch_changes) => {
-                    Ok(Some(decode_branch_changes(branch_changes)?))
+                    Ok(Some(decode_branch_change(branch_changes)?))
                 }
                 Operation::LeaveGroup(branch_changes) => {
-                    Ok(Some(decode_branch_changes(branch_changes)?))
+                    Ok(Some(decode_branch_change(branch_changes)?))
                 }
                 _ => Ok(None),
             };
