@@ -15,7 +15,7 @@ use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::time::Duration;
 use ark_ec::{AffineRepr, CurveGroup};
-use tracing::info;
+use tracing::{debug, info};
 use zrt_art::art::art_types::PrivateArt;
 use zrt_art::changes::branch_change::{BranchChange, MergeBranchChange};
 use zrt_art::TreeMethods;
@@ -434,27 +434,27 @@ async fn test_merge_remove_key_update() -> eyre::Result<()> {
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
         .await?;
 
-    // let observer_merge = MergeBranchChange::new_for_observer(changes.clone());
-    //
-    // info!("User 2 merge changes locally ...");
-    // observer_merge.update(&mut user2.art)?;
-    // observer_merge.update(&mut user0.art)?;
-    // // user2.art.merge_for_observer(&changes);
-    // // user0.art.merge_for_observer(&changes);
-    // user2.epoch += 1;
-    // user0.epoch += 1;
-    // info!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
-    //
-    // info!("User 2 update and send update request with merge resolved");
-    // user2
-    //     .update_key(Some(payload.clone()), Some(StatusCode::OK))
-    //     .await?;
-    // info!("User2 TK_x: {}", user2.art.get_root().get_public_key());
-    //
-    // info!("User 0 fail to append member ...");
-    // user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
-    // // user0.update_key(None, Some(StatusCode::OK)).await?;
-    // info!("User0 TK: {}", user0.art.get_root().get_public_key());
+    let observer_merge = MergeBranchChange::new_for_observer(changes.clone());
+
+    info!("User 2 merge changes locally ...");
+    observer_merge.update(&mut user2.art)?;
+    observer_merge.update(&mut user0.art)?;
+    // user2.art.merge_for_observer(&changes);
+    // user0.art.merge_for_observer(&changes);
+    user2.epoch += 1;
+    user0.epoch += 1;
+    info!("User2 MTK_x: {}", user2.art.get_root().get_public_key());
+
+    info!("User 2 update and send update request with merge resolved");
+    user2
+        .update_key(Some(payload.clone()), Some(StatusCode::OK))
+        .await?;
+    info!("User2 TK_x: {}", user2.art.get_root().get_public_key());
+
+    info!("User 0 fail to append member ...");
+    user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
+    // user0.update_key(None, Some(StatusCode::OK)).await?;
+    info!("User0 TK: {}", user0.art.get_root().get_public_key());
 
     Ok(())
 }
@@ -675,5 +675,20 @@ async fn test_delete_group() -> eyre::Result<()> {
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
     context.delete_group().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_epoch_validity_check() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(1)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(3)?;
+
+    user0.add_member(Some(StatusCode::OK)).await.unwrap();
+    user1.update_key(Some(b"askjdfhlaklsd".to_vec()), Some(StatusCode::UNAUTHORIZED)).await.unwrap();
+
     Ok(())
 }

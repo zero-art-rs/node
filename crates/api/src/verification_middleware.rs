@@ -412,6 +412,7 @@ pub async fn get_opcode_and_input_for_art_update(
 
     let art = state.art_service.get_art(id, Some(epoch)).await?.art;
 
+    // Verify change applicability in correspondence to other epoch changes.
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
         || matches!(branch_changes.change_type, BranchChangeType::RemoveMember)
         || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
@@ -426,6 +427,10 @@ pub async fn get_opcode_and_input_for_art_update(
                 {
                     return Err(VerificationError::MergeUserRemove)
                 }
+            }
+
+            if matches!(change.change_type, BranchChangeType::AddMember) {
+                return Err(VerificationError::AddMemberUniqueness {epoch})
             }
         }
 
