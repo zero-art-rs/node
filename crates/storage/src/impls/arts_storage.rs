@@ -65,7 +65,7 @@ impl MongoARTStorage {
 
 #[async_trait::async_trait]
 impl ARTStorage for MongoARTStorage {
-    async fn new_chat(
+    async fn new_group(
         &self,
         session: &mut ClientSession,
         initial_art_record: ARTRecord<CortadoAffine>,
@@ -116,66 +116,22 @@ impl ARTStorage for MongoARTStorage {
     }
 
     /// return the latest art
-    async fn get_art(&self, id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
-        let art = self
-            .arts_collection
+    async fn get_art(&self, id: Uuid) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
+        self.arts_collection
             .find_one(doc! {"chat_id": id})
             .await
-            .inspect_err(|_| error!("Failed to retrieve latest art for group: {}", id))?;
-
-        art.ok_or_else(|| StorageError::NotFound)
+            .inspect_err(|_| error!("Failed to retrieve latest art for group: {}", id))
     }
 
     /// Return the first art state in the chat
-    async fn get_initial_art(&self, id: Uuid) -> Result<ARTRecord<CortadoAffine>, StorageError> {
-        let art = self
-            .initial_arts_collection
+    async fn get_initial_art(
+        &self,
+        id: Uuid,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
+        self.initial_arts_collection
             .find_one(doc! {"chat_id": id})
             .await
-            .inspect_err(|_| error!("Failed to retrieve latest art for group: {}", id))?;
-
-        art.ok_or_else(|| StorageError::NotFound)
-    }
-
-    async fn update_art(
-        &self,
-        changes: BranchChange<CortadoAffine>,
-        chat_id: Uuid,
-    ) -> Result<(), StorageError> {
-        let filter = doc! { "chat_id": chat_id };
-
-        debug!("Updating art for chat: {}", chat_id);
-        if let Some(mut art_record) = self.arts_collection.find_one(filter.clone()).await? {
-            changes.apply(&mut art_record.art)?;
-
-            self.arts_collection
-                .find_one_and_replace(filter, art_record)
-                .await?;
-
-            debug!("Art updated successfully");
-        } else {
-            warn!("Art not found");
-            return Err(StorageError::NotFound);
-        }
-
-        Ok(())
-    }
-
-    async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error> {
-        if self.arts_collection.find_one(doc! {}).await?.is_none() {
-            self.arts_collection.drop().await?;
-        }
-
-        if self
-            .initial_arts_collection
-            .find_one(doc! {})
-            .await?
-            .is_none()
-        {
-            self.initial_arts_collection.drop().await?;
-        }
-
-        Ok(())
+            .inspect_err(|_| error!("Failed to retrieve initial art for group: {}", id))
     }
 
     async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error> {
@@ -191,42 +147,17 @@ impl ARTStorage for MongoARTStorage {
         Ok(epoch)
     }
 
-    async fn update_metadata(
-        &self,
-        chat_id: Uuid,
-        new_metadata: Vec<u8>,
-        node_index: u64,
-    ) -> Result<(), StorageError> {
-        let mut art = self.get_art(chat_id).await?;
-        match art
-            .art
-            .get_mut_upstream_art()
-            .get_mut_node(&NodeIndex::Index(node_index))?
-        {
-            ArtNode::Leaf { metadata, .. } => *metadata = new_metadata,
-            ArtNode::Internal { .. } => return Err(StorageError::ArtError(ArtError::LeafOnly)),
-        }
-
-        self.replace_art(chat_id, art).await?;
-
-        Ok(())
-    }
-
     async fn replace_art(
         &self,
+        session: &mut ClientSession,
         id: Uuid,
         new_art_record: ARTRecord<CortadoAffine>,
     ) -> Result<(), StorageError> {
-        let art = self
+        let _ = self
             .arts_collection
             .find_one_and_replace(doc! {"chat_id": id}, new_art_record)
-            .await
-            .inspect_err(|_| error!("Failed to retrieve latest art for group with id: {}", id))?;
-
-        if art.is_none() {
-            error!("No art found for chat: {id}");
-            return Err(StorageError::NotFound);
-        }
+            .session(session)
+            .await?;
 
         Ok(())
     }

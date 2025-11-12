@@ -1,4 +1,3 @@
-use axum::http::StatusCode;
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
 use mongodb::bson::doc;
 use storage::{
@@ -9,8 +8,8 @@ use tracing::{debug, error};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
 
-use types::errors::{ARTServiceError, ServiceError};
-use types::utils::{decode_art, decode_branch_change};
+use types::errors::ARTServiceError;
+use types::utils::decode_art;
 
 use mongodb::ClientSession;
 use zrt_art::art::PublicZeroArt;
@@ -47,10 +46,13 @@ impl ARTService {
                     err.to_string()
                 )
             })?,
-            None => arts_storage.get_art(id).await.map_err(|err| {
-                error!("Failed to get latest art by id {}: {}", id, err.to_string());
-                ARTServiceError::NotFound
-            })?,
+            None => arts_storage
+                .get_art(id)
+                .await?
+                .ok_or(ARTServiceError::NotFound)
+                .inspect_err(|err| {
+                    error!("Failed to get latest art by id {}: {}", id, err.to_string());
+                })?,
         };
 
         Ok(record)
@@ -95,9 +97,7 @@ impl ARTService {
     }
 
     pub async fn get_current_epoch(&self, id: Uuid) -> Result<u64, ARTServiceError> {
-        let current_epoch = MongoARTStorage::new().await?.get_current_epoch(&id).await?;
-
-        Ok(current_epoch)
+        Ok(MongoARTStorage::new().await?.get_current_epoch(&id).await?)
     }
 
     pub async fn get_initial_art(
@@ -105,10 +105,10 @@ impl ARTService {
         chat_id: &Uuid,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
-        let record = arts_storage.get_initial_art(*chat_id).await.map_err(|_| {
-            error!("Failed to retrieve initial art");
-            ARTServiceError::NotFound
-        })?;
+        let record = arts_storage
+            .get_initial_art(*chat_id)
+            .await?
+            .ok_or(ARTServiceError::NotFound)?;
 
         Ok(record)
     }
@@ -119,14 +119,13 @@ impl ARTService {
         let keys_storage = MongoKeysStorage::new().await?;
         let frame_storage = MongoFramesStorage::new(id).await?;
 
-        if arts_storage.get_art(*id).await.is_err() {
+        if arts_storage.get_art(*id).await?.is_none() {
             error!("No art found for chat: {id}");
             return Err(ARTServiceError::NotFound);
         }
 
-        let mut session = DATABASE
-            .get()
-            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+        let mut session = arts_storage
+            .arts_collection
             .client()
             .start_session()
             .await?;
@@ -143,7 +142,6 @@ impl ARTService {
 
         session.commit_transaction().await?;
 
-        arts_storage.drop_collection_if_empty().await?;
         frame_storage.messages_collection.drop().await?;
 
         debug!("Deletion is successful");
@@ -163,7 +161,7 @@ impl ARTService {
         let arts_storage = MongoARTStorage::new().await?;
 
         debug!("Check if ART for group {} already exists...", id);
-        if arts_storage.get_art(id).await.is_ok() {
+        if arts_storage.get_art(id).await?.is_some() {
             return Err(ARTServiceError::AlreadyExists);
         }
         debug!("Group {} isn't created yet.", id);
@@ -192,7 +190,7 @@ impl ARTService {
 
         session.start_transaction().await?;
         arts_storage
-            .new_chat(&mut session, initial_art_record)
+            .new_group(&mut session, initial_art_record)
             .await?;
         session.commit_transaction().await?;
 
@@ -208,7 +206,10 @@ impl ARTService {
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
 
-        let latest_art = arts_storage.get_art(id).await?;
+        let latest_art = arts_storage
+            .get_art(id)
+            .await?
+            .ok_or(ARTServiceError::NotFound)?;
         if latest_art.is_private {
             match changes.change_type {
                 BranchChangeType::UpdateKey => {}
@@ -216,13 +217,11 @@ impl ARTService {
             }
         }
 
-        let mut session = DATABASE
-            .get()
-            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+        let mut session = arts_storage
+            .arts_collection
             .client()
             .start_session()
             .await?;
-
         session.start_transaction().await?;
 
         self.update_art_in_session(&mut session, changes.clone(), id)
@@ -263,11 +262,7 @@ impl ARTService {
                 art_record.epoch
             );
 
-            arts_storage
-                .arts_collection
-                .find_one_and_replace(filter, art_record)
-                .session(session)
-                .await?;
+            arts_storage.replace_art(session, id, art_record).await?;
         } else {
             error!("Art not found");
             return Err(ARTServiceError::NotFound);
@@ -282,19 +277,13 @@ impl ARTService {
         change: &BranchChange<CortadoAffine>,
         new_epoch: u64,
     ) -> Result<(), ARTServiceError> {
-        let current_epoch = self.get_current_epoch(id).await?;
-
-        let filter = doc! { "chat_id": id };
-
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
-        let Some(mut art_record) = arts_storage
-            .arts_collection
-            .find_one(filter.clone())
+
+        let current_epoch = self.get_current_epoch(id).await?;
+        let mut art_record = arts_storage
+            .get_art(id)
             .await?
-        else {
-            error!("Art not found");
-            return Err(ARTServiceError::NotFound);
-        };
+            .ok_or(ARTServiceError::NotFound)?;
 
         match new_epoch {
             e if e == current_epoch => {
@@ -309,19 +298,15 @@ impl ARTService {
             _ => return Err(ARTServiceError::InvalidInput.into()),
         }
 
-        let mut session = DATABASE
-            .get()
-            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+        let mut session = arts_storage
+            .arts_collection
             .client()
             .start_session()
             .await?;
-
         session.start_transaction().await?;
 
         arts_storage
-            .arts_collection
-            .find_one_and_replace(filter, art_record)
-            .session(&mut session)
+            .replace_art(&mut session, id, art_record)
             .await?;
 
         session.commit_transaction().await?;
@@ -342,21 +327,17 @@ impl ARTService {
         change.apply(&mut latest_art.art)?;
         latest_art.epoch = new_epoch;
 
-        let mut session = DATABASE
-            .get()
-            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+        let mut session = arts_storage
+            .arts_collection
             .client()
             .start_session()
             .await?;
-
-        let filter = doc! { "chat_id": id };
         session.start_transaction().await?;
 
         arts_storage
-            .arts_collection
-            .find_one_and_replace(filter, latest_art)
-            .session(&mut session)
-            .await?;
+            .replace_art(&mut session, id, latest_art)
+            .await
+            .inspect_err(|err| error!("Failed to replace latest art for group with id: {}. Error: {}", id, err.to_string()))?;
 
         session.commit_transaction().await?;
 
