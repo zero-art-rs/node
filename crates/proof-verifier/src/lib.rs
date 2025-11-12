@@ -56,16 +56,6 @@ impl ProofVerifier {
         let (event, callback) = event.inner_owned();
 
         let result = match event {
-            // ProofVerifierMessage::ArtUpdate {
-            //     associated_data,
-            //     aux_public_keys,
-            //     path,
-            //     co_path,
-            //     proof,
-            // } => {
-            //     self.verify_art_update_proof(associated_data, aux_public_keys, path, co_path, proof)
-            //         .await
-            // }
             ProofVerifierMessage::ArtUpdate {
                 change,
                 art,
@@ -75,6 +65,16 @@ impl ProofVerifier {
             } => match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
                 Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
                 Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false }),
+            },
+            ProofVerifierMessage::ArtAggregation {
+                change,
+                art,
+                associated_data,
+                eligibility_requirement,
+                proof,
+            } => match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
+                Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
+                Err(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: false }),
             },
             ProofVerifierMessage::SchnorrSignature {
                 signature,

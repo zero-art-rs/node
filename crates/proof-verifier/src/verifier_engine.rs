@@ -1,9 +1,11 @@
 use ark_serialize::CanonicalDeserialize;
 use cortado::CortadoAffine;
+use tracing::error;
 use types::callback_wrappers::ProofVerifierMessage;
 use types::errors::VerificationError;
 use zrt_art::art::PublicZeroArt;
 use zrt_art::changes::VerifiableChange;
+use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_zk::EligibilityRequirement;
 use zrt_zk::art::ArtProof;
@@ -15,6 +17,7 @@ pub enum VerificationOpcode {
     AddMember,
     RemoveMember,
     LeaveGroup,
+    Aggregation,
     SendMessage,
     GetMessages,
     GetChanges,
@@ -26,6 +29,11 @@ pub enum VerificationOpcode {
 pub enum PublicInputs {
     ArtUpdateInput {
         change: BranchChange<CortadoAffine>,
+        art: PublicZeroArt<CortadoAffine>,
+        eligibility_requirement: EligibilityRequirement,
+    },
+    ArtAggregationInput {
+        change: AggregatedChange<CortadoAffine>,
         art: PublicZeroArt<CortadoAffine>,
         eligibility_requirement: EligibilityRequirement,
     },
@@ -67,6 +75,30 @@ impl VerificationRequest {
                     eligibility_requirement,
                     associated_data: self.data.associated_data,
                     proof: ArtProof::deserialize_compressed(&*self.data.proof)?,
+                })
+            }
+            VerificationOpcode::Aggregation => {
+                let PublicInputs::ArtAggregationInput {
+                    change,
+                    art,
+                    eligibility_requirement,
+                } = self.data.public_inputs
+                else {
+                    return Err(VerificationError::InvalidInput);
+                };
+
+                let deserialized_proof = ArtProof::deserialize_compressed(&*self.data.proof);
+                if deserialized_proof.is_err() {
+                    error!("Failed to deserialize proof");
+                }
+                let deserialized_proof = deserialized_proof?;
+
+                Ok(ProofVerifierMessage::ArtAggregation {
+                    change,
+                    art,
+                    eligibility_requirement,
+                    associated_data: self.data.associated_data,
+                    proof: deserialized_proof,
                 })
             }
             _ => {

@@ -13,9 +13,10 @@ use types::errors::{ARTServiceError, ServiceError};
 use types::utils::{decode_art, decode_branch_change};
 
 use mongodb::ClientSession;
-use zrt_art::TreeMethods;
+use zrt_art::art_node::TreeMethods;
 use zrt_art::art::PublicZeroArt;
 use zrt_art::changes::ApplicableChange;
+use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 
 pub struct ARTService {}
@@ -317,6 +318,40 @@ impl ARTService {
         arts_storage
             .arts_collection
             .find_one_and_replace(filter, art_record)
+            .session(&mut session)
+            .await?;
+
+        session.commit_transaction().await?;
+
+        Ok(())
+    }
+
+    pub async fn apply_aggregation(
+        &self,
+        id: Uuid,
+        change: AggregatedChange<CortadoAffine>,
+        new_epoch: u64,
+    ) -> Result<(), ARTServiceError> {
+        let arts_storage = MongoARTStorage::get_existing_storage().await?;
+
+        let mut latest_art = self.get_art_by_epoch(id, new_epoch - 1).await?;
+
+        change.apply(&mut latest_art.art)?;
+        latest_art.epoch = new_epoch;
+
+        let mut session = DATABASE
+            .get()
+            .ok_or_else(|| StorageError::DatabaseRetrieval)?
+            .client()
+            .start_session()
+            .await?;
+
+        let filter = doc! { "chat_id": id };
+        session.start_transaction().await?;
+
+        arts_storage
+            .arts_collection
+            .find_one_and_replace(filter, latest_art)
             .session(&mut session)
             .await?;
 

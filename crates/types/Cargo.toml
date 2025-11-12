@@ -41,6 +41,7 @@ prost-types = { workspace = true }
 base64urlsafedata = { version = "0.5.2 "}
 postcard = { workspace = true }
 zrt-zk = { workspace = true }
+ark-std = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.14.1"

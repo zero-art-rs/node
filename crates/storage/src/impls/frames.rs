@@ -188,16 +188,10 @@ impl FrameStorage for MongoFramesStorage {
 
         if let Some(operation) = &types::utils::extract_operation(frame)? {
             return match operation {
-                Operation::AddMember(branch_changes) => {
-                    Ok(Some(decode_branch_change(branch_changes)?))
-                }
-                Operation::RemoveMember(branch_changes) => {
-                    Ok(Some(decode_branch_change(branch_changes)?))
-                }
-                Operation::KeyUpdate(branch_changes) => {
-                    Ok(Some(decode_branch_change(branch_changes)?))
-                }
-                Operation::LeaveGroup(branch_changes) => {
+                Operation::AddMember(branch_changes)
+                | Operation::RemoveMember(branch_changes)
+                | Operation::KeyUpdate(branch_changes)
+                | Operation::LeaveGroup(branch_changes) => {
                     Ok(Some(decode_branch_change(branch_changes)?))
                 }
                 _ => Ok(None),

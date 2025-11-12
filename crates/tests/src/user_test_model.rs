@@ -1,8 +1,9 @@
-use crate::utils::{stringify_option, CentrifugoTokenResponse};
+use crate::utils::{CentrifugoTokenResponse, stringify_option};
 use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
 use ark_serialize::CanonicalSerialize;
+use ark_std::rand::Rng;
 use ark_std::rand::prelude::ThreadRng;
 use ark_std::{UniformRand, rand::SeedableRng, rand::prelude::StdRng};
 use axum::body::Bytes;
@@ -25,13 +26,15 @@ use types::{
 use uuid::Uuid;
 use zkp::rand::thread_rng;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
-use zrt_art::art::art_types::{PrivateArt, PublicArt};
-use zrt_art::art::{ArtAdvancedOps, PrivateZeroArt};
+use zrt_art::art_node::{TreeMethods};
+use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateZeroArt, PrivateArt, PublicArt};
+use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_art::changes::{ApplicableChange, ProvableChange};
 use zrt_art::node_index::{Direction, NodeIndex};
-use zrt_art::{TreeMethods, errors::ArtError};
+use zrt_art::errors::ArtError;
 use zrt_crypto::schnorr::{sign, verify};
+use zrt_zk::{EligibilityRequirement, art::ArtProof};
 
 pub struct UserTestModel {
     pub client: reqwest::Client,
@@ -97,7 +100,7 @@ impl UserTestModel {
 
     pub fn index_of(&self, member_id: usize) -> Result<NodeIndex, ArtError> {
         Ok(NodeIndex::from(
-            self.art.get_base_art().get_path_to_leaf_with(
+            self.art.get_path_to_leaf_with(
                 CortadoAffine::generator()
                     .mul(self.initial_secrets[member_id])
                     .into_affine(),
@@ -190,7 +193,6 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        // let secret_key = self.art.get_leaf_secret_key()?;
         let new_secret_key = Fr::rand(&mut rng);
 
         let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
@@ -244,7 +246,89 @@ impl UserTestModel {
         debug!(
             "UpdateKey apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
             self.epoch + 1,
-            stringify_option(zero_art.get_upstream_art().get_root_public_key().x().as_ref()),
+            stringify_option(
+                zero_art
+                    .get_upstream_art()
+                    .get_root_public_key()
+                    .x()
+                    .as_ref()
+            ),
+        );
+
+        self.art = zero_art;
+        self.epoch += 1;
+
+        Ok(update_key_response)
+    }
+
+    pub async fn send_aggregation<R>(
+        &mut self,
+        agg: &AggregationContext<PrivateArt<CortadoAffine>, CortadoAffine, R>,
+        mut zero_art: PrivateZeroArt<CortadoAffine, ThreadRng>,
+        payload: Option<Vec<u8>>,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)>
+    where
+        R: Rng + ?Sized,
+    {
+        debug!(
+            "SendAggregation debug data:\n\
+            \tepoch: {}\n\
+            \tNew TK: {:#?}",
+            self.epoch + 1,
+            self.art.get_root().get_public_key()
+        );
+
+        let aggregation_change: AggregatedChange<CortadoAffine> = AggregatedChange::try_from(agg)?;
+
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch + 1,
+            nonce: vec![],
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::Aggregated(postcard::to_allocvec(
+                    &aggregation_change,
+                )?)),
+            }),
+            protected_payload: payload.unwrap_or_default(),
+        };
+
+        let mut buf = BytesMut::new();
+        tbs_frame.encode(&mut buf)?;
+        let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        let mut proof_bytes = Vec::new();
+        let proof = agg.prove(associated_data, None)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
+
+        let update_key_response = self
+            .send_frame(Frame {
+                frame: Some(tbs_frame),
+                proof: proof_bytes,
+            })
+            .await?;
+
+        if let Some(status_check) = status_check {
+            if update_key_response.0.status() != status_check {
+                Err(UserTestModelError::from((
+                    update_key_response.0.status(),
+                    status_check,
+                )))?;
+            }
+        }
+
+        aggregation_change.apply(&mut zero_art).unwrap();
+
+        debug!(
+            "UpdateKey apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
+            self.epoch + 1,
+            stringify_option(
+                zero_art
+                    .get_upstream_art()
+                    .get_root_public_key()
+                    .x()
+                    .as_ref()
+            ),
         );
 
         self.art = zero_art;
@@ -307,6 +391,7 @@ impl UserTestModel {
         status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
+
         let new_user_secret_key = Fr::rand(&mut rng);
 
         let mut zero_art = self.art.clone_without_rng(Box::new(thread_rng()));
@@ -321,7 +406,6 @@ impl UserTestModel {
 
         let append_user_changes_output = zero_art.add_member(new_user_secret_key)?;
         let append_user_changes = append_user_changes_output.get_branch_change().clone();
-
 
         let tbs_frame = FrameTbs {
             group_id: self.chat_uuid.to_string(),
@@ -359,7 +443,13 @@ impl UserTestModel {
         debug!(
             "AddMember apply debug data:\n\tnew epoch: {}\n\tNew TK: {:#?}...",
             self.epoch + 1,
-            stringify_option(zero_art.get_upstream_art().get_root_public_key().x().as_ref()),
+            stringify_option(
+                zero_art
+                    .get_upstream_art()
+                    .get_root_public_key()
+                    .x()
+                    .as_ref()
+            ),
         );
 
         self.art = zero_art;
@@ -418,7 +508,6 @@ impl UserTestModel {
         let proof = remove_user_changes_output.prove(associated_data, None)?;
         proof.serialize_compressed(&mut proof_bytes)?;
 
-
         let make_blank_result = self
             .send_frame(Frame {
                 frame: Some(tbs_frame),
@@ -447,7 +536,13 @@ impl UserTestModel {
         debug!(
             "RemoveMember apply debug data:\n\tnew epoch: {}\n\tNew TK from change: {:#?}...",
             self.epoch + 1,
-            stringify_option(zero_art.get_upstream_art().get_root_public_key().x().as_ref()),
+            stringify_option(
+                zero_art
+                    .get_upstream_art()
+                    .get_root_public_key()
+                    .x()
+                    .as_ref()
+            ),
         );
 
         self.art = zero_art;
@@ -462,7 +557,6 @@ impl UserTestModel {
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
         let mut rng = StdRng::seed_from_u64(rand::random());
 
-        // let secret_key = self.art.get_leaf_secret_key();
         let new_secret_key = Fr::rand(&mut rng);
 
         // let mut art_clone = self.art.clone();
@@ -569,10 +663,6 @@ impl UserTestModel {
         ))?)
     }
 
-    // pub fn update_with(sp_frames: SpFrames) -> eyre::Result<()> {
-    //
-    // }
-
     pub async fn get_challenge(&self) -> reqwest::Result<Vec<u8>> {
         let mut serialized_public_key = Vec::new();
         self.art
@@ -627,7 +717,6 @@ impl UserTestModel {
         // };
 
         let pk = CortadoAffine::generator().mul(sk).into_affine();
-        // let pk = self.art.public_key_of(&sk);
 
         let signature = sign(&vec![sk], &vec![pk], &msg).unwrap();
         let verification_result = verify(&signature, &vec![pk], &msg);

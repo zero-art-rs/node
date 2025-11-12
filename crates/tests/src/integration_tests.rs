@@ -1,29 +1,29 @@
 use crate::{CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
 use crate::{user_test_model::UserTestModel, utils::*};
 use ark_ec::{AffineRepr, CurveGroup};
+use ark_std::UniformRand;
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
 use axum::http::StatusCode;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytes::{Bytes, BytesMut};
-use cortado::CortadoAffine;
+use cortado::{CortadoAffine, Fr};
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use std::time::Duration;
-use tracing::{debug, info};
+use tokio_util::context;
+use tracing::info;
 use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
 use types::centrifugo_schemas::AuthRequest;
 use types::protos;
 use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
 use types::utils::extract_branch_changes;
 use zkp::rand::thread_rng;
-use zrt_art::TreeMethods;
-use zrt_art::art::PrivateZeroArt;
-use zrt_art::art::art_types::PrivateArt;
+use zrt_art::art_node::TreeMethods;
+use zrt_art::art::{ArtAdvancedOps, PrivateZeroArt, PrivateArt, AggregationContext};
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_crypto::schnorr::{sign, verify};
@@ -480,12 +480,18 @@ async fn test_merge_operations_after_removal() -> eyre::Result<()> {
     info!("User 1 fails to send message, as he is in previous epoch.");
     let mut user1_clone = user1.clone_without_rng(Box::new(thread_rng()));
     user1_clone
-        .send_payload(b"User 1 still can send message.".to_vec(), Some(StatusCode::UNAUTHORIZED))
+        .send_payload(
+            b"User 1 still can send message.".to_vec(),
+            Some(StatusCode::UNAUTHORIZED),
+        )
         .await?;
 
     info!("User 0 can send messages.");
     user0
-        .send_payload(b"User 1 still can send message.".to_vec(), Some(StatusCode::OK))
+        .send_payload(
+            b"User 1 still can send message.".to_vec(),
+            Some(StatusCode::OK),
+        )
         .await?;
 
     Ok(())
@@ -665,9 +671,11 @@ async fn test_leave() -> eyre::Result<()> {
 
     // info!("art2:\n{}", user2.art.get_root());
     assert_eq!(
-        user2.art, user1.art,
+        user2.art,
+        user1.art,
         "Users have different wiew on the state of the art:\nuser 2:\n{}\nUser1\n{}",
-        user2.art.get_base_art().get_root(), user1.art.get_base_art().get_root(),
+        user2.art.get_base_art().get_root(),
+        user1.art.get_base_art().get_root(),
     );
     assert_eq!(
         CortadoAffine::generator()
@@ -725,5 +733,29 @@ async fn test_delete_group() -> eyre::Result<()> {
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
     context.delete_group().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_send_aggregated_change() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let (mut context, _) = UserTestModel::new(GROUP_SIZE).await;
+
+    let zero_art = context.art.clone_without_rng(Box::new(thread_rng()));
+
+    let mut agg = AggregationContext::from_private_zero_art(&zero_art, Box::new(thread_rng()));
+
+    for _ in 0..8 {
+        agg.add_member(Fr::rand(&mut rng))?;
+    }
+
+    context
+        .send_aggregation(agg, zero_art, None, Some(StatusCode::OK))
+        .await?;
+    
+    context.send
+
     Ok(())
 }

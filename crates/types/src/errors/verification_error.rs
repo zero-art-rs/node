@@ -43,12 +43,14 @@ pub enum VerificationError {
     StorageError(#[from] StorageError),
     #[error("Service error occurred: {0}")]
     ServiceError(#[from] ServiceError),
-    #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has some.")]
+    #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has one.")]
     AddMemberUniqueness { epoch: u64 },
     #[error("Can't perform operation as the user is already removed.")]
     UserAlreadyRemoved,
     #[error("Aggregation isn't supported yet.")]
     UnsupportedAggregation,
+    #[error("Cant merge change to increase epoch {0}, as there are changes for this epoch.")]
+    UnsupportedMerge(u64),
     #[error("Can't remove the same user several times at the same epoch or cant update his key.")]
     MergeUserRemove,
     #[error("Can't remove the same user several times at the same epoch.")]

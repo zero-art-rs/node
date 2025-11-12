@@ -16,7 +16,7 @@ use tracing::{debug, error};
 use types::errors::{ARTServiceError, ServiceError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
-use types::utils::decode_branch_change;
+use types::utils::{decode_aggregated_change, decode_branch_change};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
 
@@ -103,20 +103,21 @@ impl Container {
 
                 StatusCode::CREATED
             }
-            Some(Operation::AddMember(changes))
-            | Some(Operation::RemoveMember(changes))
-            | Some(Operation::KeyUpdate(changes))
-            | Some(Operation::LeaveGroup(changes)) => {
-                self.update_art(id, &changes, tbs_frame.epoch).await?
+            Some(Operation::AddMember(change))
+            | Some(Operation::RemoveMember(change))
+            | Some(Operation::KeyUpdate(change))
+            | Some(Operation::LeaveGroup(change)) => {
+                self.update_art(id, &change, tbs_frame.epoch).await?
             }
             Some(Operation::DropGroup(_)) => {
-                return Ok(self
-                    .art_service
-                    .delete_chat(&id)
-                    .await
-                    .map(|_| StatusCode::NO_CONTENT)?);
+                self.art_service.delete_chat(&id).await?;
+
+                StatusCode::NO_CONTENT
             }
-            Some(Operation::Aggregated(_)) => return Err(ServiceError::NotImplemented),
+            Some(Operation::Aggregated(change)) => {
+                self.update_art_with_aggregation(id, change, tbs_frame.epoch)
+                    .await?
+            }
             None => StatusCode::OK,
         };
 
@@ -143,6 +144,22 @@ impl Container {
             BranchChangeType::RemoveMember => Ok(StatusCode::NO_CONTENT),
             BranchChangeType::Leave => Ok(StatusCode::OK),
         }
+    }
+
+    pub async fn update_art_with_aggregation(
+        &self,
+        id: Uuid,
+        aggregated_change_bytes: Vec<u8>,
+        new_epoch: u64,
+    ) -> Result<StatusCode, ServiceError> {
+        let branch_changes =
+            decode_aggregated_change(&aggregated_change_bytes).map_err(ARTServiceError::from)?;
+
+        self.art_service
+            .apply_aggregation(id, branch_changes.clone(), new_epoch)
+            .await?;
+
+        Ok(StatusCode::OK)
     }
 
     // Check if provided correct challenge

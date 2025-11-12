@@ -10,14 +10,13 @@ use axum_core::response::Response;
 use bytes::Bytes;
 use callbacks::callback;
 use cortado::CortadoAffine;
-use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
-use tracing::{debug, error};
+use tracing::{debug, error, info, trace};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
@@ -25,9 +24,9 @@ use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use uuid::Uuid;
-use zrt_art::TreeMethods;
-use zrt_art::art::art_node::{LeafIter, LeafStatus};
-use zrt_art::art::{PrivateZeroArt, PublicZeroArt};
+use zrt_art::art::PublicZeroArt;
+use zrt_art::art_node::{TreeMethods, LeafIter, LeafStatus};
+use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_zk::EligibilityRequirement;
@@ -251,8 +250,7 @@ pub async fn send_frame(
     if tbs_frame.group_id != id.to_string() {
         error!(
             "Group ID mismatch: tbs_frame.group_id is {}, while id in path is {}",
-            tbs_frame.group_id,
-            id
+            tbs_frame.group_id, id
         );
         return Err(VerificationError::InvalidInput);
     }
@@ -293,11 +291,30 @@ pub async fn send_frame(
                 }
             }
         }
+        Some(Operation::Aggregated(change_bytes)) => {
+            state
+                .start_updating(id)
+                .await
+                .map_err(VerificationError::from)?;
+
+            match get_opcode_and_input_for_aggregation(
+                state.clone(),
+                id,
+                change_bytes,
+                tbs_frame.epoch - 1,
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    error!("Failed to get opcode and operation");
+                    state.stop_updating(id).await;
+                    return Err(err);
+                }
+            }
+        }
         Some(Operation::DropGroup(_)) => {
             get_opcode_and_input_for_drop_group(state.clone(), id).await?
-        }
-        Some(Operation::Aggregated(_)) => {
-            return Err(VerificationError::UnsupportedAggregation);
         }
         None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
     };
@@ -312,12 +329,13 @@ pub async fn send_frame(
     };
 
     let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
+
     match &operation {
         Some(Operation::AddMember(_))
         | Some(Operation::RemoveMember(_))
         | Some(Operation::KeyUpdate(_))
-        | Some(Operation::Aggregated(_))
-        | Some(Operation::LeaveGroup(_)) => {
+        | Some(Operation::LeaveGroup(_))
+        | Some(Operation::Aggregated(_)) => {
             state.stop_updating(id).await;
         }
         _ => {}
@@ -384,6 +402,7 @@ pub async fn verify_and_send(
         .inspect_err(|err| error!("Failed to send frame: {}", err))?;
     verify(verification_message, &state.proof_verifier_sender).await?;
 
+    debug!("Create response");
     Ok(next
         .run(Request::from_parts(
             parts.clone(),
@@ -405,6 +424,45 @@ pub fn get_opcode_and_input_for_init_group(
     ))
 }
 
+pub async fn get_opcode_and_input_for_aggregation(
+    state: Arc<Container>,
+    id: Uuid,
+    aggregation_bytes: &Vec<u8>,
+    current_epoch: u64,
+) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    let aggregated_change: AggregatedChange<CortadoAffine> =
+        postcard::from_bytes(aggregation_bytes)?;
+
+    let art = state
+        .art_service
+        .get_art(id, Some(current_epoch))
+        .await?
+        .art;
+
+    let frame_storage = MongoFramesStorage::new(&id).await?;
+    let epoch_changes = frame_storage
+        .get_epoch_changes(id, current_epoch + 1)
+        .await?;
+
+    if !epoch_changes.is_empty() {
+        return Err(VerificationError::UnsupportedMerge(current_epoch));
+    }
+
+    let eligibility_requirement = EligibilityRequirement::Previleged((
+        get_left_most_leaf_public_key(state, id).await?,
+        vec![],
+    ));
+
+    Ok((
+        VerificationOpcode::Aggregation,
+        PublicInputs::ArtAggregationInput {
+            change: aggregated_change,
+            art,
+            eligibility_requirement,
+        },
+    ))
+}
+
 pub async fn get_opcode_and_input_for_art_update(
     state: Arc<Container>,
     id: Uuid,
@@ -413,14 +471,20 @@ pub async fn get_opcode_and_input_for_art_update(
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
-    let art = state.art_service.get_art(id, Some(current_epoch)).await?.art;
+    let art = state
+        .art_service
+        .get_art(id, Some(current_epoch))
+        .await?
+        .art;
 
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
         || matches!(branch_changes.change_type, BranchChangeType::RemoveMember)
         || matches!(branch_changes.change_type, BranchChangeType::UpdateKey)
     {
         let frame_storage = MongoFramesStorage::new(&id).await?;
-        let epoch_changes = frame_storage.get_epoch_changes(id, current_epoch + 1).await?;
+        let epoch_changes = frame_storage
+            .get_epoch_changes(id, current_epoch + 1)
+            .await?;
 
         debug!("epoch_changes: {:#?}", epoch_changes);
 
@@ -434,7 +498,7 @@ pub async fn get_opcode_and_input_for_art_update(
                         return Err(VerificationError::UserAlreadyRemoved);
                     } else {
                         error!("Can't remove the user for a second time.");
-                        return Err(VerificationError::MergeUserRemove)
+                        return Err(VerificationError::MergeUserRemove);
                     }
                 }
             }
@@ -577,6 +641,12 @@ pub async fn verify(
                 _ => return Err(VerificationError::InvalidResultMessage),
             }
         }
+        ProofVerifierMessage::ArtAggregation { .. } => {
+            match callback(proof_verifier_sender, message).await? {
+                ProofVerifierResult::ArtAggregation { verdict } => verdict,
+                _ => return Err(VerificationError::InvalidResultMessage),
+            }
+        }
         ProofVerifierMessage::SchnorrSignature { .. } => {
             match callback(proof_verifier_sender, message).await? {
                 ProofVerifierResult::SchnorrSignature { verdict } => verdict,
@@ -586,10 +656,7 @@ pub async fn verify(
     };
 
     match verdict {
-        true => {
-            debug!("Verification successful");
-            Ok(())
-        }
+        true => Ok(()),
         false => Err(VerificationError::InvalidProof),
     }
 }

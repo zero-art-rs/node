@@ -3,7 +3,7 @@ use cortado::CortadoAffine;
 use mongodb::ClientSession;
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::art::art_types::PublicArt;
+use zrt_art::art::PublicArt;
 use zrt_art::changes::branch_change::BranchChange;
 
 /// Storage for art full states
