@@ -5,8 +5,7 @@ use ark_std::UniformRand;
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
 use axum::http::StatusCode;
-use base64::{Engine, prelude::BASE64_STANDARD};
-use bytes::{Bytes, BytesMut};
+use bytes::{BytesMut};
 use cortado::{CortadoAffine, Fr};
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
@@ -14,18 +13,15 @@ use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use std::time::Duration;
-use tokio_util::context;
 use tracing::{debug, info};
-use types::art_schemas::{ChallengeResponse, GetARTResponse, ProofMode};
+use zrt_art::changes::branch_change::BranchChange;
+use types::art_schemas::{GetARTResponse, ProofMode};
 use types::centrifugo_schemas::AuthRequest;
-use types::protos;
-use types::protos::{Frame, FrameTbs, SpFrame, SpFrames, group_operation::Operation};
-use types::utils::extract_branch_changes;
+use types::protos::{Frame, FrameTbs, SpFrame, group_operation::Operation};
 use zkp::rand::thread_rng;
 use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt, PrivateZeroArt};
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
-use zrt_art::changes::branch_change::BranchChange;
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -756,14 +752,29 @@ async fn test_send_aggregated_change() -> eyre::Result<()> {
         .send_aggregation(&agg, zero_art, None, Some(StatusCode::OK))
         .await?;
 
-    for i in 0..3 {
+    for _ in 0..3 {
         context.update_key(None, Some(StatusCode::OK)).await?;
         context.add_member(Some(StatusCode::OK)).await?;
     }
 
-    for i in 0..3 {
+    for _ in 0..3 {
         context.update_key(None, Some(StatusCode::OK)).await?;
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_epoch_validity_check() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(1)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(3)?;
+
+    user0.add_member(Some(StatusCode::OK)).await.unwrap();
+    user1.update_key(Some(b"askjdfhlaklsd".to_vec()), Some(StatusCode::UNAUTHORIZED)).await.unwrap();
 
     Ok(())
 }
