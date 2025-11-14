@@ -23,6 +23,7 @@ pub trait DataStorage: Send + Sync {
             .find(filter)
             .skip(skip as u64)
             .limit(limit)
+            .sort(doc! {"_id": 1})
             .await?;
 
         let mut records = Vec::new();

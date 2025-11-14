@@ -1,11 +1,11 @@
-use crate::{CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
+use crate::{BACKEND_URL, CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
 use crate::{user_test_model::UserTestModel, utils::*};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_std::UniformRand;
 use ark_std::rand::SeedableRng;
 use ark_std::rand::prelude::StdRng;
 use axum::http::StatusCode;
-use bytes::{BytesMut};
+use bytes::{Bytes, BytesMut};
 use cortado::{CortadoAffine, Fr};
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
@@ -14,14 +14,14 @@ use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 use std::time::Duration;
 use tracing::{debug, info};
-use zrt_art::changes::branch_change::BranchChange;
-use types::art_schemas::{GetARTResponse, ProofMode};
+use types::art_schemas::ProofMode;
 use types::centrifugo_schemas::AuthRequest;
 use types::protos::{Frame, FrameTbs, SpFrame, group_operation::Operation};
 use zkp::rand::thread_rng;
 use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt, PrivateZeroArt};
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
+use zrt_art::changes::branch_change::BranchChange;
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -157,7 +157,7 @@ async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let (mut context, _) = UserTestModel::new(GROUP_SIZE).await;
-    let mut test_context = context.derive_new(2)?;
+    let test_context = context.derive_new(2)?;
 
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
     // messages.push(init_message);
@@ -215,55 +215,83 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
     Ok(())
 }
 
-// /// Six users try to update the same epoch at the same time.
-// #[tokio::test]
-// async fn test_concurrent_art_update() -> eyre::Result<()> {
-//     init_tracing_for_test();
-//
-//     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
-//
-//     info!("{:?}", context.chat_uuid);
-//
-//     let mut user1 = context.derive_new(1).unwrap();
-//     let mut user2 = context.derive_new(2).unwrap();
-//     let mut user3 = context.derive_new(3).unwrap();
-//     let mut user4 = context.derive_new(4).unwrap();
-//     let mut user5 = context.derive_new(5).unwrap();
-//     let mut user6 = context.derive_new(6).unwrap();
-//
-//     let handle1 =
-//         tokio::spawn(async move { user1.update_key(None, Some(StatusCode::OK)).await.is_ok() });
-//     let handle2 =
-//         tokio::spawn(async move { user2.update_key(None, Some(StatusCode::OK)).await.is_ok() });
-//     let handle3 =
-//         tokio::spawn(async move { user3.update_key(None, Some(StatusCode::OK)).await.is_ok() });
-//     let handle4 =
-//         tokio::spawn(async move { user4.update_key(None, Some(StatusCode::OK)).await.is_ok() });
-//     let handle5 =
-//         tokio::spawn(async move { user5.update_key(None, Some(StatusCode::OK)).await.is_ok() });
-//     let handle6 =
-//         tokio::spawn(async move { user6.update_key(None, Some(StatusCode::OK)).await.is_ok() });
-//
-//     let mut ok_count = 0;
-//     ok_count += handle1.await.unwrap() as i64;
-//     ok_count += handle2.await.unwrap() as i64;
-//     ok_count += handle3.await.unwrap() as i64;
-//     ok_count += handle4.await.unwrap() as i64;
-//     ok_count += handle5.await.unwrap() as i64;
-//     ok_count += handle6.await.unwrap() as i64;
-//
-//     #[cfg(feature = "merge_changes")]
-//     let result_count = 6;
-//     #[cfg(not(feature = "merge_changes"))]
-//     let result_count = 1;
-//
-//     assert_eq!(
-//         ok_count, result_count,
-//         "Failed to prevent the merge, when merge_changes is disabled."
-//     );
-//
-//     Ok(())
-// }
+/// Six users try to update the same epoch at the same time.
+#[tokio::test]
+async fn test_concurrent_art_update() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
+
+    info!("{:?}", context.chat_uuid);
+
+    let mut user1 = context.derive_new(1).unwrap();
+    let mut user2 = context.derive_new(2).unwrap();
+    let mut user3 = context.derive_new(3).unwrap();
+    let mut user4 = context.derive_new(4).unwrap();
+    let mut user5 = context.derive_new(5).unwrap();
+    let mut user6 = context.derive_new(6).unwrap();
+
+    async fn send_frame(frame: Frame, url: String) -> bool {
+        let mut buf = BytesMut::new();
+        frame.encode(&mut buf).unwrap();
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(url)
+            .body(Bytes::from(buf.clone()))
+            .send()
+            .await
+            .unwrap();
+
+        matches!(response.status(), StatusCode::OK)
+    }
+
+    let frame1 = user1.create_key_update_frame(None).await.unwrap().0;
+    let frame2 = user2.create_key_update_frame(None).await.unwrap().0;
+    let frame3 = user3.create_key_update_frame(None).await.unwrap().0;
+    let frame4 = user4.create_key_update_frame(None).await.unwrap().0;
+    let frame5 = user5.create_key_update_frame(None).await.unwrap().0;
+    let frame6 = user6.create_key_update_frame(None).await.unwrap().0;
+
+    let url = format!(
+        "{}/{}/{}/{}",
+        BACKEND_URL, "v1/group", user1.chat_uuid, "frames"
+    );
+
+    let url1 = url.clone();
+    let url2 = url.clone();
+    let url3 = url.clone();
+    let url4 = url.clone();
+    let url5 = url.clone();
+    let url6 = url.clone();
+
+    let handle1 = tokio::spawn(async { send_frame(frame1, url1).await });
+    let handle2 = tokio::spawn(async { send_frame(frame2, url2).await });
+    let handle3 = tokio::spawn(async { send_frame(frame3, url3).await });
+    let handle4 = tokio::spawn(async { send_frame(frame4, url4).await });
+    let handle5 = tokio::spawn(async { send_frame(frame5, url5).await });
+    let handle6 = tokio::spawn(async { send_frame(frame6, url6).await });
+
+    let mut ok_count = 0;
+    ok_count += handle1.await.unwrap() as i64;
+    ok_count += handle2.await.unwrap() as i64;
+    ok_count += handle3.await.unwrap() as i64;
+    ok_count += handle4.await.unwrap() as i64;
+    ok_count += handle5.await.unwrap() as i64;
+    ok_count += handle6.await.unwrap() as i64;
+
+    #[cfg(feature = "merge_changes")]
+    let result_count = 6;
+    #[cfg(not(feature = "merge_changes"))]
+    let result_count = 1;
+
+    assert_eq!(
+        ok_count, result_count,
+        "Failed to prevent the merge, when merge_changes is disabled."
+    );
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn test_remove_member() -> eyre::Result<()> {
@@ -324,7 +352,7 @@ async fn test_get_art() -> eyre::Result<()> {
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
         context.update_key(None, Some(StatusCode::OK)).await?;
-        let preview = context.art.get_new_art_preview().unwrap();
+        let preview = context.art.get_preview().unwrap();
         art_roots.push(preview.get_root().get_public_key());
     }
 
@@ -774,7 +802,91 @@ async fn test_epoch_validity_check() -> eyre::Result<()> {
     let mut user3 = user0.derive_new(3)?;
 
     user0.add_member(Some(StatusCode::OK)).await.unwrap();
-    user1.update_key(Some(b"askjdfhlaklsd".to_vec()), Some(StatusCode::UNAUTHORIZED)).await.unwrap();
+    user1
+        .update_key(
+            Some(b"askjdfhlaklsd".to_vec()),
+            Some(StatusCode::UNAUTHORIZED),
+        )
+        .await
+        .unwrap();
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_polling() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(1)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(3)?;
+
+    info!("user0 adds member, while user1 polls data ...");
+    for i in 0..5 {
+        user0.add_member(Some(StatusCode::OK)).await.unwrap();
+        user1.poll(None).await.unwrap();
+    }
+
+    info!("user2 polls all the available data ...");
+    user2.poll(None).await.unwrap();
+
+    // Useless pols
+    for _ in 0..4 {
+        user2.poll(None).await.unwrap();
+    }
+
+    info!("two users updates their keys, and user 2 polls changes ...");
+    for _ in 0..6 {
+        while user1
+            .update_key(Some(UserTestModel::new_nonce()), Some(StatusCode::OK))
+            .await
+            .is_err()
+        {
+            user1.poll(None).await.unwrap();
+        }
+        while user0
+            .update_key(Some(UserTestModel::new_nonce()), Some(StatusCode::OK))
+            .await
+            .is_err()
+        {
+            user0.poll(None).await.unwrap();
+        }
+
+        user0.poll(None).await.unwrap();
+        user1.poll(None).await.unwrap();
+        user2.poll(None).await.unwrap();
+    }
+
+    // user0 creates aggregation
+    let mut zero_art = user0.art.clone_without_rng(Box::new(thread_rng()));
+    zero_art.commit()?;
+    let mut agg = AggregationContext::from_private_zero_art(&zero_art, Box::new(thread_rng()));
+
+    let mut rng = StdRng::seed_from_u64(rand::random());
+    for _ in 0..24 {
+        agg.add_member(Fr::rand(&mut rng))?;
+    }
+    agg.update_key(Fr::rand(&mut rng))?;
+
+    user0
+        .send_aggregation(&agg, zero_art, None, Some(StatusCode::OK))
+        .await?;
+
+    info!("user1 and user2 polls aggregations polls all the available data ...");
+    user1.poll(None).await.unwrap();
+    user2.poll(None).await.unwrap();
+
+    info!("user3 polls all the available data ...");
+    user3.poll(None).await.unwrap();
+    user3.poll(None).await.unwrap();
+
+    user3.update_key(None, Some(StatusCode::OK)).await.unwrap();
+    user0.update_key(None, Some(StatusCode::OK)).await.unwrap();
+    user2.update_key(None, Some(StatusCode::OK)).await.unwrap();
+
+    user0.poll(None).await.unwrap();
+    user0.add_member(Some(StatusCode::OK)).await.unwrap();
 
     Ok(())
 }

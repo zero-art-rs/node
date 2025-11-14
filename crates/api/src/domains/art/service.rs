@@ -63,7 +63,7 @@ impl ARTService {
         id: Uuid,
         epoch: u64,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        debug!("Retrieve ART on {} epoch in group: {}", epoch, id);
+        debug!("Retrieve ART{{ epoch: {}, group: {} }}", epoch, id);
 
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
@@ -83,7 +83,7 @@ impl ARTService {
 
         art_record.epoch = epoch;
         debug!(
-            "Retrieved ART on epoch {} in chat {} with root PK: {}",
+            "Retrieved ART: {{ epoch: {},  group: {}, root PK: {} }}",
             epoch,
             id,
             art_record
@@ -337,7 +337,13 @@ impl ARTService {
         arts_storage
             .replace_art(&mut session, id, latest_art)
             .await
-            .inspect_err(|err| error!("Failed to replace latest art for group with id: {}. Error: {}", id, err.to_string()))?;
+            .inspect_err(|err| {
+                error!(
+                    "Failed to replace latest art for group with id: {}. Error: {}",
+                    id,
+                    err.to_string()
+                )
+            })?;
 
         session.commit_transaction().await?;
 

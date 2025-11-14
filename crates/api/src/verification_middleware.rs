@@ -522,7 +522,9 @@ pub async fn get_opcode_and_input_for_art_update(
             }
 
             if matches!(change.change_type, BranchChangeType::AddMember) {
-                return Err(VerificationError::AddMemberUniqueness {epoch: current_epoch})
+                return Err(VerificationError::AddMemberUniqueness {
+                    epoch: current_epoch,
+                });
             }
         }
     }

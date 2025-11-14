@@ -2,7 +2,7 @@ use crate::utils::{CentrifugoTokenResponse, stringify_option};
 use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use ark_std::rand::prelude::ThreadRng;
 use ark_std::{UniformRand, rand::SeedableRng, rand::prelude::StdRng};
@@ -14,13 +14,15 @@ use prost::Message;
 use reqwest::StatusCode;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
-use tracing::{debug, error};
+use tracing::{debug, error, trace, warn};
 use types::protos::SpFrame;
 use types::{
+    DEFAULT_LIMIT, DEFAULT_SKIP,
     art_schemas::{ChallengeResponse, GetARTQuery, GetARTResponse},
     centrifugo_schemas::AuthRequest,
     messenger_schemas::GetMessageQuery,
     protos::{Frame, FrameTbs, GroupOperation, SpFrames, group_operation::Operation},
+    utils,
     utils::extract_branch_changes,
 };
 use uuid::Uuid;
@@ -28,8 +30,8 @@ use zkp::rand::thread_rng;
 use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt, PrivateZeroArt, PublicArt};
 use zrt_art::art_node::TreeMethods;
-use zrt_art::changes::aggregations::AggregatedChange;
-use zrt_art::changes::branch_change::BranchChange;
+use zrt_art::changes::aggregations::{AggregatedChange, AggregationNode};
+use zrt_art::changes::branch_change::{BranchChange, BranchChangeType, PrivateBranchChange};
 use zrt_art::changes::{ApplicableChange, ProvableChange, VerifiableChange};
 use zrt_art::errors::ArtError;
 use zrt_art::node_index::{Direction, NodeIndex};
@@ -42,7 +44,9 @@ pub struct UserTestModel {
     pub initial_secrets: Vec<Fr>,
     pub chat_uuid: Uuid,
     pub epoch: u64,
+    pub sequence_number: u64,
     pub owner_id_key: Option<Fr>,
+    pub user_name: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +62,10 @@ impl From<(StatusCode, StatusCode)> for UserTestModelError {
             expected: expected.to_string(),
         }
     }
+}
+
+fn default_user_name(index: usize) -> String {
+    format!("User-{}", index)
 }
 
 #[allow(dead_code)]
@@ -80,7 +88,9 @@ impl UserTestModel {
             initial_secrets: secrets,
             chat_uuid: id,
             epoch: 0, // init request is already one epoch
+            sequence_number: 0,
             owner_id_key: Some(owner_id_key),
+            user_name: default_user_name(0),
         };
 
         debug!(
@@ -121,7 +131,9 @@ impl UserTestModel {
             initial_secrets: self.initial_secrets.clone(),
             chat_uuid: self.chat_uuid,
             epoch: self.epoch,
+            sequence_number: self.sequence_number,
             owner_id_key: None,
+            user_name: default_user_name(index),
         })
     }
 
@@ -132,7 +144,9 @@ impl UserTestModel {
             initial_secrets: self.initial_secrets.clone(),
             chat_uuid: self.chat_uuid.clone(),
             epoch: self.epoch.clone(),
+            sequence_number: self.sequence_number,
             owner_id_key: self.owner_id_key.clone(),
+            user_name: self.user_name.clone(),
         }
     }
 
@@ -186,14 +200,230 @@ impl UserTestModel {
         )
     }
 
+    pub async fn create_key_update_frame(
+        &mut self,
+        payload: Option<Vec<u8>>,
+    ) -> eyre::Result<(Frame, PrivateBranchChange<CortadoAffine>)> {
+        let mut rng = StdRng::seed_from_u64(rand::random());
+
+        let new_secret_key = Fr::rand(&mut rng);
+
+        let mut zero_art =
+            PrivateZeroArt::new(self.art.get_preview().unwrap(), Box::new(thread_rng())).unwrap();
+
+        let branch_change_output = zero_art.update_key(new_secret_key)?;
+        let branch_change = branch_change_output.get_branch_change().clone();
+
+        let tbs_frame = FrameTbs {
+            group_id: self.chat_uuid.to_string(),
+            epoch: self.epoch + 1,
+            nonce: vec![],
+            group_operation: Some(GroupOperation {
+                operation: Some(Operation::KeyUpdate(postcard::to_allocvec(&branch_change)?)),
+            }),
+            protected_payload: payload.unwrap_or_default(),
+        };
+
+        let mut buf = BytesMut::new();
+        tbs_frame.encode(&mut buf)?;
+        let associated_data = &Sha3_256::digest(&buf).to_vec();
+
+        let eligibility_requirement =
+            EligibilityRequirement::Member(zero_art.get_leaf_public_key());
+        debug!(
+            "UpdateKey creation debug data ({}):\
+            \n\tnew epoch: {}\
+            \n\tOld Tk: {:#?}...\
+            \n\tOld commited Tk: {:#?}...\
+            \n\tassociated_data: {:?}\
+            \n\teligibility_requirement: {:?}",
+            self.user_name,
+            self.epoch + 1,
+            stringify_option(self.art.get_root_public_key().x().as_ref()),
+            stringify_option(zero_art.get_root_public_key().x().as_ref()),
+            associated_data,
+            eligibility_requirement,
+        );
+
+        let mut proof_bytes = Vec::new();
+        let proof = branch_change_output.prove(associated_data, None)?;
+        proof.serialize_compressed(&mut proof_bytes)?;
+
+        Ok((
+            Frame {
+                frame: Some(tbs_frame),
+                proof: proof_bytes,
+            },
+            branch_change_output,
+        ))
+    }
+
+    pub async fn send_frame_with_status_check(
+        &mut self,
+        frame: Frame,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        let update_key_response = self.send_frame(frame).await?;
+
+        if let Some(status_check) = status_check {
+            if update_key_response.0.status() != status_check {
+                Err(UserTestModelError::from((
+                    update_key_response.0.status(),
+                    status_check,
+                )))?;
+            }
+        }
+
+        Ok(update_key_response)
+    }
+
     pub async fn update_key(
         &mut self,
         payload: Option<Vec<u8>>,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
-        let mut rng = StdRng::seed_from_u64(rand::random());
+        let (frame, change) = self.create_key_update_frame(payload).await?;
 
-        debug!("art: {}", self.art.get_base_art().get_root());
+        let response = self
+            .send_frame_with_status_check(frame, status_check)
+            .await?;
+
+        self.art.commit().unwrap();
+        self.epoch += 1;
+        change.apply(&mut self.art).unwrap();
+
+        Ok(response)
+    }
+
+    pub fn process_frame_tbs(&mut self, frame_tbs: &FrameTbs) {
+        if let Some(operation) = &frame_tbs.group_operation {
+            if let Some(inner_operation) = &operation.operation {
+                // debug!("inner_operation: {:?}", inner_operation);
+                match inner_operation {
+                    Operation::KeyUpdate(change)
+                    | Operation::AddMember(change)
+                    | Operation::RemoveMember(change)
+                    | Operation::LeaveGroup(change) => {
+                        let branch_change = utils::decode_branch_change(change).unwrap();
+                        if !matches!(branch_change.change_type, BranchChangeType::AddMember)
+                            && self.art.get_node_index().eq(&branch_change.node_index)
+                        {
+                            trace!(
+                                "Skip own operation ({}): {:?}",
+                                self.user_name, inner_operation
+                            );
+                            return;
+                        }
+
+                        trace!(
+                            "Apply operation ({}): {:?}",
+                            self.user_name, inner_operation
+                        );
+                        branch_change.apply(&mut self.art).unwrap();
+                    }
+                    Operation::Aggregated(change) => {
+                        let branch_change = utils::decode_aggregated_change(change).unwrap();
+                        branch_change.apply(&mut self.art).unwrap();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    pub fn process_sp_frames(
+        &mut self,
+        sp_frames: &Vec<SpFrame>,
+        max_epoch: Option<u64>,
+    ) -> eyre::Result<bool> {
+        for sp_frame in sp_frames {
+            self.sequence_number += 1;
+
+            let Some(frame) = &sp_frame.frame else {
+                continue;
+            };
+            // let proof = ArtProof::deserialize_compressed(&*frame.proof);
+
+            let Some(frame_tbs) = &frame.frame else {
+                continue;
+            };
+            // let associated_data = Sha3_256::digest(frame_tbs.encode_to_vec()).to_vec();
+
+            if let Some(max_epoch) = max_epoch {
+                if frame_tbs.epoch >= max_epoch {
+                    return Ok(false);
+                }
+            }
+
+            if frame_tbs.epoch < self.epoch {
+                warn!(
+                    "{} received frame for the previous epoch: {:?}",
+                    self.user_name,
+                    sp_frame
+                        .frame
+                        .clone()
+                        .and_then(|frame| frame.frame)
+                        .and_then(|frame| frame.group_operation)
+                        .and_then(|group_operation| group_operation.operation)
+                );
+                if sp_frame.seq_num > self.sequence_number {
+                    self.sequence_number = sp_frame.seq_num;
+                }
+                continue;
+            }
+
+            if frame_tbs.epoch == self.epoch + 1 {
+                self.art.commit().unwrap();
+                self.epoch += 1;
+            }
+
+            trace!(
+                "Self.epoch: {}, process frame_tbs: {:?}",
+                self.epoch, frame_tbs
+            );
+            self.process_frame_tbs(frame_tbs);
+        }
+
+        Ok(true)
+    }
+
+    pub async fn poll(&mut self, max_epoch: Option<u64>) -> eyre::Result<()> {
+        let mut skip = 0;
+        let mut sp_frames = self
+            .get_messages(DEFAULT_LIMIT, skip)
+            .await
+            .unwrap()
+            .sp_frames;
+
+        while !sp_frames.is_empty() {
+            // sp_frames.sort_by(|a, b| a.seq_num.cmp(&b.seq_num));
+
+            let continue_marker = self.process_sp_frames(&sp_frames, max_epoch).unwrap();
+            if !continue_marker {
+                break;
+            }
+
+            if sp_frames.len() < DEFAULT_LIMIT as usize {
+                break;
+            }
+
+            skip += DEFAULT_LIMIT;
+            sp_frames = self
+                .get_messages(DEFAULT_LIMIT, skip)
+                .await
+                .unwrap()
+                .sp_frames;
+        }
+
+        Ok(())
+    }
+
+    pub async fn update_key_old(
+        &mut self,
+        payload: Option<Vec<u8>>,
+        status_check: Option<StatusCode>,
+    ) -> eyre::Result<(reqwest::Response, BytesMut)> {
+        let mut rng = StdRng::seed_from_u64(rand::random());
 
         let new_secret_key = Fr::rand(&mut rng);
 
@@ -288,9 +518,11 @@ impl UserTestModel {
         debug!(
             "SendAggregation debug data:\n\
             \tepoch: {}\n\
-            \tOld TK: {:#?}",
+            \tOld TK: {:#?}\n\
+            \tcommited TK: {:#?}",
             self.epoch + 1,
-            self.art.get_root().get_public_key()
+            self.art.get_root().get_public_key(),
+            zero_art.get_base_art().get_root().get_public_key(),
         );
 
         let aggregation_change: AggregatedChange<CortadoAffine> = AggregatedChange::try_from(agg)?;
@@ -331,7 +563,8 @@ impl UserTestModel {
             }
         }
 
-        aggregation_change.apply(&mut zero_art).unwrap();
+        // aggregation_change.apply(&mut zero_art).unwrap();
+        agg.apply(&mut zero_art).unwrap();
 
         debug!(
             "SendAggregation comit debug data:\n\
@@ -502,12 +735,12 @@ impl UserTestModel {
         let temporary_secret_key = Fr::rand(&mut rng);
 
         debug!(
-            "MakeBlank creation debug data:
+            "MakeBlank creation debug data ({}):
             epoch: {}
             Old TK: {}
             temporary_secret_key: {}
-            target_node_path: {:?}
-            ",
+            target_node_path: {:?}",
+            self.user_name,
             self.epoch + 1,
             stringify_option(self.art.get_base_art().get_root_public_key().x().as_ref()),
             stringify_option(Some(&temporary_secret_key)),
@@ -673,6 +906,20 @@ impl UserTestModel {
         let verification_result = verify(&signature, &vec![pk], &msg);
         assert!(verification_result.is_ok());
 
+        debug!(
+            "GetMessages polling debug data ({}):\
+            \n\tnew epoch: {}\
+            \n\tOld Tk: {:#?}...\
+            \n\tassociated_data: {:?}\
+            \n\teligibility_requirement: ({:?}..., {:?}...)",
+            self.user_name,
+            self.epoch + 1,
+            stringify_option(self.art.get_root_public_key().x().as_ref()),
+            msg,
+            stringify_option(Some(&sk)),
+            stringify_option(pk.x().as_ref()),
+        );
+
         let get_messages_response = self
             .client
             .get(format!(
@@ -680,12 +927,12 @@ impl UserTestModel {
                 BACKEND_URL, "v1/group", self.chat_uuid, "frames"
             ))
             .query(&GetMessageQuery {
-                message_sequence_number: None,
+                message_sequence_number: Some(self.sequence_number as i64),
                 limit,
                 skip,
                 signature,
                 nonce,
-                epoch: None,
+                epoch: Some(self.epoch.saturating_sub(1)),
             })
             .send()
             .await?;
