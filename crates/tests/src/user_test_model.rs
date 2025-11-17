@@ -93,11 +93,6 @@ impl UserTestModel {
             user_name: default_user_name(0),
         };
 
-        debug!(
-            "Root secret: {}...",
-            stringify_option(public_art.get_root().get_public_key().x().as_ref())
-        );
-
         // Create new_group for testing
         let (response, init_message) = user
             .create_new_chat(public_art, owner_id_key)

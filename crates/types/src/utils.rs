@@ -22,7 +22,7 @@ impl ArtUpdate {
     }
 }
 
-impl ApplicableChange<PublicZeroArt<CortadoAffine>> for ArtUpdate {
+impl ApplicableChange<PublicZeroArt<CortadoAffine>, ()> for ArtUpdate {
     fn apply(&self, art: &mut PublicZeroArt<CortadoAffine>) -> Result<(), ArtError> {
         match self {
             Self::BranchChange(changes) => {

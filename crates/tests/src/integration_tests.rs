@@ -793,13 +793,12 @@ async fn test_send_aggregated_change() -> eyre::Result<()> {
 }
 
 #[tokio::test]
+/// Add member is a unique operation, so the following key update must fail.
 async fn test_epoch_validity_check() -> eyre::Result<()> {
     init_tracing_for_test();
 
     let (mut user0, _) = UserTestModel::new(7).await;
     let mut user1 = user0.derive_new(1)?;
-    let mut user2 = user0.derive_new(2)?;
-    let mut user3 = user0.derive_new(3)?;
 
     user0.add_member(Some(StatusCode::OK)).await.unwrap();
     user1
@@ -823,7 +822,7 @@ async fn test_polling() -> eyre::Result<()> {
     let mut user3 = user0.derive_new(3)?;
 
     info!("user0 adds member, while user1 polls data ...");
-    for i in 0..5 {
+    for _ in 0..5 {
         user0.add_member(Some(StatusCode::OK)).await.unwrap();
         user1.poll(None).await.unwrap();
     }
