@@ -1,22 +1,18 @@
 use callbacks::{CallbackSender, CallbackWrapper};
 use cortado::CortadoAffine;
-use zrt_art::art::PublicZeroArt;
-use zrt_art::changes::aggregations::AggregatedChange;
-use zrt_art::changes::branch_change::BranchChange;
 use zrt_zk::EligibilityRequirement;
-use zrt_zk::art::ArtProof;
+use zrt_zk::aggregated_art::VerifierAggregationTree;
+use zrt_zk::art::{ArtProof, VerifierNodeData};
 
 pub enum ProofVerifierMessage {
     ArtUpdate {
-        change: BranchChange<CortadoAffine>,
-        art: PublicZeroArt<CortadoAffine>,
+        verification_branch: Vec<VerifierNodeData<CortadoAffine>>,
         associated_data: Vec<u8>,
         eligibility_requirement: EligibilityRequirement,
         proof: ArtProof,
     },
     ArtAggregation {
-        change: AggregatedChange<CortadoAffine>,
-        art: PublicZeroArt<CortadoAffine>,
+        verification_tree: VerifierAggregationTree<CortadoAffine>,
         associated_data: Vec<u8>,
         eligibility_requirement: EligibilityRequirement,
         proof: ArtProof,

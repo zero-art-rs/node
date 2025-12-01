@@ -80,7 +80,7 @@ where
 
     fn try_from(record: ARTRecord<G>) -> Result<Self, Self::Error> {
         Ok(Self {
-            art: postcard::to_allocvec(&record.art.get_base_art())?,
+            art: postcard::to_allocvec(&record.art)?,
             is_private: record.is_private,
         })
     }

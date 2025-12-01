@@ -25,7 +25,7 @@ use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
 use types::utils::ArtUpdate;
 use uuid::Uuid;
-use zrt_art::art::PublicZeroArt;
+use zrt_art::art::PublicArt;
 use zrt_art::art_node::{LeafIter, LeafStatus, TreeMethods};
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
@@ -66,7 +66,7 @@ pub async fn authenticate(
     for (chat_id, epoch) in auth_request.chat_ids.iter().zip(auth_request.epochs.iter()) {
         let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
-        root_keys.push(art.get_base_art().get_root().get_public_key());
+        root_keys.push(art.root().public_key());
     }
 
     let verification_req = VerificationRequest {
@@ -127,7 +127,7 @@ pub async fn list_messages(
         data: VerifierData {
             proof: payload.signature.clone(),
             public_inputs: PublicInputs::Signature {
-                public_keys: vec![art.get_base_art().get_root().get_public_key()],
+                public_keys: vec![art.root().public_key()],
             },
             associated_data: msg,
         },
@@ -175,8 +175,8 @@ pub async fn get_art(
     match ProofMode::try_from(payload.proof_mode.as_str())? {
         ProofMode::UseLeafKey => {
             let mut public_key_is_wrong = true;
-            for node in LeafIter::new(art.get_base_art().get_root()) {
-                if node.get_public_key().eq(&public_key) {
+            for node in LeafIter::new(art.root()) {
+                if node.public_key().eq(&public_key) {
                     public_key_is_wrong = false;
                 }
             }
@@ -187,7 +187,7 @@ pub async fn get_art(
             }
         }
         ProofMode::UseRootKey => {
-            if art.get_base_art().get_root().get_public_key() != public_key {
+            if art.root().public_key() != public_key {
                 error!("Provided public key doesn't match with root key.");
                 return Err(VerificationError::InvalidInput);
             }
@@ -495,7 +495,6 @@ pub async fn get_opcode_and_input_for_art_update(
                 )
             })?;
 
-        // debug!("epoch_changes: {:#?}", epoch_changes);
         let ArtUpdate::BranchChange(epoch_changes) = epoch_changes else {
             error!(
                 "Epoch {} already contain aggregated operation, so no other changes can be applied.",
@@ -531,33 +530,37 @@ pub async fn get_opcode_and_input_for_art_update(
 
     let (opcode, eligibility_requirement) = match branch_changes.change_type {
         BranchChangeType::UpdateKey => {
-            let leaf = art.get_base_art().get_node(&branch_changes.node_index)?;
-            if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
+            let leaf = art.node(&branch_changes.node_index)?;
+            if !leaf.is_leaf() {
+                error!(
+                    "Fail to update art, as the node isn't leaf. ArtTree is\n{}",
+                    art.root()
+                );
+                return Err(VerificationError::InvalidInput);
+            }
+
+            if !matches!(leaf.status(), Some(LeafStatus::Active)) {
+                error!(
+                    "Fail to perform key update as the target leaf status is: {:?}.",
+                    leaf.status()
+                );
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::KeyUpdate,
-                EligibilityRequirement::Member(
-                    art.get_base_art()
-                        .get_node(&branch_changes.node_index)?
-                        .get_public_key(),
-                ),
+                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.public_key()),
             )
         }
         BranchChangeType::Leave => {
-            let leaf = art.get_base_art().get_node(&branch_changes.node_index)?;
-            if !matches!(leaf.get_status(), Some(LeafStatus::Active)) {
+            let leaf = art.node(&branch_changes.node_index)?;
+            if !matches!(leaf.status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::LeaveGroup,
-                EligibilityRequirement::Member(
-                    art.get_base_art()
-                        .get_node(&branch_changes.node_index)?
-                        .get_public_key(),
-                ),
+                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.public_key()),
             )
         }
         BranchChangeType::AddMember => (
@@ -568,25 +571,28 @@ pub async fn get_opcode_and_input_for_art_update(
             )),
         ),
         BranchChangeType::RemoveMember => {
-            let target_leaf = art.get_base_art().get_node(&branch_changes.node_index)?;
+            let target_leaf = art.node(&branch_changes.node_index)?;
 
             if !target_leaf.is_leaf() {
                 error!("Target leaf for removal is not a leaf.");
                 return Err(VerificationError::InvalidInput);
             }
 
-            let aux_public_key = if matches!(target_leaf.get_status(), Some(LeafStatus::Active)) {
-                debug!("Using left most leaf public key for verification");
+            let eligibility = if matches!(target_leaf.status(), Some(LeafStatus::Active)) {
                 EligibilityRequirement::Previleged((
                     get_left_most_leaf_public_key(&art).await?,
                     vec![],
                 ))
             } else {
-                debug!("Using art.root.public_key for verification");
-                EligibilityRequirement::Member(art.get_base_art().get_root().get_public_key())
+                EligibilityRequirement::Member(art.root().public_key())
             };
 
-            (VerificationOpcode::RemoveMember, aux_public_key)
+            debug!(
+                "Using the next eligibility for remove member verification: {:?}",
+                eligibility
+            );
+
+            (VerificationOpcode::RemoveMember, eligibility)
         }
     };
 
@@ -601,14 +607,14 @@ pub async fn get_opcode_and_input_for_art_update(
 }
 
 pub async fn get_left_most_leaf_public_key(
-    art: &PublicZeroArt<CortadoAffine>,
+    art: &PublicArt<CortadoAffine>,
 ) -> Result<CortadoAffine, VerificationError> {
-    let mut left_most_leaf = art.get_base_art().get_root();
-    while let Some(node) = left_most_leaf.get_child(Direction::Left) {
+    let mut left_most_leaf = art.root();
+    while let Some(node) = left_most_leaf.child(Direction::Left) {
         left_most_leaf = node;
     }
 
-    Ok(left_most_leaf.get_public_key())
+    Ok(left_most_leaf.public_key())
 }
 
 pub async fn get_opcode_and_input_for_drop_group(
@@ -617,14 +623,14 @@ pub async fn get_opcode_and_input_for_drop_group(
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
 
-    let mut left_most_leaf = art.get_base_art().get_root();
+    let mut left_most_leaf = art.root();
     let mut path = Vec::new();
-    while let Some(node) = left_most_leaf.get_child(Direction::Left) {
+    while let Some(node) = left_most_leaf.child(Direction::Left) {
         path.push(Direction::Left);
         left_most_leaf = node;
     }
 
-    let leaf = art.get_base_art().get_node(&NodeIndex::Direction(path))?;
+    let leaf = art.node(&NodeIndex::Direction(path))?;
     if !leaf.is_leaf() {
         return Err(VerificationError::InvalidProof);
     }
@@ -632,7 +638,7 @@ pub async fn get_opcode_and_input_for_drop_group(
     Ok((
         VerificationOpcode::DeleteChat,
         PublicInputs::Signature {
-            public_keys: vec![leaf.get_public_key()],
+            public_keys: vec![leaf.public_key()],
         },
     ))
 }
@@ -646,7 +652,7 @@ pub async fn get_opcode_and_input_for_send_message(
     Ok((
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
-            public_keys: vec![art.get_base_art().get_root().get_public_key()],
+            public_keys: vec![art.root().public_key()],
         },
     ))
 }

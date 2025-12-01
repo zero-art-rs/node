@@ -3,7 +3,7 @@ use cortado::CortadoAffine;
 use tracing::error;
 use types::callback_wrappers::ProofVerifierMessage;
 use types::errors::VerificationError;
-use zrt_art::art::PublicZeroArt;
+use zrt_art::art::PublicArt;
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_zk::EligibilityRequirement;
@@ -29,12 +29,12 @@ pub enum VerificationOpcode {
 pub enum PublicInputs {
     ArtUpdateInput {
         change: BranchChange<CortadoAffine>,
-        art: PublicZeroArt<CortadoAffine>,
+        art: PublicArt<CortadoAffine>,
         eligibility_requirement: EligibilityRequirement,
     },
     ArtAggregationInput {
         change: AggregatedChange<CortadoAffine>,
-        art: PublicZeroArt<CortadoAffine>,
+        art: PublicArt<CortadoAffine>,
         eligibility_requirement: EligibilityRequirement,
     },
     Signature {
@@ -70,8 +70,7 @@ impl VerificationRequest {
                 };
 
                 Ok(ProofVerifierMessage::ArtUpdate {
-                    change,
-                    art,
+                    verification_branch: art.verification_branch(&change)?,
                     eligibility_requirement,
                     associated_data: self.data.associated_data,
                     proof: ArtProof::deserialize_compressed(&*self.data.proof)?,
@@ -94,8 +93,7 @@ impl VerificationRequest {
                 let deserialized_proof = deserialized_proof?;
 
                 Ok(ProofVerifierMessage::ArtAggregation {
-                    change,
-                    art,
+                    verification_tree: art.verification_tree(&change)?,
                     eligibility_requirement,
                     associated_data: self.data.associated_data,
                     proof: deserialized_proof,

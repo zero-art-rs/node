@@ -5,8 +5,8 @@ use tracing::{error, info, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
-use zrt_art::changes::VerifiableChange;
 use zrt_crypto::schnorr;
+use zrt_zk::engine::ZeroArtVerifierEngine;
 
 pub mod verifier_engine;
 pub use types::errors::VerificationError;
@@ -14,14 +14,19 @@ pub use types::errors::VerificationError;
 pub type ProofVerifierSender = mpsc::Sender<ProofVerifierMessageWrapper>;
 pub type ProofVerifierReceiver = mpsc::Receiver<ProofVerifierMessageWrapper>;
 
-#[derive(Debug)]
 pub struct ProofVerifier {
     listener: ProofVerifierReceiver,
+    verifier_engine: ZeroArtVerifierEngine,
 }
 
 impl ProofVerifier {
     pub fn new(listener: ProofVerifierReceiver) -> Self {
-        Self { listener }
+        let verifier_engine = ZeroArtVerifierEngine::default();
+
+        Self {
+            listener,
+            verifier_engine,
+        }
     }
 
     pub async fn run(mut self, cancellation_token: CancellationToken) {
@@ -50,25 +55,41 @@ impl ProofVerifier {
 
         let result = match event {
             ProofVerifierMessage::ArtUpdate {
-                change,
-                art,
+                verification_branch,
                 associated_data,
                 eligibility_requirement,
                 proof,
-            } => match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
-                Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
-                Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false }),
-            },
+            } => {
+                let result = self
+                    .verifier_engine
+                    .new_context(eligibility_requirement)
+                    .for_branch(&verification_branch)
+                    .with_associated_data(&associated_data)
+                    .verify(&proof);
+
+                match result {
+                    Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
+                    Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false }),
+                }
+            }
             ProofVerifierMessage::ArtAggregation {
-                change,
-                art,
+                verification_tree,
                 associated_data,
                 eligibility_requirement,
                 proof,
-            } => match change.verify(&art, &associated_data, eligibility_requirement, &proof) {
-                Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
-                Err(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: false }),
-            },
+            } => {
+                let result = self
+                    .verifier_engine
+                    .new_context(eligibility_requirement)
+                    .for_aggregation(&verification_tree)
+                    .with_associated_data(&associated_data)
+                    .verify(&proof);
+
+                match result {
+                    Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
+                    Err(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: false }),
+                }
+            }
             ProofVerifierMessage::SchnorrSignature {
                 signature,
                 public_keys,

@@ -12,7 +12,7 @@ use types::errors::ARTServiceError;
 use types::utils::decode_art;
 
 use mongodb::ClientSession;
-use zrt_art::art::PublicZeroArt;
+use zrt_art::art::PublicArt;
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
@@ -86,11 +86,7 @@ impl ARTService {
             "Retrieved ART: {{ epoch: {},  group: {}, root PK: {} }}",
             epoch,
             id,
-            art_record
-                .art
-                .get_upstream_art()
-                .get_root()
-                .get_public_key()
+            art_record.art.root().public_key()
         );
 
         Ok(art_record)
@@ -183,7 +179,7 @@ impl ARTService {
 
         let initial_art_record = ARTRecord {
             chat_id: id,
-            art: PublicZeroArt::new(art)?,
+            art,
             is_private,
             epoch: 0,
         };
@@ -254,11 +250,7 @@ impl ARTService {
 
             debug!(
                 "Updated art. New root PK is: {}, new epoch is: {}",
-                &art_record
-                    .art
-                    .get_upstream_art()
-                    .get_root()
-                    .get_public_key(),
+                &art_record.art.root().public_key(),
                 art_record.epoch
             );
 

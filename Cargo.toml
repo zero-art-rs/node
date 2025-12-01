@@ -41,7 +41,7 @@ axum = { version = "0.8.1", features = ["macros"] }
 validator = { version = "0.20.0", features = ["derive"] }
 mongodb = { version = "3.2.3" }
 bson = { version = "2.15.0", features = ["chrono-0_4"] }
-tracing-subscriber = { version = "0.3.19" }
+tracing-subscriber = { version = "0.3.19", features = ["json", "fmt", "env-filter", "ansi"] }
 uuid = { version = "1.17.0", features = ["v7", "serde"] }
 jsonwebtoken = "9.3.1"
 postcard = { version = "1.1.2"  }

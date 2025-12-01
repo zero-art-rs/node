@@ -2,12 +2,13 @@ use crate::protos::Frame;
 use crate::protos::group_operation::Operation;
 use ark_std::iterable::Iterable;
 use cortado::CortadoAffine;
-use zrt_art::art::{PublicArt, PublicZeroArt};
+use zrt_art::art::PublicArt;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::BranchChange;
 use zrt_art::errors::ArtError;
 
+#[derive(Clone, Debug)]
 pub enum ArtUpdate {
     BranchChange(Vec<BranchChange<CortadoAffine>>),
     AggregatedChange(AggregatedChange<CortadoAffine>),
@@ -22,8 +23,8 @@ impl ArtUpdate {
     }
 }
 
-impl ApplicableChange<PublicZeroArt<CortadoAffine>, ()> for ArtUpdate {
-    fn apply(&self, art: &mut PublicZeroArt<CortadoAffine>) -> Result<(), ArtError> {
+impl ApplicableChange<PublicArt<CortadoAffine>, ()> for ArtUpdate {
+    fn apply(&self, art: &mut PublicArt<CortadoAffine>) -> Result<(), ArtError> {
         match self {
             Self::BranchChange(changes) => {
                 for change in changes {

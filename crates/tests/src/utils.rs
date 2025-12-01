@@ -1,6 +1,6 @@
 use chrono::Local;
-use std::fmt;
-use tracing_subscriber::fmt::{format::Writer, time::FormatTime};
+use std::{fmt, io};
+use tracing_subscriber::fmt::{MakeWriter, format::Writer, time::FormatTime};
 use {
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
