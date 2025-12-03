@@ -309,7 +309,9 @@ impl UserTestModel {
                             "Apply operation ({}): {:?}",
                             self.user_name, inner_operation
                         );
-                        branch_change.apply(&mut self.art).unwrap();
+                        branch_change.apply(&mut self.art).inspect_err(|err| {
+                            error!("{} failed to apply operation. Error: {}. Change: {:?}. ART root:\n{}", self.user_name, err, branch_change, self.art.root());
+                        }).unwrap();
                     }
                     Operation::Aggregated(change) => {
                         let branch_change = utils::decode_aggregated_change(change).unwrap();
@@ -386,8 +388,6 @@ impl UserTestModel {
             .sp_frames;
 
         while !sp_frames.is_empty() {
-            // sp_frames.sort_by(|a, b| a.seq_num.cmp(&b.seq_num));
-
             let continue_marker = self.process_sp_frames(&sp_frames, max_epoch).unwrap();
             if !continue_marker {
                 break;
@@ -570,6 +570,12 @@ impl UserTestModel {
 
         let mut proof_bytes = Vec::new();
 
+        let leaf_pk = self
+            .art
+            .preview()
+            .node(&append_user_changes.node_index)
+            .unwrap()
+            .public_key();
         let leaf_sk = self.art.secrets().preview().leaf();
         let leaf_pk = CortadoAffine::generator().mul(leaf_sk).into_affine();
         let prover_eligibility = EligibilityArtefact::Owner((leaf_sk, leaf_pk));

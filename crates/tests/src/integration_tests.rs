@@ -786,76 +786,79 @@ async fn test_epoch_validity_check() -> eyre::Result<()> {
     Ok(())
 }
 
-// // #[tokio::test]
-// async fn test_polling() -> eyre::Result<()> {
-//     init_tracing_for_test();
-//
-//     let (mut user0, _) = UserTestModel::new(7).await;
-//     let mut user1 = user0.derive_new(1)?;
-//     let mut user2 = user0.derive_new(2)?;
-//     let mut user3 = user0.derive_new(3)?;
-//
-//     info!("user0 adds member, while user1 polls data ...");
-//     for _ in 0..5 {
-//         user0.add_member(Some(StatusCode::OK)).await.unwrap();
-//         user1.poll(None).await.unwrap();
-//     }
-//
-//     info!("user2 polls all the available data ...");
-//     user2.poll(None).await.unwrap();
-//
-//     // Useless pols
-//     for _ in 0..4 {
-//         user2.poll(None).await.unwrap();
-//     }
-//
-//     info!("two users updates their keys, and user 2 polls changes ...");
-//     for _ in 0..6 {
-//         while user1
-//             .update_key(Some(UserTestModel::new_nonce()), Some(StatusCode::OK))
-//             .await
-//             .is_err()
-//         {
-//             user1.poll(None).await.unwrap();
-//         }
-//         while user0
-//             .update_key(Some(UserTestModel::new_nonce()), Some(StatusCode::OK))
-//             .await
-//             .is_err()
-//         {
-//             user0.poll(None).await.unwrap();
-//         }
-//
-//         user0.poll(None).await.unwrap();
-//         user1.poll(None).await.unwrap();
-//         user2.poll(None).await.unwrap();
-//     }
-//     let mut agg = AggregationContext::from(user0.art.clone());
-//
-//     let mut rng = StdRng::seed_from_u64(rand::random());
-//     for _ in 0..24 {
-//         agg.add_member(Fr::rand(&mut rng))?;
-//     }
-//     agg.update_key(Fr::rand(&mut rng))?;
-//
-//     user0
-//         .send_aggregation(&agg, None, Some(StatusCode::OK))
-//         .await?;
-//
-//     info!("user1 and user2 polls aggregations polls all the available data ...");
-//     user1.poll(None).await.unwrap();
-//     user2.poll(None).await.unwrap();
-//
-//     info!("user3 polls all the available data ...");
-//     user3.poll(None).await.unwrap();
-//     user3.poll(None).await.unwrap();
-//
-//     user3.update_key(None, Some(StatusCode::OK)).await.unwrap();
-//     user0.update_key(None, Some(StatusCode::OK)).await.unwrap();
-//     user2.update_key(None, Some(StatusCode::OK)).await.unwrap();
-//
-//     user0.poll(None).await.unwrap();
-//     user0.add_member(Some(StatusCode::OK)).await.unwrap();
-//
-//     Ok(())
-// }
+#[tokio::test]
+async fn test_polling() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let (mut user0, _) = UserTestModel::new(7).await;
+    let mut user1 = user0.derive_new(1)?;
+    let mut user2 = user0.derive_new(2)?;
+    let mut user3 = user0.derive_new(3)?;
+
+    info!("user0 adds member, while user1 polls data ...");
+    for _ in 0..5 {
+        user0.add_member(Some(StatusCode::OK)).await.unwrap();
+        user1.poll(None).await.unwrap();
+    }
+
+    info!("user2 polls all the available data ...");
+    user2.poll(None).await.unwrap();
+
+    // Useless pols
+    for _ in 0..4 {
+        user2.poll(None).await.unwrap();
+    }
+
+    info!("two users updates their keys, and user 2 polls changes ...");
+    for _ in 0..6 {
+        while user1
+            .update_key(Some(UserTestModel::new_nonce()), Some(StatusCode::OK))
+            .await
+            .is_err()
+        {
+            user1.poll(None).await.unwrap();
+        }
+        while user0
+            .update_key(Some(UserTestModel::new_nonce()), Some(StatusCode::OK))
+            .await
+            .is_err()
+        {
+            user0.poll(None).await.unwrap();
+        }
+
+        user0.poll(None).await.unwrap();
+        user1.poll(None).await.unwrap();
+        user2.poll(None).await.unwrap();
+    }
+    let mut commited_art = user0.art.clone();
+    commited_art.commit().unwrap();
+    let mut agg = AggregationContext::from(commited_art);
+
+    let mut rng = StdRng::seed_from_u64(rand::random());
+    for _ in 0..24 {
+        agg.add_member(Fr::rand(&mut rng))?;
+    }
+    let new_key = Fr::rand(&mut rng);
+    agg.update_key(new_key)?;
+
+    user0
+        .send_aggregation(&agg, Some(new_key), None, Some(StatusCode::OK))
+        .await?;
+
+    info!("user1 and user2 polls aggregations polls all the available data ...");
+    user1.poll(None).await.unwrap();
+    user2.poll(None).await.unwrap();
+
+    info!("user3 polls all the available data ...");
+    user3.poll(None).await.unwrap();
+    user3.poll(None).await.unwrap();
+
+    user3.update_key(None, Some(StatusCode::OK)).await.unwrap();
+    user0.update_key(None, Some(StatusCode::OK)).await.unwrap();
+    user2.update_key(None, Some(StatusCode::OK)).await.unwrap();
+
+    user0.poll(None).await.unwrap();
+    user0.add_member(Some(StatusCode::OK)).await.unwrap();
+
+    Ok(())
+}
