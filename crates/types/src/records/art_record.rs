@@ -32,7 +32,7 @@ where
             "[sequence_number: {}, chat_id: {}, root public key: {}]",
             self.epoch,
             self.chat_id,
-            self.art.root().public_key()
+            self.art.root().data().public_key()
         )
     }
 }

@@ -319,8 +319,8 @@ async fn test_remove_member() -> eyre::Result<()> {
             .await?;
 
         assert_eq!(
-            received_art.root().weight(),
-            retrieval_context.art.root().weight() - 1
+            received_art.root().data().weight(),
+            retrieval_context.art.root().data().weight() - 1
         );
 
         retrieval_context.art = PrivateArt::new(received_art, context.art.leaf_secret_key())?;
@@ -346,7 +346,7 @@ async fn test_get_art() -> eyre::Result<()> {
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     let mut retrieval_context = context.derive_new(2)?;
-    let mut art_roots = vec![context.art.root().public_key()];
+    let mut art_roots = vec![context.art.root().data().public_key()];
 
     // update art several times, so we can retrieve them
     for _ in 0..TEST_REPEATS {
@@ -362,7 +362,7 @@ async fn test_get_art() -> eyre::Result<()> {
             .get_art(i as u64, None, ProofMode::UseLeafKey.to_string())
             .await?;
 
-        assert_eq!(received_art.root().public_key(), art_roots[i]);
+        assert_eq!(received_art.root().data().public_key(), art_roots[i]);
 
         retrieval_context.art =
             PrivateArt::new(received_art, retrieval_context.initial_secrets[1])?;
@@ -392,13 +392,13 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     user1
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    info!("User1 TK: {}", user1.art.root().public_key());
+    info!("User1 TK: {}", user1.art.root().data().public_key());
 
     info!("User 3 add member ...");
     user3
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    info!("User3 TK: {}", user3.art.root().public_key());
+    info!("User3 TK: {}", user3.art.root().data().public_key());
 
     let changes = user2
         .get_changes(20, 0, None, Some(StatusCode::ACCEPTED))
@@ -415,18 +415,18 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     // user0.art.merge_for_observer(&changes);
     user2.epoch += 1;
     user0.epoch += 1;
-    info!("User2 MTK_x: {}", user2.art.root().public_key());
+    info!("User2 MTK_x: {}", user2.art.root().data().public_key());
 
     info!("User 2 update and send update request with merge resolved");
     user2
         .update_key(Some(payload.clone()), Some(StatusCode::OK))
         .await?;
-    info!("User2 TK_x: {}", user2.art.root().public_key());
+    info!("User2 TK_x: {}", user2.art.root().data().public_key());
 
     info!("User 0 fail to append member ...");
     user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
-    info!("User0 TK: {}", user0.art.root().public_key());
+    info!("User0 TK: {}", user0.art.root().data().public_key());
 
     Ok(())
 }
@@ -539,7 +539,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         CortadoAffine::generator()
             .mul(user1.art.root_secret_key())
             .into_affine(),
-        user1.art.root().public_key()
+        user1.art.root().data().public_key()
     );
 
     info!("User 2 receive changes ...");
@@ -582,7 +582,7 @@ async fn test_merge_for_removal() -> eyre::Result<()> {
         CortadoAffine::generator()
             .mul(user2.art.root_secret_key())
             .into_affine(),
-        user1.art.root().public_key()
+        user1.art.root().data().public_key()
     );
 
     info!("User 2 update key ...");

@@ -422,8 +422,8 @@ impl UserTestModel {
             \tOld TK: {:#?}\n\
             \tcommited TK: {:#?}",
             self.epoch + 1,
-            self.art.root().public_key(),
-            agg.operation_tree().root().public_key(),
+            self.art.root().data().public_key(),
+            agg.operation_tree().root().data().public_key(),
         );
 
         let aggregation_change: AggregatedChange<CortadoAffine> = AggregatedChange::try_from(agg)?;
@@ -500,7 +500,7 @@ impl UserTestModel {
         debug!(
             "Send payload debug data:\n\tepoch: {}\n\tNew TK: {:#?}\n\tstatus_check: {:?}",
             self.epoch,
-            self.art.root().public_key(),
+            self.art.root().data().public_key(),
             status_check,
         );
 
@@ -516,7 +516,7 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
         let tk = self.art.root_secret_key();
-        let pk = vec![self.art.root().public_key()];
+        let pk = vec![self.art.root().data().public_key()];
 
         let signature = sign(&vec![tk], &pk, &msg)?;
 
@@ -1101,7 +1101,7 @@ impl UserTestModel {
         status_check: Option<StatusCode>,
     ) -> eyre::Result<SpFrames> {
         let tk = self.art.root_secret_key();
-        let pk = self.art.root().public_key();
+        let pk = self.art.root().data().public_key();
 
         let mut msg = Vec::new();
         let nonce = (0..DEFAULT_NONCE_LENGTH)

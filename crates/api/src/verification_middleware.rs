@@ -66,7 +66,7 @@ pub async fn authenticate(
     for (chat_id, epoch) in auth_request.chat_ids.iter().zip(auth_request.epochs.iter()) {
         let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
-        root_keys.push(art.root().public_key());
+        root_keys.push(art.root().data().public_key());
     }
 
     let verification_req = VerificationRequest {
@@ -127,7 +127,7 @@ pub async fn list_messages(
         data: VerifierData {
             proof: payload.signature.clone(),
             public_inputs: PublicInputs::Signature {
-                public_keys: vec![art.root().public_key()],
+                public_keys: vec![art.root().data().public_key()],
             },
             associated_data: msg,
         },
@@ -176,7 +176,7 @@ pub async fn get_art(
         ProofMode::UseLeafKey => {
             let mut public_key_is_wrong = true;
             for node in LeafIter::new(art.root()) {
-                if node.public_key().eq(&public_key) {
+                if node.data().public_key().eq(&public_key) {
                     public_key_is_wrong = false;
                 }
             }
@@ -187,7 +187,7 @@ pub async fn get_art(
             }
         }
         ProofMode::UseRootKey => {
-            if art.root().public_key() != public_key {
+            if art.root().data().public_key() != public_key {
                 error!("Provided public key doesn't match with root key.");
                 return Err(VerificationError::InvalidInput);
             }
@@ -539,28 +539,28 @@ pub async fn get_opcode_and_input_for_art_update(
                 return Err(VerificationError::InvalidInput);
             }
 
-            if !matches!(leaf.status(), Some(LeafStatus::Active)) {
+            if !matches!(leaf.data().status(), Some(LeafStatus::Active)) {
                 error!(
                     "Fail to perform key update as the target leaf status is: {:?}.",
-                    leaf.status()
+                    leaf.data().status()
                 );
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::KeyUpdate,
-                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.public_key()),
+                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.data().public_key()),
             )
         }
         BranchChangeType::Leave => {
             let leaf = art.node(&branch_changes.node_index)?;
-            if !matches!(leaf.status(), Some(LeafStatus::Active)) {
+            if !matches!(leaf.data().status(), Some(LeafStatus::Active)) {
                 return Err(VerificationError::UserAlreadyRemoved);
             }
 
             (
                 VerificationOpcode::LeaveGroup,
-                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.public_key()),
+                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.data().public_key()),
             )
         }
         BranchChangeType::AddMember => (
@@ -578,13 +578,13 @@ pub async fn get_opcode_and_input_for_art_update(
                 return Err(VerificationError::InvalidInput);
             }
 
-            let eligibility = if matches!(target_leaf.status(), Some(LeafStatus::Active)) {
+            let eligibility = if matches!(target_leaf.data().status(), Some(LeafStatus::Active)) {
                 EligibilityRequirement::Previleged((
                     get_left_most_leaf_public_key(&art).await?,
                     vec![],
                 ))
             } else {
-                EligibilityRequirement::Member(art.root().public_key())
+                EligibilityRequirement::Member(art.root().data().public_key())
             };
 
             debug!(
@@ -614,7 +614,7 @@ pub async fn get_left_most_leaf_public_key(
         left_most_leaf = node;
     }
 
-    Ok(left_most_leaf.public_key())
+    Ok(left_most_leaf.data().public_key())
 }
 
 pub async fn get_opcode_and_input_for_drop_group(
@@ -638,7 +638,7 @@ pub async fn get_opcode_and_input_for_drop_group(
     Ok((
         VerificationOpcode::DeleteChat,
         PublicInputs::Signature {
-            public_keys: vec![leaf.public_key()],
+            public_keys: vec![leaf.data().public_key()],
         },
     ))
 }
@@ -652,7 +652,7 @@ pub async fn get_opcode_and_input_for_send_message(
     Ok((
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
-            public_keys: vec![art.root().public_key()],
+            public_keys: vec![art.root().data().public_key()],
         },
     ))
 }

@@ -86,7 +86,7 @@ impl ARTService {
             "Retrieved ART: {{ epoch: {},  group: {}, root PK: {} }}",
             epoch,
             id,
-            art_record.art.root().public_key()
+            art_record.art.root().data().public_key()
         );
 
         Ok(art_record)
@@ -250,7 +250,7 @@ impl ARTService {
 
             debug!(
                 "Updated art. New root PK is: {}, new epoch is: {}",
-                &art_record.art.root().public_key(),
+                &art_record.art.root().data().public_key(),
                 art_record.epoch
             );
 
