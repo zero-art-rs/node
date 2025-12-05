@@ -956,7 +956,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cortado"
 version = "0.1.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#30ca597f0a39b6f8dd19d25fd93f7d10ab8fc97d"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
 dependencies = [
  "ark-algebra-test-templates",
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
@@ -1524,13 +1524,13 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
-version = "1.1.5"
+version = "1.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe33edd8e85a12a67454e37f8c75e730830d83e313556ab9ebf9ee7fbeb3bfb"
+checksum = "a2152dbcb980c05735e2a651d96011320a949eb31a0c8b38b72645ce97dec676"
 dependencies = [
  "crc32fast",
- "libz-rs-sys",
  "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -2312,15 +2312,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
 
 [[package]]
-name = "libz-rs-sys"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b484ba8d4f775eeca644c452a56650e544bf7e617f1d170fe7298122ead5222"
-dependencies = [
- "zlib-rs",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2478,9 +2469,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d83b0086dc8ecf3ce9ae2874b2d1290252e2a30720bea58a5c6639b0092873"
+checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
 dependencies = [
  "libc",
  "wasi",
@@ -5466,7 +5457,7 @@ dependencies = [
 [[package]]
 name = "zrt-art"
 version = "0.3.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#30ca597f0a39b6f8dd19d25fd93f7d10ab8fc97d"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
 dependencies = [
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-ed25519",
@@ -5495,7 +5486,7 @@ dependencies = [
 [[package]]
 name = "zrt-crypto"
 version = "0.1.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#30ca597f0a39b6f8dd19d25fd93f7d10ab8fc97d"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
 dependencies = [
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "cortado",
@@ -5530,7 +5521,7 @@ dependencies = [
 [[package]]
 name = "zrt-zk"
 version = "0.3.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#30ca597f0a39b6f8dd19d25fd93f7d10ab8fc97d"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
 dependencies = [
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-ed25519",
