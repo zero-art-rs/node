@@ -16,7 +16,7 @@ use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
@@ -244,6 +244,35 @@ pub async fn send_frame(
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
 
     let Path(id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
+
+    let current_epoch = match MongoARTStorage::new()
+        .await?
+        .get_current_epoch(&id)
+        .await
+    {
+        Ok(current_epoch) => {
+            current_epoch
+        },
+        Err(_) => {
+            warn!("Failed to get current epoch, use 0 instead.");
+            0
+        },
+    };
+
+    if let Ok(art) = state
+        .art_service
+        .get_art(id, Some(current_epoch))
+        .await
+    {
+        info!(
+            current_epoch = ?current_epoch,
+            public_key = ?art.art.root().data().public_key(),
+            public_key_preview = ?art.art.preview().root().public_key(),
+            "Current Art data:"
+        );
+    } else {
+        info!("No art found");
+    }
 
     let frame = Frame::decode(bytes.clone())?;
     let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
