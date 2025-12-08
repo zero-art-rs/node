@@ -681,7 +681,7 @@ pub async fn get_opcode_and_input_for_send_message(
     Ok((
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
-            public_keys: vec![art.root().data().public_key()],
+            public_keys: vec![art.preview().root().public_key()],
         },
     ))
 }

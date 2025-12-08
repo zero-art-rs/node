@@ -515,8 +515,8 @@ impl UserTestModel {
         };
 
         let msg = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
-        let tk = self.art.root_secret_key();
-        let pk = vec![self.art.root().data().public_key()];
+        let tk = self.art.secrets().preview().root();
+        let pk = vec![self.art.preview().root().public_key()];
 
         let signature = sign(&vec![tk], &pk, &msg)?;
 
