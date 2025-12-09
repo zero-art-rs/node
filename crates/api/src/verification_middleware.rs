@@ -358,6 +358,12 @@ pub async fn send_frame(
         },
     };
 
+    if let Err(err) = verify_frame_applicability_by_epoch(state.clone(), id, &tbs_frame).await {
+        warn!("Failed to verify frame applicability while in lock: {err}");
+        state.stop_updating(id).await;
+        return Err(err);
+    }
+
     let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
 
     match &operation {
