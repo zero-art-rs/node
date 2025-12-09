@@ -8,9 +8,9 @@ use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc};
 use storage::MongoARTStorage;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::field::debug;
 use tracing::{debug, error};
 use types::errors::{ARTServiceError, ServiceError};
@@ -33,6 +33,8 @@ pub struct Container {
 
     art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
     pub(crate) merge_changes: bool,
+
+    pub update_mutex: Arc<Mutex<bool>>,
 }
 
 impl Container {
@@ -51,6 +53,7 @@ impl Container {
             challenges: Arc::new(RwLock::new(HashSet::new())),
             art_is_updating: Arc::new(RwLock::new(HashSet::new())),
             merge_changes,
+            update_mutex: Arc::new(Default::default()),
         }
     }
 

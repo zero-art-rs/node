@@ -234,6 +234,8 @@ pub async fn send_frame(
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
+    let _ = state.update_mutex.lock().await;
+
     debug!(
         "Incoming send frame verification request: {} {}.",
         request.method(),
@@ -397,7 +399,8 @@ async fn verify_frame_applicability_by_epoch(
         .unwrap_or(0);
 
     let applicable_epochs = match &operation {
-        Some(Operation::AddMember(_)) => {
+        Some(Operation::AddMember(_))
+        | Some(Operation::Aggregated(_))=> {
             vec![current_epoch + 1]
         }
         Some(Operation::RemoveMember(_))
@@ -410,6 +413,9 @@ async fn verify_frame_applicability_by_epoch(
             // Allow all epochs. For validation allow the used one.
             vec![current_epoch, current_epoch + 1]
         }
+        // Some(Operation::Init(_)) => vec![0],
+        // Some(Operation::DropGroup(_)) => vec![current_epoch],
+        // None => vec![current_epoch],
     };
 
     if !applicable_epochs.contains(&tbs_frame.epoch) {
@@ -435,10 +441,10 @@ pub async fn verify_and_send(
 ) -> Result<Response, VerificationError> {
     let verification_message = verification_req
         .to_message()
-        .inspect_err(|err| error!("Failed to send frame: {}", err))?;
+        .inspect_err(|err| error!("Failed to convert VerificationRequest to ProofVerifierMessage: {}", err))?;
     verify(verification_message, &state.proof_verifier_sender).await?;
 
-    debug!("Create response");
+    info!("Verification successful. Run next layer...");
     Ok(next
         .run(Request::from_parts(
             parts.clone(),
