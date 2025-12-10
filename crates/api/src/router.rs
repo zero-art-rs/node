@@ -58,12 +58,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         ));
 
     // Group management:
-    let send_frame_route = OpenApiRouter::new()
-        .routes(routes![messenger_transport::send_frame])
-        .route_layer(middleware::from_fn_with_state(
-            container.clone(),
-            verification_middleware::send_frame,
-        ));
+    let send_frame_route = OpenApiRouter::new().routes(routes![messenger_transport::send_frame]);
 
     let get_art_route = OpenApiRouter::new()
         .routes(routes![art_transport::get_art])

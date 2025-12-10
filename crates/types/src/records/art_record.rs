@@ -12,7 +12,6 @@ use zrt_art::art::PublicArt;
 pub struct ARTRecord<G>
 where
     G: AffineRepr + CanonicalSerialize + CanonicalDeserialize,
-    G::BaseField: PrimeField,
 {
     #[serde(with = "uuid_1_as_binary")]
     pub chat_id: Uuid,
@@ -24,7 +23,6 @@ where
 impl<G> fmt::Display for ARTRecord<G>
 where
     G: AffineRepr + CanonicalSerialize + CanonicalDeserialize,
-    G::BaseField: PrimeField,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -34,5 +32,16 @@ where
             self.chat_id,
             self.art.root().data().public_key()
         )
+    }
+}
+
+impl<G: AffineRepr> ARTRecord<G> {
+    pub fn new(chat_id: Uuid, art: PublicArt<G>, is_private: bool) -> Self {
+        Self {
+            chat_id,
+            art,
+            is_private,
+            epoch: 0,
+        }
     }
 }

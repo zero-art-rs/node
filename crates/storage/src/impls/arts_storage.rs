@@ -67,8 +67,8 @@ impl MongoARTStorage {
 impl ARTStorage for MongoARTStorage {
     async fn new_group(
         &self,
-        session: &mut ClientSession,
         initial_art_record: ARTRecord<CortadoAffine>,
+        session: &mut ClientSession,
     ) -> Result<(), mongodb::error::Error> {
         self.arts_collection
             .insert_one(initial_art_record.clone())
@@ -117,27 +117,54 @@ impl ARTStorage for MongoARTStorage {
 
     /// return the latest art
     async fn get_art(&self, id: Uuid) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
+        self.arts_collection.find_one(doc! {"chat_id": id}).await
+    }
+
+    async fn get_art_in_session(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
         self.arts_collection
             .find_one(doc! {"chat_id": id})
+            .session(session)
             .await
-            .inspect_err(|_| error!("Failed to retrieve latest art for group: {}", id))
     }
 
     /// Return the first art state in the chat
     async fn get_initial_art(
         &self,
         id: Uuid,
+        session: &mut ClientSession,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
         self.initial_arts_collection
             .find_one(doc! {"chat_id": id})
+            .session(session)
             .await
-            .inspect_err(|_| error!("Failed to retrieve initial art for group: {}", id))
     }
 
     async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error> {
         let cursor = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })
+            .await?;
+
+        let epoch = cursor
+            .ok_or_else(|| mongodb::error::Error::from(std::io::Error::other("No records Found")))?
+            .epoch;
+
+        Ok(epoch)
+    }
+
+    async fn get_current_epoch_in_session(
+        &self,
+        chat_id: &Uuid,
+        session: &mut ClientSession,
+    ) -> Result<u64, mongodb::error::Error> {
+        let cursor = self
+            .arts_collection
+            .find_one(doc! { "chat_id": chat_id })
+            .session(session)
             .await?;
 
         let epoch = cursor

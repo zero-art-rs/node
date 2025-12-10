@@ -10,6 +10,7 @@ use axum_core::response::Response;
 use bytes::Bytes;
 use callbacks::callback;
 use cortado::CortadoAffine;
+use mongodb::ClientSession;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
@@ -229,72 +230,56 @@ pub async fn get_art(
 }
 
 pub async fn send_frame(
-    State(state): State<Arc<Container>>,
-    request: Request,
-    next: Next,
-) -> Result<Response, VerificationError> {
-    debug!(
-        "Incoming send frame verification request: {} {}.",
-        request.method(),
-        request.uri(),
-    );
+    state: &Container,
+    frame_tbs: &FrameTbs,
+    proof: Vec<u8>,
+    id: Uuid,
+    session: &mut ClientSession,
+) -> Result<(), VerificationError> {
+    debug!("Incoming send frame verification request",);
 
-    let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
-
-    let Path(id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
-
-    let current_epoch = match MongoARTStorage::new()
+    let current_epoch = MongoARTStorage::new()
         .await?
-        .get_current_epoch(&id)
+        .get_current_epoch_in_session(&id, &mut *session)
         .await
-    {
-        Ok(current_epoch) => {
-            current_epoch
-        },
-        Err(_) => {
+        .unwrap_or_else(|_| {
             warn!("Failed to get current epoch, use 0 instead.");
             0
-        },
-    };
+        });
 
     state
         .start_updating(id)
-        .await
-        .map_err(VerificationError::from)?;
+        .await?;
 
-    let verification_req= match inner_send_frame(
-        state.clone(),
-        current_epoch,
-        id,
-        bytes.clone(),
-    ).await {
-        Ok(verification_req) => verification_req,
-        Err(err) => {
-            warn!("Verification Failed: {err}");
-            state.stop_updating(id).await;
-            return Err(err);
-        },
-    };
+    let verification_req =
+        match inner_send_frame(state, current_epoch, id, frame_tbs, proof, &mut *session).await {
+            Ok(verification_req) => verification_req,
+            Err(err) => {
+                warn!("Verification Failed: {err}");
+                state.stop_updating(id).await;
+                return Err(err);
+            }
+        };
 
-    let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
+    let response = verify_and_send(verification_req, state).await;
 
     state.stop_updating(id).await;
 
     response
-
 }
 
 /// Handle send_frame verification
-pub async fn inner_send_frame(
-    state: Arc<Container>,
+async fn inner_send_frame(
+    state: &Container,
     current_epoch: u64,
     id: Uuid,
-    bytes: Bytes,
+    frame_tbs: &FrameTbs,
+    proof: Vec<u8>,
+    session: &mut ClientSession,
 ) -> Result<VerificationRequest, VerificationError> {
     if let Ok(art) = state
         .art_service
-        .get_art(id, Some(current_epoch))
+        .get_art_in_session(id, Some(current_epoch), &mut *session)
         .await
     {
         info!(
@@ -307,71 +292,67 @@ pub async fn inner_send_frame(
         info!("No art found");
     }
 
-    let frame = Frame::decode(bytes.clone())?;
-    let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
-
-    if tbs_frame.group_id != id.to_string() {
+    if frame_tbs.group_id != id.to_string() {
         error!(
             "Group ID mismatch: tbs_frame.group_id is {}, while id in path is {}",
-            tbs_frame.group_id, id
+            frame_tbs.group_id, id
         );
         return Err(VerificationError::InvalidInput);
     }
 
-    let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
+    let associated_data = Sha3_256::digest(frame_tbs.encode_to_vec()).to_vec();
 
-    let operation = match &tbs_frame.group_operation {
-        None => None,
-        Some(val) => val.operation.as_ref(),
-    };
+    let operation = frame_tbs
+        .group_operation
+        .as_ref()
+        .and_then(|op| op.operation.as_ref());
 
-    verify_frame_applicability_by_epoch(state.clone(), id, &tbs_frame).await?;
+    verify_frame_applicability_by_epoch(state, id, &frame_tbs, &mut *session).await?;
 
     let (opcode, public_inputs) = match &operation {
-        Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&tbs_frame)?,
+        Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&frame_tbs)?,
         Some(Operation::AddMember(branch_changes_bytes))
         | Some(Operation::RemoveMember(branch_changes_bytes))
         | Some(Operation::KeyUpdate(branch_changes_bytes))
         | Some(Operation::LeaveGroup(branch_changes_bytes)) => {
             get_opcode_and_input_for_art_update(
-                state.clone(),
+                state,
                 id,
                 branch_changes_bytes,
-                tbs_frame.epoch - 1,
+                frame_tbs.epoch - 1,
+                &mut *session,
             )
             .await?
         }
         Some(Operation::Aggregated(change_bytes)) => {
             get_opcode_and_input_for_aggregation(
-                state.clone(),
+                state,
                 id,
                 change_bytes,
-                tbs_frame.epoch - 1,
+                frame_tbs.epoch - 1,
+                &mut *session,
             )
             .await?
         }
         Some(Operation::DropGroup(_)) => {
-            get_opcode_and_input_for_drop_group(state.clone(), id).await?
+            get_opcode_and_input_for_drop_group(state, id, &mut *session).await?
         }
-        None => get_opcode_and_input_for_send_message(state.clone(), id).await?,
+        None => get_opcode_and_input_for_send_message(state, id, &mut *session).await?,
     };
 
     let verification_req = VerificationRequest {
         opcode,
-        data: VerifierData {
-            proof: frame.proof,
-            public_inputs,
-            associated_data,
-        },
+        data: VerifierData::new(proof, public_inputs, associated_data),
     };
 
-   Ok(verification_req)
+    Ok(verification_req)
 }
 
 async fn verify_frame_applicability_by_epoch(
-    state: Arc<Container>,
+    state: &Container,
     id: Uuid,
     tbs_frame: &FrameTbs,
+    session: &mut ClientSession,
 ) -> Result<(), VerificationError> {
     let operation = match &tbs_frame.group_operation {
         None => None,
@@ -380,13 +361,12 @@ async fn verify_frame_applicability_by_epoch(
 
     let current_epoch = MongoARTStorage::new()
         .await?
-        .get_current_epoch(&id)
+        .get_current_epoch_in_session(&id, &mut *session)
         .await
         .unwrap_or(0);
 
     let applicable_epochs = match &operation {
-        Some(Operation::AddMember(_))
-        | Some(Operation::Aggregated(_))=> {
+        Some(Operation::AddMember(_)) | Some(Operation::Aggregated(_)) => {
             vec![current_epoch + 1]
         }
         Some(Operation::RemoveMember(_))
@@ -416,23 +396,19 @@ async fn verify_frame_applicability_by_epoch(
 
 pub async fn verify_and_send(
     verification_req: VerificationRequest,
-    state: Arc<Container>,
-    next: Next,
-    parts: Parts,
-    bytes: Bytes,
-) -> Result<Response, VerificationError> {
-    let verification_message = verification_req
-        .to_message()
-        .inspect_err(|err| error!("Failed to convert VerificationRequest to ProofVerifierMessage: {}", err))?;
+    state: &Container,
+) -> Result<(), VerificationError> {
+    let verification_message = verification_req.to_message().inspect_err(|err| {
+        error!(
+            "Failed to convert VerificationRequest to ProofVerifierMessage: {}",
+            err
+        )
+    })?;
     verify(verification_message, &state.proof_verifier_sender).await?;
 
-    info!("Verification successful. Run next layer...");
-    Ok(next
-        .run(Request::from_parts(
-            parts.clone(),
-            Body::from(bytes.clone()),
-        ))
-        .await)
+    info!("Verification successful.");
+
+    Ok(())
 }
 
 pub fn get_opcode_and_input_for_init_group(
@@ -449,23 +425,24 @@ pub fn get_opcode_and_input_for_init_group(
 }
 
 pub async fn get_opcode_and_input_for_aggregation(
-    state: Arc<Container>,
+    state: &Container,
     id: Uuid,
     aggregation_bytes: &Vec<u8>,
     current_epoch: u64,
+    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let aggregated_change: AggregatedChange<CortadoAffine> =
         postcard::from_bytes(aggregation_bytes)?;
 
     let art = state
         .art_service
-        .get_art(id, Some(current_epoch))
+        .get_art_in_session(id, Some(current_epoch), &mut *session)
         .await?
         .art;
 
     let frame_storage = MongoFramesStorage::new(&id).await?;
     let epoch_changes = frame_storage
-        .get_epoch_changes(id, current_epoch + 1)
+        .get_epoch_changes_in_session(id, current_epoch + 1, &mut *session)
         .await?;
 
     if !epoch_changes.is_empty() {
@@ -488,16 +465,17 @@ pub async fn get_opcode_and_input_for_aggregation(
 }
 
 pub async fn get_opcode_and_input_for_art_update(
-    state: Arc<Container>,
+    state: &Container,
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
     current_epoch: u64,
+    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
     let art = state
         .art_service
-        .get_art(id, Some(current_epoch))
+        .get_art_in_session(id, Some(current_epoch), &mut *session)
         .await?
         .art;
 
@@ -555,10 +533,7 @@ pub async fn get_opcode_and_input_for_art_update(
         BranchChangeType::UpdateKey => {
             let leaf = art.node(&branch_changes.node_index)?;
             if !leaf.is_leaf() {
-                error!(
-                    "Fail to update art, as the node isn't leaf. ArtTree is\n{}",
-                    art.root()
-                );
+                error!("Fail to update art, as the node isn't leaf");
                 return Err(VerificationError::InvalidInput);
             }
 
@@ -572,7 +547,9 @@ pub async fn get_opcode_and_input_for_art_update(
 
             (
                 VerificationOpcode::KeyUpdate,
-                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.data().public_key()),
+                EligibilityRequirement::Member(
+                    art.node(&branch_changes.node_index)?.data().public_key(),
+                ),
             )
         }
         BranchChangeType::Leave => {
@@ -583,7 +560,9 @@ pub async fn get_opcode_and_input_for_art_update(
 
             (
                 VerificationOpcode::LeaveGroup,
-                EligibilityRequirement::Member(art.node(&branch_changes.node_index)?.data().public_key()),
+                EligibilityRequirement::Member(
+                    art.node(&branch_changes.node_index)?.data().public_key(),
+                ),
             )
         }
         BranchChangeType::AddMember => (
@@ -641,10 +620,15 @@ pub async fn get_left_most_leaf_public_key(
 }
 
 pub async fn get_opcode_and_input_for_drop_group(
-    state: Arc<Container>,
+    state: &Container,
     id: Uuid,
+    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state.art_service.get_art(id, None).await?.art;
+    let art = state
+        .art_service
+        .get_art_in_session(id, None, session)
+        .await?
+        .art;
 
     let mut left_most_leaf = art.root();
     let mut path = Vec::new();
@@ -667,10 +651,15 @@ pub async fn get_opcode_and_input_for_drop_group(
 }
 
 pub async fn get_opcode_and_input_for_send_message(
-    state: Arc<Container>,
+    state: &Container,
     id: Uuid,
+    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state.art_service.get_art(id, None).await?.art;
+    let art = state
+        .art_service
+        .get_art_in_session(id, None, session)
+        .await?
+        .art;
 
     Ok((
         VerificationOpcode::SendMessage,

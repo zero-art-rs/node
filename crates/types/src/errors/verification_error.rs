@@ -41,8 +41,6 @@ pub enum VerificationError {
     DecodeError(#[from] prost::DecodeError),
     #[error("Failed to retrieve data from the storage: {0}")]
     StorageError(#[from] StorageError),
-    #[error("Service error occurred: {0}")]
-    ServiceError(#[from] ServiceError),
     #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has one.")]
     AddMemberUniqueness { epoch: u64 },
     #[error("Exclusive operation for epoch: {0} already exists.")]
@@ -57,12 +55,10 @@ pub enum VerificationError {
     MergeUserRemove,
     #[error("Can't remove the same user several times at the same epoch.")]
     Postcard(#[from] postcard::Error),
-}
-
-impl From<MessageServiceError> for VerificationError {
-    fn from(err: MessageServiceError) -> Self {
-        Self::ServiceError(ServiceError::from(err))
-    }
+    #[error("MessageServiceError: {0}")]
+    MessageService(#[from] MessageServiceError),
+    #[error("Fail to update ART. I is changing now.")]
+    ArtIsUpdating,
 }
 
 impl From<serde_json::Error> for VerificationError {

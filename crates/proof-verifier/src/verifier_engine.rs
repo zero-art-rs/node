@@ -48,6 +48,16 @@ pub struct VerifierData {
     pub associated_data: Vec<u8>,
 }
 
+impl VerifierData {
+    pub fn new(proof: Vec<u8>, public_inputs: PublicInputs, associated_data: Vec<u8>) -> Self {
+        Self {
+            proof,
+            public_inputs,
+            associated_data,
+        }
+    }
+}
+
 pub struct VerificationRequest {
     pub opcode: VerificationOpcode,
     pub data: VerifierData,

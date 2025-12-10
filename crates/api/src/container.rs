@@ -2,18 +2,20 @@ use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
 };
+use crate::verification_middleware;
 use axum::body::Bytes;
 use axum::http::StatusCode;
+use mongodb::ClientSession;
 use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
-use std::sync::{Arc};
-use storage::MongoARTStorage;
+use std::sync::Arc;
+use storage::{MongoARTStorage, MongoFramesStorage};
 use tokio::sync::{Mutex, RwLock};
 use tracing::field::debug;
-use tracing::{debug, error};
-use types::errors::{ARTServiceError, ServiceError};
+use tracing::{debug, error, warn};
+use types::errors::{ARTServiceError, ServiceError, VerificationError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
 use types::utils::{decode_aggregated_change, decode_branch_change};
@@ -58,7 +60,7 @@ impl Container {
     }
 
     /// Mark ART updating
-    pub async fn start_updating(&self, id: Uuid) -> Result<(), ServiceError> {
+    pub async fn start_updating(&self, id: Uuid) -> Result<(), VerificationError> {
         // If merge is enabled, there is no management required
         if self.merge_changes {
             return Ok(());
@@ -67,7 +69,7 @@ impl Container {
         let mut write_lock = self.art_is_updating.write().await;
         if write_lock.contains(&id) {
             error!("Update failed because another update is in progress.");
-            Err(ServiceError::ArtIsUpdating)
+            Err(VerificationError::ArtIsUpdating)
         } else {
             debug!("Mark ART in group with id {} as updating.", id);
             write_lock.insert(id);
@@ -89,19 +91,29 @@ impl Container {
     /// Handles send_frame operation.
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
-
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
+
+        let messages_collection = MongoFramesStorage::new(&id).await?;
+        let mut session = messages_collection
+            .messages_collection
+            .client()
+            .start_session()
+            .await?;
+        session.start_transaction().await?;
+
+        verification_middleware::send_frame(self, &tbs_frame, frame.proof, id, &mut session)
+            .await?;
 
         let operation = match tbs_frame.group_operation {
             None => None,
             Some(val) => val.operation,
         };
 
-        // Decide, how to handle request
+        // Decide, how to handle request and handle it
         let response = match operation {
             Some(Operation::Init(public_art)) => {
                 self.art_service
-                    .init_group(id, public_art, false, tbs_frame.nonce)
+                    .init_group(id, public_art, false, tbs_frame.nonce, &mut session)
                     .await?;
 
                 StatusCode::CREATED
@@ -110,23 +122,37 @@ impl Container {
             | Some(Operation::RemoveMember(change))
             | Some(Operation::KeyUpdate(change))
             | Some(Operation::LeaveGroup(change)) => {
-                self.update_art(id, &change, tbs_frame.epoch).await?
+                self.update_art(id, &change, tbs_frame.epoch, &mut session)
+                    .await?
             }
             Some(Operation::DropGroup(_)) => {
-                self.art_service.delete_chat(&id).await?;
+                self.art_service.delete_chat(&id, &mut session).await?;
 
                 StatusCode::NO_CONTENT
             }
             Some(Operation::Aggregated(change)) => {
-                self.update_art_with_aggregation(id, change, tbs_frame.epoch)
+                self.update_art_with_aggregation(id, change, tbs_frame.epoch, &mut session)
                     .await?
             }
             None => StatusCode::OK,
         };
 
         self.messenger_service
-            .send_message(body.to_vec(), &id, tbs_frame.epoch as i64, false)
+            .send_message(
+                body.to_vec(),
+                &id,
+                tbs_frame.epoch as i64,
+                false,
+                &mut session,
+            )
             .await?;
+
+        session
+            .commit_transaction()
+            .await
+            .inspect_err(|err| {
+                warn!("Failed to commit transaction: {}", err);
+            })?;
 
         Ok(response)
     }
@@ -136,10 +162,13 @@ impl Container {
         id: Uuid,
         change_bytes: &[u8],
         new_epoch: u64,
+        session: &mut ClientSession,
     ) -> Result<StatusCode, ServiceError> {
         let change = decode_branch_change(change_bytes).map_err(ARTServiceError::from)?;
 
-        self.art_service.update_art(id, &change, new_epoch).await?;
+        self.art_service
+            .update_art(id, &change, new_epoch, session)
+            .await?;
 
         match change.change_type {
             BranchChangeType::UpdateKey => Ok(StatusCode::OK),
@@ -154,12 +183,13 @@ impl Container {
         id: Uuid,
         aggregated_change_bytes: Vec<u8>,
         new_epoch: u64,
+        session: &mut ClientSession,
     ) -> Result<StatusCode, ServiceError> {
         let branch_changes =
             decode_aggregated_change(&aggregated_change_bytes).map_err(ARTServiceError::from)?;
 
         self.art_service
-            .apply_aggregation(id, branch_changes.clone(), new_epoch)
+            .apply_aggregation(id, branch_changes.clone(), new_epoch, session)
             .await?;
 
         Ok(StatusCode::OK)

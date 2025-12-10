@@ -1,4 +1,5 @@
 use bytes::{BufMut, BytesMut};
+use mongodb::ClientSession;
 use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
@@ -33,11 +34,12 @@ impl MessengerService {
         chat_id: &Uuid,
         epoch: i64,
         outbox_only: bool,
+        session: &mut ClientSession,
     ) -> Result<(), MessageServiceError> {
         debug!("Store and send new message");
         MongoFramesStorage::new(chat_id)
             .await?
-            .store_message(message, epoch, outbox_only)
+            .store_message(message, epoch, outbox_only, session)
             .await?;
         debug!("Message sent");
         Ok(())

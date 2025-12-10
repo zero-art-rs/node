@@ -25,8 +25,11 @@ impl From<ServiceError> for ApiError {
             ServiceError::ARTServiceError(art_err) => Self::from(art_err),
             ServiceError::MessageServiceError(msg_err) => Self::from(msg_err),
             ServiceError::DecodeError(_) => ApiError::BadRequest(String::from("Invalid request")),
-            ServiceError::ArtIsUpdating => ApiError::InternalServerError(value.to_string()),
             ServiceError::NotImplemented => ApiError::BadRequest(String::from("Invalid request")),
+            ServiceError::Mongo(value) => ApiError::InternalServerError(value.to_string()),
+            ServiceError::Storage(value) => ApiError::InternalServerError(value.to_string()),
+            ServiceError::InvalidInput => ApiError::BadRequest(String::from("Invalid request")),
+            ServiceError::Verification(value) => ApiError::Unauthorized(value.to_string()),
         }
     }
 }

@@ -1,9 +1,13 @@
-use crate::StorageError;
+use crate::{MongoFramesStorage, StorageError};
+use bson::doc;
+use bytes::BytesMut;
 use cortado::CortadoAffine;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;
-use types::utils::ArtUpdate;
-use types::FrameRecord;
+use types::protos::group_operation::Operation;
+use types::protos::Frame;
+use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
+use types::{utils, FrameRecord};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
 
@@ -13,13 +17,14 @@ pub trait FrameStorage: Send + Sync + Sized {
         &self,
     ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, StorageError>;
 
-    async fn next_sequence_number(&self) -> Result<u64, StorageError>;
+    async fn next_sequence_number(&self, session: &mut ClientSession) -> Result<u64, StorageError>;
 
     async fn store_message(
         &self,
         content: Vec<u8>,
         epoch: i64,
         outbox_only: bool,
+        session: &mut ClientSession,
     ) -> Result<(), StorageError>;
 
     async fn store_message_in_session(
@@ -38,4 +43,10 @@ pub trait FrameStorage: Send + Sync + Sized {
     ) -> Result<Option<BranchChange<CortadoAffine>>, StorageError>;
 
     async fn get_epoch_changes(&self, id: Uuid, epoch: u64) -> Result<ArtUpdate, StorageError>;
+    async fn get_epoch_changes_in_session(
+        &self,
+        id: Uuid,
+        epoch: u64,
+        session: &mut ClientSession,
+    ) -> Result<ArtUpdate, StorageError>;
 }

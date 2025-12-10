@@ -1,6 +1,8 @@
 use crate::StorageError;
+use bson::doc;
 use cortado::CortadoAffine;
 use mongodb::ClientSession;
+use tracing::error;
 use types::ARTRecord;
 use uuid::Uuid;
 use zrt_art::art::PublicArt;
@@ -11,8 +13,8 @@ use zrt_art::changes::branch_change::BranchChange;
 pub trait ARTStorage: Send + Sync {
     async fn new_group(
         &self,
-        session: &mut ClientSession,
         initial_art_record: ARTRecord<CortadoAffine>,
+        session: &mut ClientSession,
     ) -> Result<(), mongodb::error::Error>;
 
     async fn delete_art(
@@ -31,14 +33,25 @@ pub trait ARTStorage: Send + Sync {
         &self,
         chat_id: Uuid,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+    async fn get_art_in_session(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
 
     async fn get_initial_art(
         &self,
         chat_id: Uuid,
+        session: &mut ClientSession,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
 
     /// Get the sequence number of the art
     async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error>;
+    async fn get_current_epoch_in_session(
+        &self,
+        chat_id: &Uuid,
+        session: &mut ClientSession,
+    ) -> Result<u64, mongodb::error::Error>;
 
     async fn replace_art(
         &self,
