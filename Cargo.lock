@@ -118,7 +118,7 @@ dependencies = [
  "axum",
  "axum-core",
  "base64 0.22.1",
- "bulletproofs 5.0.0",
+ "bulletproofs 5.0.1 (git+https://github.com/zero-art-rs/bulletproofs)",
  "bytes",
  "callbacks",
  "chrono",
@@ -601,9 +601,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64urlsafedata"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "215ee31f8a88f588c349ce2d20108b2ed96089b96b9c2b03775dc35dd72938e8"
+checksum = "42f7f6be94fa637132933fd0a68b9140bcb60e3d46164cb68e82a2bb8d102b3a"
 dependencies = [
  "base64 0.21.7",
  "pastey",
@@ -666,8 +666,8 @@ dependencies = [
 
 [[package]]
 name = "bulletproofs"
-version = "5.0.0"
-source = "git+https://github.com/zero-art-rs/bulletproofs#1e95af1139deea191de7f79ed139b3092eb9e541"
+version = "5.0.1"
+source = "git+https://github.com/zero-art-rs/bulletproofs#d27dde04bb9a0a9fe2618a95ab452fcab8f7d944"
 dependencies = [
  "byteorder",
  "clear_on_drop",
@@ -744,9 +744,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.48"
+version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
+checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -956,7 +956,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cortado"
 version = "0.1.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#0a76fa52963a605cfe2c26ddc1d8f16629c81b3c"
 dependencies = [
  "ark-algebra-test-templates",
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
@@ -1524,13 +1524,13 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
-version = "1.1.7"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2152dbcb980c05735e2a651d96011320a949eb31a0c8b38b72645ce97dec676"
+checksum = "bfe33edd8e85a12a67454e37f8c75e730830d83e313556ab9ebf9ee7fbeb3bfb"
 dependencies = [
  "crc32fast",
+ "libz-rs-sys",
  "miniz_oxide",
- "zlib-rs",
 ]
 
 [[package]]
@@ -2086,9 +2086,9 @@ checksum = "7aedcccd01fc5fe81e6b489c15b247b8b0690feb23304303a9e560f37efc560a"
 
 [[package]]
 name = "icu_properties"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e93fcd3157766c0c8da2f8cff6ce651a31f0810eaa1c51ec363ef790bbb5fb99"
+checksum = "020bfc02fe870ec3a66d93e677ccca0562506e5872c650f893269e08615d74ec"
 dependencies = [
  "icu_collections",
  "icu_locale_core",
@@ -2100,9 +2100,9 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02845b3647bb045f1100ecd6480ff52f34c35f82d9880e029d329c21d1054899"
+checksum = "616c294cf8d725c6afcd8f55abc17c56464ef6211f9ed59cccffe534129c77af"
 
 [[package]]
 name = "icu_provider"
@@ -2310,6 +2310,15 @@ name = "libc"
 version = "0.2.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
+
+[[package]]
+name = "libz-rs-sys"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15413ef615ad868d4d65dce091cb233b229419c7c0c4bcaa746c0901c49ff39c"
+dependencies = [
+ "zlib-rs",
+]
 
 [[package]]
 name = "linux-raw-sys"
@@ -3058,7 +3067,7 @@ version = "0.1.0"
 dependencies = [
  "ark-ed25519",
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
- "bulletproofs 5.0.0",
+ "bulletproofs 5.0.1 (git+https://github.com/zero-art-rs/bulletproofs)",
  "cortado",
  "eyre",
  "tokio",
@@ -3339,9 +3348,9 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "reqwest"
-version = "0.12.24"
+version = "0.12.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d0946410b9f7b082a427e4ef5c8ff541a88b357bc6c637c40db3a68ac70a36f"
+checksum = "b6eff9328d40131d43bd911d42d79eb6a47312002a4daefc9e37f17e74a7701a"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -3858,9 +3867,9 @@ dependencies = [
 
 [[package]]
 name = "simd-adler32"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
+checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "simple_asn1"
@@ -4077,7 +4086,7 @@ dependencies = [
  "axum-core",
  "axum-test",
  "base64 0.22.1",
- "bulletproofs 5.0.0",
+ "bulletproofs 5.0.1 (git+https://github.com/zero-art-rs/bulletproofs)",
  "bytes",
  "callbacks",
  "chrono",
@@ -4359,9 +4368,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.7"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf146f99d442e8e68e585f5d798ccd3cad9a7835b917e09728880a862706456"
+checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
 dependencies = [
  "bitflags",
  "bytes",
@@ -5423,7 +5432,7 @@ dependencies = [
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-std",
  "ark-test-curves",
- "bulletproofs 5.0.1",
+ "bulletproofs 5.0.1 (git+https://github.com/zkcrypto/bulletproofs)",
  "curve25519-dalek",
  "group",
  "merlin",
@@ -5438,9 +5447,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36134c44663532e6519d7a6dfdbbe06f6f8192bde8ae9ed076e9b213f0e31df7"
+checksum = "51f936044d677be1a1168fae1d03b583a285a5dd9d8cbf7b24c23aa1fc775235"
 
 [[package]]
 name = "zopfli"
@@ -5457,14 +5466,14 @@ dependencies = [
 [[package]]
 name = "zrt-art"
 version = "0.3.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#0a76fa52963a605cfe2c26ddc1d8f16629c81b3c"
 dependencies = [
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-ed25519",
  "ark-ff 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-std",
- "bulletproofs 5.0.0",
+ "bulletproofs 5.0.1 (git+https://github.com/zero-art-rs/bulletproofs)",
  "chrono",
  "cortado",
  "criterion",
@@ -5486,7 +5495,7 @@ dependencies = [
 [[package]]
 name = "zrt-crypto"
 version = "0.1.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#0a76fa52963a605cfe2c26ddc1d8f16629c81b3c"
 dependencies = [
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "cortado",
@@ -5521,14 +5530,14 @@ dependencies = [
 [[package]]
 name = "zrt-zk"
 version = "0.3.0"
-source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#31683a3598fa309246e10da79472adfeb7abfb7f"
+source = "git+https://github.com/zero-art-rs/core.git?branch=feature%2Fzrt-art-refactor#0a76fa52963a605cfe2c26ddc1d8f16629c81b3c"
 dependencies = [
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-ed25519",
  "ark-ff 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-std",
- "bulletproofs 5.0.0",
+ "bulletproofs 5.0.1 (git+https://github.com/zero-art-rs/bulletproofs)",
  "chrono",
  "cortado",
  "curve25519-dalek",
