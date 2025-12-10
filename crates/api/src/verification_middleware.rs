@@ -228,14 +228,11 @@ pub async fn get_art(
         .await)
 }
 
-/// Handle send_frame verification
 pub async fn send_frame(
     State(state): State<Arc<Container>>,
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
-    let _ = state.update_mutex.lock().await;
-
     debug!(
         "Incoming send frame verification request: {} {}.",
         request.method(),
@@ -261,6 +258,40 @@ pub async fn send_frame(
         },
     };
 
+    state
+        .start_updating(id)
+        .await
+        .map_err(VerificationError::from)?;
+
+    let verification_req= match inner_send_frame(
+        state.clone(),
+        current_epoch,
+        id,
+        bytes.clone(),
+    ).await {
+        Ok(verification_req) => verification_req,
+        Err(err) => {
+            warn!("Verification Failed: {err}");
+            state.stop_updating(id).await;
+            return Err(err);
+        },
+    };
+
+    let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
+
+    state.stop_updating(id).await;
+
+    response
+
+}
+
+/// Handle send_frame verification
+pub async fn inner_send_frame(
+    state: Arc<Container>,
+    current_epoch: u64,
+    id: Uuid,
+    bytes: Bytes,
+) -> Result<VerificationRequest, VerificationError> {
     if let Ok(art) = state
         .art_service
         .get_art(id, Some(current_epoch))
@@ -302,48 +333,22 @@ pub async fn send_frame(
         | Some(Operation::RemoveMember(branch_changes_bytes))
         | Some(Operation::KeyUpdate(branch_changes_bytes))
         | Some(Operation::LeaveGroup(branch_changes_bytes)) => {
-            state
-                .start_updating(id)
-                .await
-                .map_err(VerificationError::from)?;
-
-            match get_opcode_and_input_for_art_update(
+            get_opcode_and_input_for_art_update(
                 state.clone(),
                 id,
                 branch_changes_bytes,
                 tbs_frame.epoch - 1,
             )
-            .await
-            {
-                Ok(result) => result,
-                Err(err) => {
-                    error!("Failed to get opcode and operation: {}", err.to_string());
-                    state.stop_updating(id).await;
-                    return Err(err);
-                }
-            }
+            .await?
         }
         Some(Operation::Aggregated(change_bytes)) => {
-            state
-                .start_updating(id)
-                .await
-                .map_err(VerificationError::from)?;
-
-            match get_opcode_and_input_for_aggregation(
+            get_opcode_and_input_for_aggregation(
                 state.clone(),
                 id,
                 change_bytes,
                 tbs_frame.epoch - 1,
             )
-            .await
-            {
-                Ok(result) => result,
-                Err(err) => {
-                    error!("Failed to get opcode and operation");
-                    state.stop_updating(id).await;
-                    return Err(err);
-                }
-            }
+            .await?
         }
         Some(Operation::DropGroup(_)) => {
             get_opcode_and_input_for_drop_group(state.clone(), id).await?
@@ -360,26 +365,7 @@ pub async fn send_frame(
         },
     };
 
-    if let Err(err) = verify_frame_applicability_by_epoch(state.clone(), id, &tbs_frame).await {
-        warn!("Failed to verify frame applicability while in lock: {err}");
-        state.stop_updating(id).await;
-        return Err(err);
-    }
-
-    let response = verify_and_send(verification_req, state.clone(), next, parts, bytes).await;
-
-    match &operation {
-        Some(Operation::AddMember(_))
-        | Some(Operation::RemoveMember(_))
-        | Some(Operation::KeyUpdate(_))
-        | Some(Operation::LeaveGroup(_))
-        | Some(Operation::Aggregated(_)) => {
-            state.stop_updating(id).await;
-        }
-        _ => {}
-    }
-
-    response
+   Ok(verification_req)
 }
 
 async fn verify_frame_applicability_by_epoch(
@@ -409,13 +395,9 @@ async fn verify_frame_applicability_by_epoch(
             true => vec![current_epoch, current_epoch + 1],
             false => vec![current_epoch + 1],
         },
-        _ => {
-            // Allow all epochs. For validation allow the used one.
-            vec![current_epoch, current_epoch + 1]
-        }
-        // Some(Operation::Init(_)) => vec![0],
-        // Some(Operation::DropGroup(_)) => vec![current_epoch],
-        // None => vec![current_epoch],
+        Some(Operation::Init(_)) => vec![0],
+        Some(Operation::DropGroup(_)) => vec![current_epoch + 1],
+        None => vec![current_epoch],
     };
 
     if !applicable_epochs.contains(&tbs_frame.epoch) {
