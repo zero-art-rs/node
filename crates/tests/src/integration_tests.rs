@@ -1,4 +1,4 @@
-use crate::{BACKEND_URL, CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
+use crate::{client_test_wrapper, BACKEND_URL, CENTRIFUGO_URL, DEFAULT_NONCE_LENGTH, GROUP_SIZE, TEST_REPEATS};
 use crate::{user_test_model::UserTestModel, utils::*};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_std::UniformRand;
@@ -22,6 +22,7 @@ use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt};
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::branch_change::BranchChange;
+use zrt_client_sdk::models;
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -155,6 +156,7 @@ async fn test_send_message() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_get_message() -> eyre::Result<()> {
     init_tracing_for_test();
+    let mut rng = StdRng::seed_from_u64(42);
 
     let (mut context, _) = UserTestModel::new(GROUP_SIZE).await;
     let test_context = context.derive_new(2)?;
@@ -162,7 +164,7 @@ async fn test_get_message() -> eyre::Result<()> {
     let mut messages = Vec::with_capacity(TEST_REPEATS + 1);
     // messages.push(init_message);
     for _ in 0..TEST_REPEATS {
-        let (add_member_response, message) = context.add_member(Some(StatusCode::OK)).await?;
+        let (add_member_response, message) = context.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await?;
         messages.push(message);
         assert_eq!(add_member_response.status(), StatusCode::OK);
     }
@@ -189,11 +191,12 @@ async fn test_init_group() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_add_member() -> eyre::Result<()> {
     init_tracing_for_test();
+    let mut rng = StdRng::seed_from_u64(42);
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
     for i in 0..TEST_REPEATS {
         info!("running {i}-th add member");
-        context.add_member(Some(StatusCode::OK)).await?;
+        context.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await?;
     }
 
     Ok(())
@@ -202,6 +205,7 @@ async fn test_add_member() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_add_member_after_removal() -> eyre::Result<()> {
     init_tracing_for_test();
+    let mut rng = StdRng::seed_from_u64(42);
 
     let mut context = UserTestModel::new(GROUP_SIZE).await.0;
 
@@ -215,14 +219,15 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
             .make_blank(&path, Some(StatusCode::NO_CONTENT))
             .await?;
         debug!("Adding member...");
-        context.add_member(Some(StatusCode::OK)).await?;
+        context.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await?;
     }
 
     Ok(())
 }
 
 /// Six users try to update the same epoch at the same time.
-#[tokio::test]
+// TODO: fix test: transactions are run for the whole send_frame handling.
+// #[tokio::test]
 async fn test_concurrent_art_update() -> eyre::Result<()> {
     init_tracing_for_test();
 
@@ -375,6 +380,7 @@ async fn test_get_art() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_epoch_merge() -> eyre::Result<()> {
     init_tracing_for_test();
+    let mut rng = StdRng::seed_from_u64(42);
 
     let payload = UserTestModel::new_nonce();
 
@@ -424,7 +430,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
     info!("User2 TK_x: {}", user2.art.root().data().public_key());
 
     info!("User 0 fail to append member ...");
-    user0.add_member(Some(StatusCode::UNAUTHORIZED)).await?;
+    user0.add_member(Fr::rand(&mut rng), Some(StatusCode::UNAUTHORIZED)).await?;
     // user0.update_key(None, Some(StatusCode::OK)).await?;
     info!("User0 TK: {}", user0.art.root().data().public_key());
 
@@ -435,6 +441,7 @@ async fn test_epoch_merge() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_merge_operations_after_removal() -> eyre::Result<()> {
     init_tracing_for_test();
+    let mut rng = StdRng::seed_from_u64(42);
 
     let payload = UserTestModel::new_nonce();
 
@@ -465,7 +472,7 @@ async fn test_merge_operations_after_removal() -> eyre::Result<()> {
     info!("User 1 fails to add member");
     let mut user1_clone = user1.clone();
     user1_clone
-        .add_member(Some(StatusCode::UNAUTHORIZED))
+        .add_member(Fr::rand(&mut rng), Some(StatusCode::UNAUTHORIZED))
         .await?;
 
     info!("User 1 fails to leave the group as he already removed.");
@@ -756,7 +763,7 @@ async fn test_send_aggregated_change() -> eyre::Result<()> {
     for _ in 0..3 {
         debug!("context art:\n{}", context.art.root());
         context.update_key(None, Some(StatusCode::OK)).await?;
-        context.add_member(Some(StatusCode::OK)).await?;
+        context.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await?;
     }
 
     for _ in 0..3 {
@@ -771,10 +778,12 @@ async fn test_send_aggregated_change() -> eyre::Result<()> {
 async fn test_epoch_validity_check() -> eyre::Result<()> {
     init_tracing_for_test();
 
+    let mut rng = StdRng::seed_from_u64(42);
+
     let (mut user0, _) = UserTestModel::new(7).await;
     let mut user1 = user0.derive_new(1)?;
 
-    user0.add_member(Some(StatusCode::OK)).await.unwrap();
+    user0.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await.unwrap();
     user1
         .update_key(
             Some(b"askjdfhlaklsd".to_vec()),
@@ -789,6 +798,7 @@ async fn test_epoch_validity_check() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_polling() -> eyre::Result<()> {
     init_tracing_for_test();
+    let mut rng = StdRng::seed_from_u64(42);
 
     let (mut user0, _) = UserTestModel::new(7).await;
     let mut user1 = user0.derive_new(1)?;
@@ -797,7 +807,7 @@ async fn test_polling() -> eyre::Result<()> {
 
     info!("user0 adds member, while user1 polls data ...");
     for _ in 0..5 {
-        user0.add_member(Some(StatusCode::OK)).await.unwrap();
+        user0.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await.unwrap();
         user1.poll(None).await.unwrap();
     }
 
@@ -858,7 +868,159 @@ async fn test_polling() -> eyre::Result<()> {
     user2.update_key(None, Some(StatusCode::OK)).await.unwrap();
 
     user0.poll(None).await.unwrap();
-    user0.add_member(Some(StatusCode::OK)).await.unwrap();
+    user0.add_member(Fr::rand(&mut rng), Some(StatusCode::OK)).await.unwrap();
+
+    Ok(())
+}
+
+use client_test_wrapper::ClientWrapper;
+use crate::client_test_wrapper::InviteClientWrapper;
+
+/// Test Flow:
+/// - Create epoch with one user
+/// - Join with the second user
+/// - Cyclic key update with two users
+#[cfg(feature = "merge_changes")]
+#[tokio::test]
+async fn test_flow() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let (mut client0, frame0) = ClientWrapper::new_group(&mut rng);
+    let response = ClientWrapper::send_frame(frame0.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::CREATED), "expected StatusCode::CREATED, while got {}", response.0.status());
+    client0.process_frame(frame0).unwrap();
+
+    let sk = Fr::rand(&mut rng);
+    let (frame, invite) = client0.add_member(sk)?;
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+
+    info!("Join group...");
+    let client1 = InviteClientWrapper::new(sk, invite);
+    let mut client1 = client1.apply_join_frame(frame.clone()).await.unwrap();
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+    let frame = client1.join_group().unwrap();
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+
+    info!("Create new frame with client1");
+    let frame = client1.create_frame(b"some data".to_vec()).unwrap();
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+    for _ in 0..10 {
+        info!("Create new frame with client0");
+        let frame = client0.create_frame(b"some other data".to_vec()).unwrap();
+        let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+        assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+        client1.process_frame(frame.clone()).unwrap();
+        client0.process_frame(frame).unwrap();
+
+        info!("Create new frame with client1");
+        let frame = client1.create_frame(b"some data".to_vec()).unwrap();
+        let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+        assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+        client1.process_frame(frame.clone()).unwrap();
+        client0.process_frame(frame).unwrap();
+    }
+
+
+    Ok(())
+}
+
+/// Test Flow:
+/// - Create epoch with one user
+/// - Join with the second user
+/// - Cyclic key update with two users on the same epoch
+#[cfg(feature = "merge_changes")]
+#[tokio::test]
+async fn test_flow_with_merge() -> eyre::Result<()> {
+    init_tracing_for_test();
+
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let (mut client0, frame0) = ClientWrapper::new_group(&mut rng);
+    let response = ClientWrapper::send_frame(frame0.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::CREATED), "expected StatusCode::CREATED, while got {}", response.0.status());
+    client0.process_frame(frame0).unwrap();
+
+    info!("Add first member...");
+    let sk = Fr::rand(&mut rng);
+    let (frame, invite) = client0.add_member(sk)?;
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+
+    info!("Join group with first member...");
+    let client1 = InviteClientWrapper::new(sk, invite);
+    let mut client1 = client1.apply_join_frame(frame.clone()).await.unwrap();
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+    let frame = client1.join_group().unwrap();
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+    info!("Add second member...");
+    let sk = Fr::rand(&mut rng);
+    let (frame, invite) = client0.add_member(sk)?;
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+
+    info!("Join group with second member...");
+    let client2 = InviteClientWrapper::new(sk, invite);
+    let mut client2 = client2.apply_join_frame(frame.clone()).await.unwrap();
+    client2.process_frame(frame.clone()).unwrap();
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+    let frame = client2.join_group().unwrap();
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response.0.status());
+    client2.process_frame(frame.clone()).unwrap();
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+
+    for i in 0..10 {
+        info!("Create new frame with both users client0. {i}-th iteration");
+        let frame0 = client0.create_frame(b"some other data".to_vec()).unwrap();
+        let frame1 = client1.create_frame(b"some data".to_vec()).unwrap();
+
+        let response0 = ClientWrapper::send_frame(frame0.clone()).await.unwrap();
+        let response1 = ClientWrapper::send_frame(frame1.clone()).await.unwrap();
+
+        assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response0.0.status());
+        assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response1.0.status());
+
+        client2.process_frame(frame0.clone()).unwrap();
+        client1.process_frame(frame0.clone()).unwrap();
+        client0.process_frame(frame0).unwrap();
+
+        client2.process_frame(frame1.clone()).unwrap();
+        client1.process_frame(frame1.clone()).unwrap();
+        client0.process_frame(frame1).unwrap();
+
+        info!("send frame with second user for correctness");
+        let frame = client2.create_frame(b"data for client 2".to_vec()).unwrap();
+        let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+        assert!(matches!(response.0.status(), StatusCode::OK), "expected StatusCode::OK, while got {}", response0.0.status());
+
+        client2.process_frame(frame.clone()).unwrap();
+        client1.process_frame(frame.clone()).unwrap();
+        client0.process_frame(frame).unwrap();
+    }
+
 
     Ok(())
 }

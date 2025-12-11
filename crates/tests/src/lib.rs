@@ -11,6 +11,9 @@ pub(crate) mod test_api;
 pub(crate) mod user_test_model;
 
 #[cfg(test)]
+pub(crate) mod client_test_wrapper;
+
+#[cfg(test)]
 pub(crate) mod utils;
 
 /// Backend url for testing.

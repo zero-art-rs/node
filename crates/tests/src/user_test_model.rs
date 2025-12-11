@@ -137,6 +137,31 @@ impl UserTestModel {
         })
     }
 
+    /// Clone this uses, and change this user secret key to the different one
+    pub fn derive_new_with_sk(&self, user_index_name: usize, sk: Fr) -> Result<Self, ArtError> {
+        let mut public_art = self.art.public_art().clone();
+        public_art.commit().unwrap();
+        let art = PrivateArt::new(public_art, sk)?;
+
+        Ok(Self {
+            client: reqwest::Client::new(),
+            art,
+            initial_secrets: self.initial_secrets.clone(),
+            chat_uuid: self.chat_uuid,
+            epoch: self.epoch,
+            sequence_number: self.sequence_number,
+            owner_id_key: None,
+            user_name: default_user_name(user_index_name),
+            prover_engine: Default::default(),
+            verifier_engine: Default::default(),
+        })
+    }
+
+    pub fn commit_epoch(&mut self) {
+        self.art.commit().unwrap();
+        self.epoch += 1;
+    }
+
     pub const fn is_owner(&self) -> bool {
         self.owner_id_key.is_some()
     }
@@ -542,11 +567,12 @@ impl UserTestModel {
     // add node to the art, and send updates to the chat
     pub async fn add_member(
         &mut self,
+        new_user_secret_key: Fr,
         status_check: Option<StatusCode>,
     ) -> eyre::Result<(reqwest::Response, BytesMut)> {
-        let mut rng = StdRng::seed_from_u64(rand::random());
+        // let mut rng = StdRng::seed_from_u64(rand::random());
 
-        let new_user_secret_key = Fr::rand(&mut rng);
+        // let new_user_secret_key = Fr::rand(&mut rng);
         let (_, append_user_changes, prover_branch) = self
             .art
             .add_member(new_user_secret_key)

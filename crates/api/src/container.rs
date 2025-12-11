@@ -34,6 +34,7 @@ pub struct Container {
     pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
 
     art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
+    // flag, which indicates weather the merges are available
     pub(crate) merge_changes: bool,
 
     pub update_mutex: Arc<Mutex<bool>>,
