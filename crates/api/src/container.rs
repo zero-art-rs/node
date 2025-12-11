@@ -110,8 +110,8 @@ impl Container {
             Some(val) => val.operation,
         };
 
-        // Decide, how to handle request and handle it
-        let response = match operation {
+        // Decide, how to handle request
+        let response = match operation.clone() {
             Some(Operation::Init(public_art)) => {
                 self.art_service
                     .init_group(id, public_art, false, tbs_frame.nonce, &mut session)
@@ -138,22 +138,27 @@ impl Container {
             None => StatusCode::OK,
         };
 
+        let sequence_number = if let Some(Operation::Init(_)) = &operation {
+            0
+        } else {
+            self.messenger_service.next_sequence_number(id, &mut session).await?
+        };
+
         self.messenger_service
             .send_message(
                 body.to_vec(),
                 &id,
                 tbs_frame.epoch as i64,
+                sequence_number,
                 false,
+                operation,
                 &mut session,
             )
             .await?;
 
-        session
-            .commit_transaction()
-            .await
-            .inspect_err(|err| {
-                warn!("Failed to commit transaction: {}", err);
-            })?;
+        session.commit_transaction().await.inspect_err(|err| {
+            warn!("Failed to commit transaction: {}", err);
+        })?;
 
         Ok(response)
     }

@@ -4,7 +4,7 @@ use storage::{
     ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
     MongoKeysStorage, StorageError,
 };
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
 
@@ -51,7 +51,7 @@ impl ARTService {
                 .get_art_by_epoch(id, epoch, &mut session)
                 .await
                 .inspect_err(|err| {
-                    error!(
+                    warn!(
                         "Failed to get art by id {id} and epoch {epoch}: {}",
                         err.to_string()
                     )
@@ -61,7 +61,7 @@ impl ARTService {
                 .await?
                 .ok_or(ARTServiceError::NotFound)
                 .inspect_err(|err| {
-                    error!("Failed to get latest art by id {}: {}", id, err.to_string());
+                    warn!("Failed to get latest art by id {}: {}", id, err.to_string());
                 })?,
         };
 
@@ -82,7 +82,7 @@ impl ARTService {
                 .get_art_by_epoch(id, epoch, &mut *session)
                 .await
                 .inspect_err(|err| {
-                    error!(
+                    warn!(
                         "Failed to get art by id {id} and epoch {epoch}: {}",
                         err.to_string()
                     )
@@ -92,7 +92,7 @@ impl ARTService {
                 .await?
                 .ok_or(ARTServiceError::NotFound)
                 .inspect_err(|err| {
-                    error!("Failed to get latest art by id {}: {}", id, err.to_string());
+                    warn!("Failed to get latest art by id {}: {}", id, err.to_string());
                 })?,
         };
 
@@ -184,9 +184,7 @@ impl ARTService {
         arts_storage.delete_art(&mut *session, *id).await?;
         arts_storage.delete_initial_art(&mut *session, *id).await?;
         keys_storage
-            .keys_collection
-            .delete_one(doc! {"chat_id": id})
-            .session(&mut *session)
+            .delete_group(*id, &mut *session)
             .await?;
 
         frame_storage
@@ -224,11 +222,16 @@ impl ARTService {
 
         MongoKeysStorage::new()
             .await?
-            .insert_one_in_session(KeyRecord::new(owner_id_pub_key, id), &mut *session)
+            .init_group(owner_id_pub_key, id, &mut *session)
             .await?;
 
         arts_storage
             .new_group(ARTRecord::new(id, art, is_private), &mut *session)
+            .await?;
+
+        MongoFramesStorage::new(&id)
+            .await?
+            .init_counter(&mut *session)
             .await?;
 
         debug!(id = ?id, "Successfully created new group");
@@ -250,6 +253,7 @@ impl ARTService {
             .get_art_in_session(id, &mut *session)
             .await?
             .ok_or(ARTServiceError::NotFound)?;
+        let current_epoch = art_record.epoch;
 
         if new_epoch == current_epoch {
             change.apply(&mut art_record.art)?;

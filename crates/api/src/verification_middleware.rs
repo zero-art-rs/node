@@ -17,7 +17,7 @@ use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Level, debug, error, info, trace, warn};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
@@ -247,9 +247,7 @@ pub async fn send_frame(
             0
         });
 
-    state
-        .start_updating(id)
-        .await?;
+    state.start_updating(id).await?;
 
     let verification_req =
         match inner_send_frame(state, current_epoch, id, frame_tbs, proof, &mut *session).await {
@@ -284,12 +282,14 @@ async fn inner_send_frame(
     {
         info!(
             current_epoch = ?current_epoch,
+            record_epoch = ?art.epoch,
             public_key = ?art.art.root().data().public_key(),
             public_key_preview = ?art.art.preview().root().public_key(),
-            "Current Art data:"
+            group_id = ?id,
+            "Verify send_frame request:",
         );
     } else {
-        info!("No art found");
+        debug!("Verify send_frame request: No art found",);
     }
 
     if frame_tbs.group_id != id.to_string() {
@@ -307,7 +307,17 @@ async fn inner_send_frame(
         .as_ref()
         .and_then(|op| op.operation.as_ref());
 
-    verify_frame_applicability_by_epoch(state, id, &frame_tbs, &mut *session).await?;
+    verify_frame_applicability_by_epoch(state, id, &frame_tbs, &mut *session)
+        .await
+        .inspect_err(|err| {
+            error!(
+                error = ?err,
+                group_id = ?id,
+                provided_epoch = ?frame_tbs.epoch,
+                current_epoch = ?current_epoch,
+                "Error verifying frame applicability by epoch"
+            )
+        })?;
 
     let (opcode, public_inputs) = match &operation {
         Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&frame_tbs)?,
@@ -639,7 +649,7 @@ pub async fn get_opcode_and_input_for_drop_group(
 
     let leaf = art.node(&NodeIndex::Direction(path))?;
     if !leaf.is_leaf() {
-        return Err(VerificationError::InvalidProof);
+        return Err(VerificationError::InvalidInput);
     }
 
     Ok((

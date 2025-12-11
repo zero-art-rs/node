@@ -1,3 +1,4 @@
+use bson::oid::ObjectId;
 use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
 use bytes::{BufMut, BytesMut};
 use cortado::CortadoAffine;
@@ -9,33 +10,52 @@ use mongodb::{
     ClientSession, Collection, IndexModel,
 };
 use prost::Message;
-use tracing::debug;
+use serde::{Deserialize, Serialize};
+use tracing::{debug, trace};
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
 use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
 use types::{utils, FrameRecord};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
+use bson::serde_helpers::uuid_1_as_binary;
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
+pub const COUNTERS_COLLECTION_NAME: &str = "counters";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound = "")]
+pub struct CounterRecord {
+    pub sequence_number: u64,
+    #[serde(with = "uuid_1_as_binary")]
+    pub chat_id: Uuid,
+}
+
+impl CounterRecord {
+    pub fn new(group_id: Uuid, sequence_number: u64) -> Self {
+        Self { chat_id: group_id, sequence_number }
+    }
+}
 
 pub struct MongoFramesStorage {
     pub messages_collection: Collection<FrameRecord>,
     pub messages_outbox_collection: Collection<FrameRecord>,
+    pub counters_collection: Collection<CounterRecord>,
     pub chat_id: Uuid,
 }
 
 impl MongoFramesStorage {
-    pub async fn new(chat_id: &Uuid) -> Result<Self, StorageError> {
+    pub async fn new(id: &Uuid) -> Result<Self, StorageError> {
         let db = DATABASE
             .get()
             .ok_or_else(|| StorageError::DatabaseRetrieval)?;
 
-        let messages_collection_name = format!("{GROUP_COLLECTION_NAME}/{chat_id}");
-        let messages_collection = db.collection(&messages_collection_name);
+        let messages_collection_name = format!("{GROUP_COLLECTION_NAME}/{id}");
 
+        let messages_collection = db.collection(&messages_collection_name);
         let messages_outbox_collection = db.collection(OUTBOX_COLLECTION_NAME);
+        let counters_collection = db.collection(COUNTERS_COLLECTION_NAME);
 
         let messages_index_model = IndexModel::builder()
             .keys(doc! { "sequence_number": -1})
@@ -48,7 +68,8 @@ impl MongoFramesStorage {
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
-            chat_id: *chat_id,
+            counters_collection,
+            chat_id: *id,
         })
     }
 }
@@ -64,36 +85,52 @@ impl FrameStorage for MongoFramesStorage {
     }
 
     async fn next_sequence_number(&self, session: &mut ClientSession) -> Result<u64, StorageError> {
-        let message_collection = &self.messages_collection;
+        let sequence_number = self.counters_collection
+            .find_one_and_update(
+                doc! { "chat_id": self.chat_id },
+                doc! { "$inc": { "sequence_number": 1 } },
+            )
+            .session(session)
+            .await?
+            .ok_or(StorageError::NotFound)?
+            .sequence_number;
 
-        let mut cursor = message_collection
-            .find(doc! {})
-            .sort(doc! { "sequence_number": -1 })
-            .limit(1)
+        Ok(sequence_number + 1)
+    }
+
+    async fn init_counter(&self, session: &mut ClientSession) -> Result<(), StorageError> {
+        let existing = self.counters_collection
+            .find_one(doc! { "chat_id": self.chat_id })
             .session(&mut *session)
             .await?;
 
-        let next_sequence_number = match cursor.next(&mut *session).await {
-            Some(result) => result?.sequence_number + 1,
-            None => 0,
-        };
+        if existing.is_some() {
+            return Err(StorageError::RecordAlreadyExists);
+        }
 
-        Ok(next_sequence_number)
+        self.counters_collection
+            .insert_one(CounterRecord::new(self.chat_id, 0))
+            .session(&mut *session)
+            .await?;
+
+        debug!("Inserted new counter record");
+
+        Ok(())
     }
 
     async fn store_message(
         &self,
         content: Vec<u8>,
         epoch: i64,
+        sequence_number: u64,
         outbox_only: bool,
+        operation: Option<Operation>,
         session: &mut ClientSession,
     ) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
-
-        let next_sequence_number = self.next_sequence_number(&mut *session).await?;
         let message = FrameRecord::new(
             content.clone(),
-            next_sequence_number.clone(),
+            sequence_number.clone(),
             None,
             epoch.clone(),
         );
@@ -108,9 +145,19 @@ impl FrameStorage for MongoFramesStorage {
         // change message for outbox_collection
         let outbox_message = FrameRecord::new(
             content.clone(),
-            next_sequence_number.clone(),
+            sequence_number.clone(),
             Some(self.chat_id),
             epoch.clone(),
+        );
+
+        trace!(
+            content = ?outbox_message.content.get(0..8).map(|message| format!("{:?}...", message)),
+            created_at = ?outbox_message.created_at,
+            sequence_number = ?outbox_message.sequence_number,
+            chat_id = ?outbox_message.chat_id,
+            epoch = ?outbox_message.epoch,
+            operation = ?operation,
+            "Store outbox_message"
         );
 
         self.messages_outbox_collection
@@ -169,10 +216,12 @@ impl FrameStorage for MongoFramesStorage {
 
         let messages_collection = db.collection(&format!("{GROUP_COLLECTION_NAME}/{}", &chat_id));
         let messages_outbox_collection = db.collection(OUTBOX_COLLECTION_NAME);
+        let counters_collection = db.collection(COUNTERS_COLLECTION_NAME);
 
         Ok(Self {
             messages_collection,
             messages_outbox_collection,
+            counters_collection,
             chat_id,
         })
     }

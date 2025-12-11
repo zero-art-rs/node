@@ -1,4 +1,4 @@
-use crate::utils::{CentrifugoTokenResponse, stringify_option};
+use crate::utils::{CentrifugoTokenResponse, stringify_option, ArrayLessPrinter};
 use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
@@ -596,12 +596,6 @@ impl UserTestModel {
 
         let mut proof_bytes = Vec::new();
 
-        let leaf_pk = self
-            .art
-            .preview()
-            .node(&append_user_changes.node_index)
-            .unwrap()
-            .public_key();
         let leaf_sk = self.art.secrets().preview().leaf();
         let leaf_pk = CortadoAffine::generator().mul(leaf_sk).into_affine();
         let prover_eligibility = EligibilityArtefact::Owner((leaf_sk, leaf_pk));

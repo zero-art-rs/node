@@ -1,13 +1,11 @@
-use crate::{MongoFramesStorage, StorageError};
 use bson::doc;
-use bytes::BytesMut;
+use crate::StorageError;
 use cortado::CortadoAffine;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;
 use types::protos::group_operation::Operation;
-use types::protos::Frame;
-use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
-use types::{utils, FrameRecord};
+use types::utils::ArtUpdate;
+use types::FrameRecord;
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
 
@@ -18,12 +16,15 @@ pub trait FrameStorage: Send + Sync + Sized {
     ) -> Result<ChangeStream<ChangeStreamEvent<FrameRecord>>, StorageError>;
 
     async fn next_sequence_number(&self, session: &mut ClientSession) -> Result<u64, StorageError>;
+    async fn init_counter(&self, session: &mut ClientSession) -> Result<(), StorageError>;
 
     async fn store_message(
         &self,
         content: Vec<u8>,
         epoch: i64,
+        sequence_number: u64,
         outbox_only: bool,
+        operation: Option<Operation>,
         session: &mut ClientSession,
     ) -> Result<(), StorageError>;
 

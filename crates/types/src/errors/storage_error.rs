@@ -14,4 +14,6 @@ pub enum StorageError {
     DecodeError(#[from] prost::DecodeError),
     #[error("Failed to encode payload: {0}")]
     EncodeError(#[from] prost::EncodeError),
+    #[error("Failed to add new record, as it it already exists")]
+    RecordAlreadyExists,
 }

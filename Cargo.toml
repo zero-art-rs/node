@@ -53,6 +53,7 @@ sha3 = "0.10.8"
 axum-test = { version = "18.0.2" }
 prost = "0.14.1"
 prost-types = { version = "0.14.1" }
+regex = { version = "1.12.2" }
 bytes = { version = "1.10.1" }
 eventsource-stream = { version = "0.2.3" }
 futures = { version = "0.3.31" }
@@ -63,7 +64,10 @@ zrt-art = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/z
 zrt-crypto = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/zrt-art-refactor" }
 cortado = { git = "https://github.com/zero-art-rs/core.git", branch = "feature/zrt-art-refactor" }
 bulletproofs = { version = "5.0.0", git="https://github.com/zero-art-rs/bulletproofs", features=["yoloproofs"] }
-zrt-client-sdk = { git = "https://github.com/zero-art-rs/client-sdk.git", branch = "feature/merge-core" }
+
+#zrt-client-sdk = { git = "https://github.com/zero-art-rs/client-sdk.git", branch = "feature/merge-core" }
+
+zrt-client-sdk = { path = "../awesome-client-sdk" }
 
 
 [workspace.lints.rust]

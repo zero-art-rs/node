@@ -62,10 +62,16 @@ impl ProofVerifier {
             } => {
                 let result = self
                     .verifier_engine
-                    .new_context(eligibility_requirement)
+                    .new_context(eligibility_requirement.clone())
                     .for_branch(&verification_branch)
                     .with_associated_data(&associated_data)
-                    .verify(&proof);
+                    .verify(&proof)
+                    .inspect_err(|err| {
+                        error!(
+                            eligibility_requirement = ?eligibility_requirement,
+                            "Failed to verify: {err}",
+                        )
+                    });
 
                 match result {
                     Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
@@ -80,10 +86,19 @@ impl ProofVerifier {
             } => {
                 let result = self
                     .verifier_engine
-                    .new_context(eligibility_requirement)
+                    .new_context(eligibility_requirement.clone())
                     .for_aggregation(&verification_tree)
                     .with_associated_data(&associated_data)
-                    .verify(&proof);
+                    .verify(&proof)
+                    .inspect_err(|err| {
+                        error!(
+                            // verification_tree = verification_tree,
+                            eligibility_requirement = ?eligibility_requirement,
+                            // associated_data = ?associated_data,
+                            // proof = ?proof,
+                            "Failed to verify: {err}",
+                        )
+                    });
 
                 match result {
                     Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
@@ -117,8 +132,13 @@ impl ProofVerifier {
     ) -> eyre::Result<ProofVerifierResult> {
         match schnorr::verify(signature, public_keys, msg) {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
-            Err(e) => {
-                warn!("Failed to verify schnorr signature: {}", e);
+            Err(err) => {
+                error!(
+                    signature = ?signature,
+                    public_keys = ?public_keys,
+                    msg = ?msg,
+                    "Failed to verify Schnorr signature: {err}"
+                );
                 Ok(ProofVerifierResult::SchnorrSignature { verdict: false })
             }
         }

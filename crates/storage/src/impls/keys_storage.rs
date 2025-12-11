@@ -1,10 +1,15 @@
 use crate::{DataStorage, DATABASE};
-use mongodb::{bson::doc, options::IndexOptions, Collection, IndexModel};
+use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
+use tracing::debug;
+use uuid::Uuid;
 use types::{errors::StorageError, KeyRecord};
+use crate::impls::frames::CounterRecord;
+
+const KEYS_COLLECTION_NAME: &str = "keys";
 
 /// Collection to store owner public key for every chat.
 pub struct MongoKeysStorage {
-    pub keys_collection: Collection<KeyRecord>,
+    keys_collection: Collection<KeyRecord>,
 }
 
 impl MongoKeysStorage {
@@ -13,7 +18,7 @@ impl MongoKeysStorage {
             mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
         })?;
 
-        let keys_collection = db.collection("keys");
+        let keys_collection = db.collection(KEYS_COLLECTION_NAME);
 
         let index_model = IndexModel::builder()
             .keys(doc! { "chat_id": -1})
@@ -23,6 +28,41 @@ impl MongoKeysStorage {
         keys_collection.create_index(index_model.clone()).await?;
 
         Ok(Self { keys_collection })
+    }
+
+    pub async fn init_group(
+        &self,
+        owner_id_pub_key: Vec<u8>,
+        id: Uuid,
+        session: &mut ClientSession
+    ) -> Result<(), StorageError> {
+        let existing = self.keys_collection
+            .find_one(doc! { "chat_id": id })
+            .session(&mut *session)
+            .await?;
+
+        if existing.is_some() {
+            return Err(StorageError::RecordAlreadyExists);
+        }
+
+        self.keys_collection
+            .insert_one(KeyRecord::new(owner_id_pub_key, id))
+            .session(&mut *session)
+            .await?;
+
+        debug!("Inserted new key record");
+
+        Ok(())
+    }
+
+    pub async fn delete_group(&self, id: Uuid, session: &mut ClientSession) -> Result<(), StorageError> {
+        self
+            .keys_collection
+            .delete_one(doc! {"chat_id": id})
+            .session(session)
+            .await?;
+
+        Ok(())
     }
 }
 
