@@ -904,6 +904,7 @@ async fn test_polling() -> eyre::Result<()> {
 
 use crate::client_test_wrapper::InviteClientWrapper;
 use client_test_wrapper::ClientWrapper;
+use types::messenger_schemas::GetMessageQuery;
 
 /// Test Flow:
 /// - Create epoch with one user
@@ -1179,19 +1180,16 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
                 if matches!(response.0.status(), StatusCode::OK) {
                     info!("Frame send. poll and wait to send more");
                     client_wrapper.poll().await.unwrap();
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(20));
                     break;
                 } else {
                     error!("Failed to send message, try to poll before retry");
-                    thread::sleep(Duration::from_millis(100));
+                    thread::sleep(Duration::from_millis(10));
                     client_wrapper.poll().await.unwrap();
                 }
             }
         }
     }
-
-    let t0 = client0.group_context().tree().clone();
-    let t1 = client1.group_context().tree().clone();
 
     info!("Run concurrent updates...");
 

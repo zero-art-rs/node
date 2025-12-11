@@ -45,13 +45,19 @@ pub trait ARTStorage: Send + Sync {
         session: &mut ClientSession,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
 
-    /// Get the sequence number of the art
-    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error>;
+    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<Option<u64>, mongodb::error::Error>;
+
     async fn get_current_epoch_in_session(
         &self,
         chat_id: &Uuid,
         session: &mut ClientSession,
-    ) -> Result<u64, mongodb::error::Error>;
+    ) -> Result<Option<u64>, mongodb::error::Error>;
+
+    async fn get_current_epoch_in_session_with_lock(
+        &self,
+        chat_id: &Uuid,
+        session: &mut ClientSession,
+    ) -> Result<Option<u64>, mongodb::error::Error>;
 
     async fn replace_art(
         &self,

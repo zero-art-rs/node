@@ -11,7 +11,8 @@ use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
-use storage::{MongoARTStorage, MongoFramesStorage};
+use mongodb::atlas_search::autocomplete;
+use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
 use tokio::sync::{Mutex, RwLock};
 use tracing::field::debug;
 use tracing::{debug, error, warn};
@@ -102,13 +103,44 @@ impl Container {
             .await?;
         session.start_transaction().await?;
 
-        verification_middleware::send_frame(self, &tbs_frame, frame.proof, id, &mut session)
+        verification_middleware::send_frame(self, &tbs_frame, frame.proof, id)
             .await?;
 
-        let operation = match tbs_frame.group_operation {
+        session.commit_transaction().await?;
+        let mut session = messages_collection
+            .messages_collection
+            .client()
+            .start_session()
+            .await?;
+        session.start_transaction().await?;
+
+
+        let operation = match &tbs_frame.group_operation {
             None => None,
-            Some(val) => val.operation,
+            Some(val) => val.operation.clone(),
         };
+
+        let current_epoch = MongoARTStorage::new()
+            .await?
+            .get_current_epoch_in_session_with_lock(&id, &mut session)
+            .await?
+            .unwrap_or(0);
+
+        if matches!(operation, None | Some(
+            Operation::AddMember(_)
+            | Operation::LeaveGroup(_)
+            | Operation::RemoveMember(_)
+            | Operation::KeyUpdate(_)
+            | Operation::Aggregated(_)
+        )) {
+            verification_middleware::verify_frame_applicability_by_epoch(
+                self,
+                id,
+                operation.as_ref(),
+                tbs_frame.epoch,
+                current_epoch,
+            ).await?;
+        }
 
         // Decide, how to handle request
         let response = match operation.clone() {

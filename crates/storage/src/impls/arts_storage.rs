@@ -143,15 +143,13 @@ impl ARTStorage for MongoARTStorage {
             .await
     }
 
-    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error> {
-        let cursor = self
+    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<Option<u64>, mongodb::error::Error> {
+        let epoch = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })
-            .await?;
+            .await?
+            .map(|record| record.epoch);
 
-        let epoch = cursor
-            .ok_or_else(|| mongodb::error::Error::from(std::io::Error::other("No records Found")))?
-            .epoch;
 
         Ok(epoch)
     }
@@ -160,18 +158,30 @@ impl ARTStorage for MongoARTStorage {
         &self,
         chat_id: &Uuid,
         session: &mut ClientSession,
-    ) -> Result<u64, mongodb::error::Error> {
-        let cursor = self
+    ) -> Result<Option<u64>, mongodb::error::Error> {
+        // Remove and add the data, to create a write lock on collection
+        self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })
-            .session(session)
-            .await?;
+            .session(&mut *session)
+            .await
+            .map(|cursor| cursor.map(|r|r.epoch))
+    }
 
-        let epoch = cursor
-            .ok_or_else(|| mongodb::error::Error::from(std::io::Error::other("No records Found")))?
-            .epoch;
-
-        Ok(epoch)
+    async fn get_current_epoch_in_session_with_lock(
+        &self,
+        chat_id: &Uuid,
+        session: &mut ClientSession,
+    ) -> Result<Option<u64>, mongodb::error::Error> {
+        self
+            .arts_collection
+            .find_one_and_update(
+                doc! { "chat_id": chat_id },
+                doc! { "$set": { "chat_id": chat_id }}
+            )
+            .session(&mut *session)
+            .await
+            .map(|cursor| cursor.map(|r|r.epoch))
     }
 
     async fn replace_art(

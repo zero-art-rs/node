@@ -137,17 +137,6 @@ impl ARTService {
         Ok(art_record)
     }
 
-    pub async fn get_current_epoch(
-        &self,
-        id: Uuid,
-        session: &mut ClientSession,
-    ) -> Result<u64, ARTServiceError> {
-        Ok(MongoARTStorage::new()
-            .await?
-            .get_current_epoch_in_session(&id, session)
-            .await?)
-    }
-
     pub async fn get_initial_art(
         &self,
         id: &Uuid,
@@ -248,7 +237,6 @@ impl ARTService {
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
 
-        let current_epoch = self.get_current_epoch(id, &mut *session).await?;
         let mut art_record = arts_storage
             .get_art_in_session(id, &mut *session)
             .await?
@@ -257,12 +245,18 @@ impl ARTService {
 
         if new_epoch == current_epoch {
             change.apply(&mut art_record.art)?;
+            debug!("Merge was applied");
         } else if new_epoch == current_epoch + 1 {
             art_record.art.commit()?;
             art_record.epoch += 1;
 
             change.apply(&mut art_record.art)?;
         } else {
+            warn!(
+                current_epoch = ?current_epoch,
+                proposed_epoch = ?new_epoch,
+                "Fail to update ART, as the epoch is invalid"
+            );
             return Err(ARTServiceError::InvalidInput.into());
         }
 

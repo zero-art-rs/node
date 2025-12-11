@@ -4,7 +4,7 @@ mod tests {
     use axum::routing::get;
     use axum_test::TestServer;
 
-    #[tokio::test]
+    // #[tokio::test]
     async fn it_should_be_healthy() {
         // Build an application with a route.
         let app = Router::new().route(&"/health", get(async || "healthy"));

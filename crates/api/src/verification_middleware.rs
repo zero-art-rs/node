@@ -10,7 +10,6 @@ use axum_core::response::Response;
 use bytes::Bytes;
 use callbacks::callback;
 use cortado::CortadoAffine;
-use mongodb::ClientSession;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
@@ -234,23 +233,19 @@ pub async fn send_frame(
     frame_tbs: &FrameTbs,
     proof: Vec<u8>,
     id: Uuid,
-    session: &mut ClientSession,
 ) -> Result<(), VerificationError> {
     debug!("Incoming send frame verification request",);
 
     let current_epoch = MongoARTStorage::new()
         .await?
-        .get_current_epoch_in_session(&id, &mut *session)
-        .await
-        .unwrap_or_else(|_| {
-            warn!("Failed to get current epoch, use 0 instead.");
-            0
-        });
+        .get_current_epoch(&id)
+        .await?
+        .unwrap_or(0);
 
     state.start_updating(id).await?;
 
     let verification_req =
-        match inner_send_frame(state, current_epoch, id, frame_tbs, proof, &mut *session).await {
+        match inner_send_frame(state, current_epoch, id, frame_tbs, proof).await {
             Ok(verification_req) => verification_req,
             Err(err) => {
                 warn!("Verification Failed: {err}");
@@ -273,11 +268,10 @@ async fn inner_send_frame(
     id: Uuid,
     frame_tbs: &FrameTbs,
     proof: Vec<u8>,
-    session: &mut ClientSession,
 ) -> Result<VerificationRequest, VerificationError> {
     if let Ok(art) = state
         .art_service
-        .get_art_in_session(id, Some(current_epoch), &mut *session)
+        .get_art(id, Some(current_epoch))
         .await
     {
         info!(
@@ -307,7 +301,7 @@ async fn inner_send_frame(
         .as_ref()
         .and_then(|op| op.operation.as_ref());
 
-    verify_frame_applicability_by_epoch(state, id, &frame_tbs, &mut *session)
+    verify_frame_applicability_by_epoch(state, id, operation, frame_tbs.epoch, current_epoch)
         .await
         .inspect_err(|err| {
             error!(
@@ -330,7 +324,6 @@ async fn inner_send_frame(
                 id,
                 branch_changes_bytes,
                 frame_tbs.epoch - 1,
-                &mut *session,
             )
             .await?
         }
@@ -340,14 +333,13 @@ async fn inner_send_frame(
                 id,
                 change_bytes,
                 frame_tbs.epoch - 1,
-                &mut *session,
             )
             .await?
         }
         Some(Operation::DropGroup(_)) => {
-            get_opcode_and_input_for_drop_group(state, id, &mut *session).await?
+            get_opcode_and_input_for_drop_group(state, id).await?
         }
-        None => get_opcode_and_input_for_send_message(state, id, &mut *session).await?,
+        None => get_opcode_and_input_for_send_message(state, id).await?,
     };
 
     let verification_req = VerificationRequest {
@@ -358,23 +350,14 @@ async fn inner_send_frame(
     Ok(verification_req)
 }
 
-async fn verify_frame_applicability_by_epoch(
+pub async fn verify_frame_applicability_by_epoch(
     state: &Container,
     id: Uuid,
-    tbs_frame: &FrameTbs,
-    session: &mut ClientSession,
+    // tbs_frame: &FrameTbs,
+    operation: Option<&Operation>,
+    proposed_epoch: u64,
+    current_epoch: u64,
 ) -> Result<(), VerificationError> {
-    let operation = match &tbs_frame.group_operation {
-        None => None,
-        Some(val) => val.operation.as_ref(),
-    };
-
-    let current_epoch = MongoARTStorage::new()
-        .await?
-        .get_current_epoch_in_session(&id, &mut *session)
-        .await
-        .unwrap_or(0);
-
     let applicable_epochs = match &operation {
         Some(Operation::AddMember(_)) | Some(Operation::Aggregated(_)) => {
             vec![current_epoch + 1]
@@ -390,14 +373,16 @@ async fn verify_frame_applicability_by_epoch(
         None => vec![current_epoch],
     };
 
-    if !applicable_epochs.contains(&tbs_frame.epoch) {
+    if !applicable_epochs.contains(&proposed_epoch) {
         error!(
+            group_id = ?id,
             "Invalid epoch provided ({}), while the current one is {}",
-            tbs_frame.epoch, current_epoch
+            proposed_epoch, current_epoch
         );
+
         return Err(VerificationError::InvalidEpoch {
             current: current_epoch,
-            provided: tbs_frame.epoch,
+            provided: proposed_epoch,
         });
     }
 
@@ -439,20 +424,19 @@ pub async fn get_opcode_and_input_for_aggregation(
     id: Uuid,
     aggregation_bytes: &Vec<u8>,
     current_epoch: u64,
-    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let aggregated_change: AggregatedChange<CortadoAffine> =
         postcard::from_bytes(aggregation_bytes)?;
 
     let art = state
         .art_service
-        .get_art_in_session(id, Some(current_epoch), &mut *session)
+        .get_art(id, Some(current_epoch))
         .await?
         .art;
 
     let frame_storage = MongoFramesStorage::new(&id).await?;
     let epoch_changes = frame_storage
-        .get_epoch_changes_in_session(id, current_epoch + 1, &mut *session)
+        .get_epoch_changes(id, current_epoch + 1)
         .await?;
 
     if !epoch_changes.is_empty() {
@@ -479,13 +463,12 @@ pub async fn get_opcode_and_input_for_art_update(
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
     current_epoch: u64,
-    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
     let art = state
         .art_service
-        .get_art_in_session(id, Some(current_epoch), &mut *session)
+        .get_art(id, Some(current_epoch))
         .await?
         .art;
 
@@ -632,11 +615,10 @@ pub async fn get_left_most_leaf_public_key(
 pub async fn get_opcode_and_input_for_drop_group(
     state: &Container,
     id: Uuid,
-    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state
         .art_service
-        .get_art_in_session(id, None, session)
+        .get_art(id, None)
         .await?
         .art;
 
@@ -663,11 +645,10 @@ pub async fn get_opcode_and_input_for_drop_group(
 pub async fn get_opcode_and_input_for_send_message(
     state: &Container,
     id: Uuid,
-    session: &mut ClientSession,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let art = state
         .art_service
-        .get_art_in_session(id, None, session)
+        .get_art(id, None)
         .await?
         .art;
 

@@ -59,6 +59,10 @@ pub enum VerificationError {
     MessageService(#[from] MessageServiceError),
     #[error("Fail to update ART. I is changing now.")]
     ArtIsUpdating,
+    #[error("MongoDB error: {0}.")]
+    Mongo(#[from] mongodb::error::Error),
+    #[error("NotFound")]
+    NotFound,
 }
 
 impl From<serde_json::Error> for VerificationError {
