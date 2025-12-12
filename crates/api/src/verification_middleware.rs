@@ -23,11 +23,12 @@ use types::centrifugo_schemas::AuthRequest;
 use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
-use types::utils::{operation_name, ArtUpdate};
+use types::utils::ArtUpdate;
 use uuid::Uuid;
 use zrt_art::art::PublicArt;
 use zrt_art::art_node::{LeafIter, LeafStatus, TreeMethods};
 use zrt_art::changes::aggregations::AggregatedChange;
+use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_zk::EligibilityRequirement;
@@ -66,7 +67,7 @@ pub async fn authenticate(
     for (chat_id, epoch) in auth_request.chat_ids.iter().zip(auth_request.epochs.iter()) {
         let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
-        root_keys.push(art.preview().root().public_key());
+        root_keys.push(art.root().data().public_key());
     }
 
     let verification_req = VerificationRequest {
@@ -111,35 +112,60 @@ pub async fn list_messages(
     let Path(chat_id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
     let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
 
-    let art = state
+    // let art = state
+    //     .art_service
+    //     .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
+    //     .await?
+    //     .art;
+
+    let (art, art_change) = state
         .art_service
-        .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
-        .await?
-        .art;
+        .get_base_art_and_changes(chat_id, payload.epoch.unwrap_or(0))
+        .await?;
+    let mut art = art.art;
+
+    let mut partial_tree_keys = Vec::new();
+    partial_tree_keys.push(art.root().data().public_key());
+    match art_change {
+        ArtUpdate::BranchChange(changes) => {
+            for change in changes {
+                change.apply(&mut art)?;
+                partial_tree_keys.push(art.preview().root().public_key())
+            }
+        }
+        ArtUpdate::AggregatedChange(aggregation) => {
+            aggregation.apply(&mut art)?;
+            partial_tree_keys.push(art.preview().root().public_key())
+        }
+    }
 
     let mut msg = Vec::new();
     msg.extend_from_slice(chat_id.as_bytes());
     msg.extend(&payload.nonce);
     let msg = Sha3_256::digest(&msg).to_vec();
 
-    let public_key = if payload.use_upstream_key {
-        art.preview().root().public_key()
-    } else {
-        art.root().data().public_key()
-    };
-
-    let verification_req = VerificationRequest {
-        opcode: VerificationOpcode::GetMessages,
-        data: VerifierData {
-            proof: payload.signature.clone(),
-            public_inputs: PublicInputs::Signature {
-                public_keys: vec![public_key],
+    let mut verified = false;
+    for root_key in partial_tree_keys {
+        let verification_req = VerificationRequest {
+            opcode: VerificationOpcode::GetMessages,
+            data: VerifierData {
+                proof: payload.signature.clone(),
+                public_inputs: PublicInputs::Signature {
+                    public_keys: vec![root_key],
+                },
+                associated_data: msg.clone(),
             },
-            associated_data: msg,
-        },
-    };
+        };
 
-    verify(verification_req.to_message()?, &state.proof_verifier_sender).await?;
+        if verdict(verification_req.to_message()?, &state.proof_verifier_sender).await? {
+            verified = true;
+            break;
+        }
+    }
+
+    if !verified {
+        return Err(VerificationError::InvalidProof);
+    }
 
     Ok(next
         .run(Request::from_parts(
@@ -181,8 +207,8 @@ pub async fn get_art(
     match ProofMode::try_from(payload.proof_mode.as_str())? {
         ProofMode::UseLeafKey => {
             let mut public_key_is_wrong = true;
-            for node in art.preview().root().leaf_iter() {
-                if node.public_key().eq(&public_key) {
+            for node in LeafIter::new(art.root()) {
+                if node.data().public_key().eq(&public_key) {
                     public_key_is_wrong = false;
                 }
             }
@@ -193,7 +219,7 @@ pub async fn get_art(
             }
         }
         ProofMode::UseRootKey => {
-            if art.preview().root().public_key() != public_key {
+            if art.root().data().public_key() != public_key {
                 error!("Provided public key doesn't match with root key.");
                 return Err(VerificationError::InvalidInput);
             }
@@ -382,7 +408,6 @@ pub async fn verify_frame_applicability_by_epoch(
     if !applicable_epochs.contains(&proposed_epoch) {
         error!(
             group_id = ?id,
-            operation_name = ?operation.map(|operation| operation_name(operation)),
             "Invalid epoch provided ({}), while the current one is {}",
             proposed_epoch, current_epoch
         );
@@ -435,12 +460,11 @@ pub async fn get_opcode_and_input_for_aggregation(
     let aggregated_change: AggregatedChange<CortadoAffine> =
         postcard::from_bytes(aggregation_bytes)?;
 
-    let mut art = state
+    let art = state
         .art_service
         .get_art(id, Some(current_epoch))
         .await?
         .art;
-    art.commit()?;
 
     let frame_storage = MongoFramesStorage::new(&id).await?;
     let epoch_changes = frame_storage
@@ -625,12 +649,11 @@ pub async fn get_opcode_and_input_for_drop_group(
     state: &Container,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let mut art = state
+    let art = state
         .art_service
         .get_art(id, None)
         .await?
         .art;
-    art.commit();
 
     let mut left_most_leaf = art.root();
     let mut path = Vec::new();
@@ -670,30 +693,37 @@ pub async fn get_opcode_and_input_for_send_message(
     ))
 }
 
-pub async fn verify(
+pub async fn verdict(
     message: ProofVerifierMessage,
     proof_verifier_sender: &ProofVerifierSender,
-) -> Result<(), VerificationError> {
-    let verdict = match message {
+) -> Result<bool, VerificationError> {
+    match message {
         ProofVerifierMessage::ArtUpdate { .. } => {
             match callback(proof_verifier_sender, message).await? {
-                ProofVerifierResult::ArtUpdate { verdict } => verdict,
-                _ => return Err(VerificationError::InvalidResultMessage),
+                ProofVerifierResult::ArtUpdate { verdict } => Ok(verdict),
+                _ => Err(VerificationError::InvalidResultMessage),
             }
         }
         ProofVerifierMessage::ArtAggregation { .. } => {
             match callback(proof_verifier_sender, message).await? {
-                ProofVerifierResult::ArtAggregation { verdict } => verdict,
-                _ => return Err(VerificationError::InvalidResultMessage),
+                ProofVerifierResult::ArtAggregation { verdict } => Ok(verdict),
+                _ => Err(VerificationError::InvalidResultMessage),
             }
         }
         ProofVerifierMessage::SchnorrSignature { .. } => {
             match callback(proof_verifier_sender, message).await? {
-                ProofVerifierResult::SchnorrSignature { verdict } => verdict,
-                _ => return Err(VerificationError::InvalidResultMessage),
+                ProofVerifierResult::SchnorrSignature { verdict } => Ok(verdict),
+                _ => Err(VerificationError::InvalidResultMessage),
             }
         }
-    };
+    }
+}
+
+pub async fn verify(
+    message: ProofVerifierMessage,
+    proof_verifier_sender: &ProofVerifierSender,
+) -> Result<(), VerificationError> {
+    let verdict = verdict(message, proof_verifier_sender).await?;
 
     match verdict {
         true => Ok(()),

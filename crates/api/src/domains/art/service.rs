@@ -9,7 +9,7 @@ use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
 
 use types::errors::ARTServiceError;
-use types::utils::decode_art;
+use types::utils::{decode_art, ArtUpdate};
 
 use mongodb::ClientSession;
 use zrt_art::art::PublicArt;
@@ -110,7 +110,7 @@ impl ARTService {
 
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
-        let mut art_record = self.get_initial_art(&id, &mut *session).await?;
+        let mut art_record = self.get_initial_art_in_session(&id, &mut *session).await?;
         // Apply other operations from remaining epochs.
         for i in 1..=epoch {
             let epoch_changes = frame_storage
@@ -138,14 +138,82 @@ impl ARTService {
         Ok(art_record)
     }
 
-    pub async fn get_initial_art(
+    pub async fn get_base_art_and_changes(
+        &self,
+        id: Uuid,
+        epoch: u64,
+    ) -> Result<(ARTRecord<ARTGroup>, ArtUpdate), ARTServiceError> {
+        debug!(epoch = ?epoch, id = ?id, "Retrieve ART");
+
+        let frame_storage = MongoFramesStorage::new(&id).await?;
+
+        let mut art_record = self.get_initial_art(&id).await?;
+        // Apply other operations from remaining epochs.
+        for i in 1..epoch {
+            let epoch_changes = frame_storage
+                .get_epoch_changes(id, i)
+                .await?;
+
+            if epoch_changes.is_empty() {
+                return Err(ARTServiceError::NotFound);
+            } else {
+                art_record.art.commit()?;
+            }
+
+            epoch_changes.apply(&mut art_record.art)?;
+        }
+
+        let epoch_changes = if epoch == 0 {
+            ArtUpdate::BranchChange(vec![])
+        } else {
+            let epoch_changes = frame_storage
+                .get_epoch_changes(id, epoch)
+                .await?;
+
+            if epoch_changes.is_empty() {
+                return Err(ARTServiceError::NotFound);
+            } else {
+                art_record.art.commit()?;
+            }
+
+            epoch_changes
+        };
+
+
+        art_record.epoch = epoch;
+        debug!(
+            epoch = ?epoch,
+            id = ?id,
+            public_key = ?art_record.art.root().data().public_key(),
+            public_key_preview = ?art_record.art.preview().root().public_key(),
+            "Retrieved ART",
+        );
+
+        Ok((art_record, epoch_changes))
+    }
+
+    pub async fn get_initial_art_in_session(
         &self,
         id: &Uuid,
         session: &mut ClientSession,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         let record = arts_storage
-            .get_initial_art(*id, session)
+            .get_initial_art_in_session(*id, session)
+            .await
+            .inspect_err(|_| error!("Failed to retrieve initial art for group: {}", id))?
+            .ok_or(ARTServiceError::NotFound)?;
+
+        Ok(record)
+    }
+
+    pub async fn get_initial_art(
+        &self,
+        id: &Uuid,
+    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+        let arts_storage = MongoARTStorage::new().await?;
+        let record = arts_storage
+            .get_initial_art(*id)
             .await
             .inspect_err(|_| error!("Failed to retrieve initial art for group: {}", id))?
             .ok_or(ARTServiceError::NotFound)?;

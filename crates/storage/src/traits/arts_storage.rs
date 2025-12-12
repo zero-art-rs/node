@@ -39,10 +39,14 @@ pub trait ARTStorage: Send + Sync {
         session: &mut ClientSession,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
 
-    async fn get_initial_art(
+    async fn get_initial_art_in_session(
         &self,
         chat_id: Uuid,
         session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+    async fn get_initial_art(
+        &self,
+        id: Uuid,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
 
     async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<Option<u64>, mongodb::error::Error>;

@@ -37,9 +37,6 @@ pub struct GetMessageQuery {
 
     /// Sequence number of the art used in proof and the . Default is 0.
     pub epoch: Option<u64>,
-
-    /// Marks which root key was used for proof creation (true if upstream and false if base)
-    pub use_upstream_key: bool,
 }
 
 #[serde_as]

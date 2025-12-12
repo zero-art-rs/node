@@ -132,7 +132,7 @@ impl ARTStorage for MongoARTStorage {
     }
 
     /// Return the first art state in the chat
-    async fn get_initial_art(
+    async fn get_initial_art_in_session(
         &self,
         id: Uuid,
         session: &mut ClientSession,
@@ -140,6 +140,15 @@ impl ARTStorage for MongoARTStorage {
         self.initial_arts_collection
             .find_one(doc! {"chat_id": id})
             .session(session)
+            .await
+    }
+    
+    async fn get_initial_art(
+        &self,
+        id: Uuid,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
+        self.initial_arts_collection
+            .find_one(doc! {"chat_id": id})
             .await
     }
 
