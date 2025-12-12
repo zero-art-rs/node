@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tracing::{Level, debug, debug_span, info, info_span, span, trace, warn, error_span, error};
+use tracing::instrument::WithSubscriber;
 use tracing_subscriber::fmt::format;
 use types::art_schemas::ProofMode;
 use types::centrifugo_schemas::AuthRequest;
@@ -243,7 +244,7 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 
 /// Six users try to update the same epoch at the same time.
 // TODO: fix test: transactions are run for the whole send_frame handling.
-// #[tokio::test]
+#[tokio::test]
 async fn test_concurrent_art_update() -> eyre::Result<()> {
     init_tracing_for_test();
 
@@ -346,7 +347,7 @@ async fn test_remove_member() -> eyre::Result<()> {
 
         retrieval_context.art = PrivateArt::new(received_art, context.art.leaf_secret_key())?;
 
-        let sk_to_use = retrieval_context.art.root_secret_key();
+        let sk_to_use = retrieval_context.art.secrets().root();
         let received_art_check = retrieval_context
             .get_art(
                 (i + 1) as u64,
@@ -1198,6 +1199,116 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
 
     handle0.await.unwrap();
     handle1.await.unwrap();
+
+    info!("Run finished successfully");
+
+    Ok(())
+}
+
+
+/// Test Flow:
+/// - Create epoch with one user
+/// - Join with the second user
+/// - Cyclic key update with two users
+#[cfg(feature = "merge_changes")]
+#[tokio::test]
+async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
+    init_tracing_for_test();
+    let seed = 42;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    let (mut client0, frame0) = ClientWrapper::new_group(&mut rng);
+    let response = ClientWrapper::send_frame(frame0.clone()).await.unwrap();
+    assert!(
+        matches!(response.0.status(), StatusCode::CREATED),
+        "expected StatusCode::CREATED, while got {}",
+        response.0.status()
+    );
+    client0.poll().await.unwrap();
+
+    info!("add other user to the group...");
+    let members_secrets: Vec<Fr> = (0..10)
+        .into_iter()
+        .map(|_| Fr::rand(&mut rng))
+        .collect();
+
+    let mut contexts = Vec::with_capacity(members_secrets.len());
+
+    for secret_key in members_secrets.iter() {
+        client0.poll().await.unwrap();
+        let (frame, invite) = client0.add_member(*secret_key)?;
+        let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+        assert!(
+            matches!(response.0.status(), StatusCode::OK),
+            "expected StatusCode::OK, while got {}",
+            response.0.status()
+        );
+
+        let member = InviteClientWrapper::new(*secret_key, invite);
+        let mut member = member.apply_join_frame(frame.clone()).await.unwrap();
+        member.process_frame(frame.clone()).unwrap();
+
+        let frame = member
+            .join_group()
+            .expect("Failed to join group");
+
+        let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+        assert!(
+            matches!(response.0.status(), StatusCode::OK),
+            "expected StatusCode::OK, while got {}",
+            response.0.status()
+        );
+
+        contexts.push(member);
+    }
+
+    contexts.insert(0, client0);
+
+    async fn try_send(mut client_wrapper: ClientWrapper, client_name: String) {
+        info!("Pre poll messages...");
+        client_wrapper.poll().await.unwrap();
+
+        info!("Start sending messages...");
+        for i in 0..8 {
+            loop {
+                let frame = client_wrapper.create_frame(b"some data".to_vec()).unwrap();
+                let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+
+                if matches!(response.0.status(), StatusCode::OK) {
+                    info!("Frame send. poll and wait to send more");
+                    client_wrapper.poll().await.unwrap();
+                    thread::sleep(Duration::from_millis(20));
+                    break;
+                } else {
+                    warn!("Failed to send message, try to poll before retry");
+                    thread::sleep(Duration::from_millis(10));
+                    client_wrapper.poll().await.unwrap();
+                }
+            }
+        }
+    }
+
+    info!("Run concurrent updates...");
+
+    let mut handles = Vec::with_capacity(contexts.len());
+    for (i, client) in contexts.into_iter().enumerate() {
+        let client_name = format!("client{i}");
+        let logger = logger_for_test(&format!("test_flow_send_frame_in_bunch-{}.dev.log", client_name));
+
+        let span = info_span!(parent: None, "try_send", client_name);
+        let _enter = span.enter();
+
+        handles.push(tokio::spawn(async move {
+            try_send(client, client_name)
+                .with_subscriber(logger)
+                .await
+        }));
+    }
+
+    for handle in handles.into_iter().rev() {
+        handle.await.unwrap();
+    }
 
     info!("Run finished successfully");
 

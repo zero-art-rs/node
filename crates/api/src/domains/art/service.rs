@@ -99,6 +99,7 @@ impl ARTService {
         Ok(record)
     }
 
+    /// return s the art of provided `epoch`, but uncommited. 
     pub async fn get_art_by_epoch(
         &self,
         id: Uuid,
@@ -118,11 +119,11 @@ impl ARTService {
 
             if epoch_changes.is_empty() {
                 return Err(ARTServiceError::NotFound);
+            } else {
+                art_record.art.commit()?;
             }
 
             epoch_changes.apply(&mut art_record.art)?;
-
-            art_record.art.commit()?;
         }
 
         art_record.epoch = epoch;

@@ -889,6 +889,7 @@ impl UserTestModel {
                 signature,
                 nonce,
                 epoch: Some(self.epoch.saturating_sub(1)),
+                use_upstream_key: true,
             })
             .send()
             .await?;
@@ -946,11 +947,7 @@ impl UserTestModel {
 
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        let sk = secret_key_to_use.unwrap_or(self.art.leaf_secret_key());
-        // let sk = match secret_key_to_use {
-        //     Some(secret_key) => secret_key,
-        //     None => self.art.secret_key,
-        // };
+        let sk = secret_key_to_use.unwrap_or(self.art.secrets().leaf());
 
         let pk = CortadoAffine::generator().mul(sk).into_affine();
 
@@ -1149,6 +1146,7 @@ impl UserTestModel {
                 skip,
                 nonce,
                 epoch,
+                use_upstream_key: true,
             })
             .send()
             .await?;

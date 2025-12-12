@@ -2,7 +2,7 @@ use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
 use cortado::CortadoAffine;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, trace, warn};
 use types::ARTRecord;
 use uuid::Uuid;
 use zrt_art::art::PublicArt;

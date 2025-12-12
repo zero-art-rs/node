@@ -37,8 +37,9 @@ pub async fn get_art(
 ) -> Result<Json<GetARTResponse>, ApiError> {
     payload.validate()?;
 
-    let art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
-
+    let mut art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
+    art_record.art.commit()?;
+    
     Ok(Json(GetARTResponse::try_from(art_record)?))
 }
 

@@ -56,7 +56,7 @@ impl ClientWrapper {
         let owner =
             models::group_info::User::new(String::from("Owner"), identity_public_key, vec![]);
 
-        let (mut group_context, frame) = GroupContext::new(identity_secret_key, owner, group_info)
+        let (group_context, frame) = GroupContext::new(identity_secret_key, owner, group_info)
             .expect("Failed to create group context");
 
         let client_wrapper = Self {
@@ -77,6 +77,11 @@ impl ClientWrapper {
         // frame.encode(&mut buf).unwrap();
         let group_id = frame.frame_tbs().group_id().clone();
 
+        debug!(
+            frame = ?ArrayLessPrinter::from(&frame),
+            group_id = ?group_id,
+            "Sending frame",
+        );
         Ok((
             reqwest::Client::new()
                 .post(format!(
@@ -136,30 +141,24 @@ impl ClientWrapper {
     }
 
     pub async fn get_messages(&self, limit: i64, skip: i64) -> eyre::Result<SpFrames> {
-        // let sk = self.art.root_secret_key();
-        // let sk = self.group_context.sign_with_tk()
-        // let pk = CortadoAffine::generator().mul(sk).into_affine();
-
         let nonce = new_nonce();
 
         let mut msg = Vec::new();
         msg.extend_from_slice(self.group_context.group_info().id().as_bytes());
         msg.extend(&nonce);
-
         let msg = Sha3_256::digest(&msg).to_vec();
 
-        // debug!("tree:\n{}", self.group_context.tree().root());
-        // debug!(
-        //     "tree preview:\n{}",
-        //     self.group_context.tree().preview().root()
-        // );
-
-        let signature = self.group_context.sign_with_tk(&msg).unwrap();
-        let pk = self.group_context.tree().preview().root().public_key();
-        let verification_result = verify(&signature, &vec![pk], &msg);
-        assert!(verification_result.is_ok());
-
-        let get_messages_response = reqwest::Client::new()
+        let signature = self.group_context.sign_with_tk(&msg, true).unwrap();
+        let query = GetMessageQuery {
+            message_sequence_number: self.sequence_number.map(|sn| sn + 1),
+            limit,
+            skip: 0,
+            signature,
+            nonce: nonce.clone(),
+            epoch: Some(self.group_context.epoch()),
+            use_upstream_key: true,
+        };
+        let mut get_messages_response = reqwest::Client::new()
             .get(format!(
                 "{}/{}/{}/{}",
                 BACKEND_URL,
@@ -167,26 +166,41 @@ impl ClientWrapper {
                 self.group_context.group_info().id(),
                 "frames"
             ))
-            .query(&GetMessageQuery {
-                // message_sequence_number: Some(self.group_context. as i64),
-                message_sequence_number: self
-                    .sequence_number
-                    .map(|sequence_number| sequence_number + 1),
-                limit,
-                skip,
-                signature,
-                nonce,
-                epoch: Some(self.group_context.epoch()),
-            })
+            .query(&query)
             .send()
             .await?;
 
+        // retry
         if !matches!(get_messages_response.status(), StatusCode::ACCEPTED) {
-            return Err(eyre::eyre!(
-                "Invalid response status: status_received: {:?}, expected: {:?}",
-                get_messages_response.status(),
-                StatusCode::ACCEPTED
-            ));
+            let signature = self.group_context.sign_with_tk(&msg, false).unwrap();
+            let query = GetMessageQuery {
+                message_sequence_number: self.sequence_number.map(|sn| sn + 1),
+                limit,
+                skip: 0,
+                signature,
+                nonce,
+                epoch: Some(self.group_context.epoch()),
+                use_upstream_key: false,
+            };
+            get_messages_response = reqwest::Client::new()
+                .get(format!(
+                    "{}/{}/{}/{}",
+                    BACKEND_URL,
+                    "v1/group",
+                    self.group_context.group_info().id(),
+                    "frames"
+                ))
+                .query(&query)
+                .send()
+                .await?;
+
+            if !matches!(get_messages_response.status(), StatusCode::ACCEPTED) {
+                return Err(eyre::eyre!(
+                    "Invalid response status: status_received: {:?}, expected: {:?}",
+                    get_messages_response.status(),
+                    StatusCode::ACCEPTED
+                ));
+            }
         }
 
         Ok(SpFrames::decode(BytesMut::from(
@@ -211,10 +225,9 @@ impl ClientWrapper {
             .get_messages(DEFAULT_LIMIT, skip)
             .await
             .inspect_err(|err| error!(
-                err = ?err,
                 DEFAULT_LIMIT = ?DEFAULT_LIMIT,
                 skip = ?skip,
-                "Fail to get messages"
+                "Fail to get messages: {err}"
             ))?
             .sp_frames;
 
@@ -241,6 +254,7 @@ impl ClientWrapper {
                     self.update_sequence_number(sp_frame.seq_num as i64);
                 }
             }
+
             if sp_frames_len < DEFAULT_LIMIT as usize {
                 break;
             }
@@ -361,7 +375,8 @@ impl InviteClientWrapper {
     pub async fn apply_join_frame(self, frame: Frame) -> eyre::Result<ClientWrapper> {
         let epoch = self.group_context.epoch();
         let proof_mode = ProofMode::UseLeafKey.to_string();
-        let art = self.get_art(epoch, proof_mode).await?;
+        let mut art = self.get_art(epoch, proof_mode).await?;
+        art.commit()?;
 
         let member_group_context = self
             .group_context

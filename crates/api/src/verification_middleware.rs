@@ -23,7 +23,7 @@ use types::centrifugo_schemas::AuthRequest;
 use types::errors::{ARTServiceError, VerificationError};
 use types::messenger_schemas::GetMessageQuery;
 use types::protos::{Frame, FrameTbs, group_operation::Operation};
-use types::utils::ArtUpdate;
+use types::utils::{operation_name, ArtUpdate};
 use uuid::Uuid;
 use zrt_art::art::PublicArt;
 use zrt_art::art_node::{LeafIter, LeafStatus, TreeMethods};
@@ -66,7 +66,7 @@ pub async fn authenticate(
     for (chat_id, epoch) in auth_request.chat_ids.iter().zip(auth_request.epochs.iter()) {
         let art = state.art_service.get_art(*chat_id, Some(*epoch)).await?.art;
 
-        root_keys.push(art.root().data().public_key());
+        root_keys.push(art.preview().root().public_key());
     }
 
     let verification_req = VerificationRequest {
@@ -122,12 +122,18 @@ pub async fn list_messages(
     msg.extend(&payload.nonce);
     let msg = Sha3_256::digest(&msg).to_vec();
 
+    let public_key = if payload.use_upstream_key {
+        art.preview().root().public_key()
+    } else {
+        art.root().data().public_key()
+    };
+
     let verification_req = VerificationRequest {
         opcode: VerificationOpcode::GetMessages,
         data: VerifierData {
             proof: payload.signature.clone(),
             public_inputs: PublicInputs::Signature {
-                public_keys: vec![art.root().data().public_key()],
+                public_keys: vec![public_key],
             },
             associated_data: msg,
         },
@@ -175,8 +181,8 @@ pub async fn get_art(
     match ProofMode::try_from(payload.proof_mode.as_str())? {
         ProofMode::UseLeafKey => {
             let mut public_key_is_wrong = true;
-            for node in LeafIter::new(art.root()) {
-                if node.data().public_key().eq(&public_key) {
+            for node in art.preview().root().leaf_iter() {
+                if node.public_key().eq(&public_key) {
                     public_key_is_wrong = false;
                 }
             }
@@ -187,7 +193,7 @@ pub async fn get_art(
             }
         }
         ProofMode::UseRootKey => {
-            if art.root().data().public_key() != public_key {
+            if art.preview().root().public_key() != public_key {
                 error!("Provided public key doesn't match with root key.");
                 return Err(VerificationError::InvalidInput);
             }
@@ -376,6 +382,7 @@ pub async fn verify_frame_applicability_by_epoch(
     if !applicable_epochs.contains(&proposed_epoch) {
         error!(
             group_id = ?id,
+            operation_name = ?operation.map(|operation| operation_name(operation)),
             "Invalid epoch provided ({}), while the current one is {}",
             proposed_epoch, current_epoch
         );
@@ -428,11 +435,12 @@ pub async fn get_opcode_and_input_for_aggregation(
     let aggregated_change: AggregatedChange<CortadoAffine> =
         postcard::from_bytes(aggregation_bytes)?;
 
-    let art = state
+    let mut art = state
         .art_service
         .get_art(id, Some(current_epoch))
         .await?
         .art;
+    art.commit()?;
 
     let frame_storage = MongoFramesStorage::new(&id).await?;
     let epoch_changes = frame_storage
@@ -466,11 +474,12 @@ pub async fn get_opcode_and_input_for_art_update(
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
-    let art = state
+    let mut art = state
         .art_service
         .get_art(id, Some(current_epoch))
         .await?
         .art;
+    art.commit()?;
 
     // Verify change applicability in correspondence to other epoch changes.
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
@@ -616,11 +625,12 @@ pub async fn get_opcode_and_input_for_drop_group(
     state: &Container,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state
+    let mut art = state
         .art_service
         .get_art(id, None)
         .await?
         .art;
+    art.commit();
 
     let mut left_most_leaf = art.root();
     let mut path = Vec::new();

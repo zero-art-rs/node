@@ -14,6 +14,18 @@ pub enum ArtUpdate {
     AggregatedChange(AggregatedChange<CortadoAffine>),
 }
 
+pub fn operation_name(operation: &Operation) -> String {
+    match operation {
+        Operation::Init(_) => "Init".to_string(),
+        Operation::AddMember(_) => "AddMember".to_string(),
+        Operation::RemoveMember(_) => "RemoveMember".to_string(),
+        Operation::KeyUpdate(_) => "KeyUpdate".to_string(),
+        Operation::LeaveGroup(_) => "LeaveGroup".to_string(),
+        Operation::DropGroup(_) => "DropGroup".to_string(),
+        Operation::Aggregated(_) => "Aggregated".to_string(),
+    }
+}
+
 impl ArtUpdate {
     pub fn is_empty(&self) -> bool {
         match self {
@@ -30,7 +42,6 @@ impl ApplicableChange<PublicArt<CortadoAffine>, ()> for ArtUpdate {
                 for change in changes {
                     change.apply(art)?;
                 }
-                art.commit()?;
             }
             Self::AggregatedChange(change) => {
                 change.apply(art)?;
