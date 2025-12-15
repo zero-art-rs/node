@@ -99,6 +99,18 @@ impl ARTService {
         Ok(record)
     }
 
+    pub async fn get_latest_art_in_session_with_lock(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> Result<Option<ARTRecord<ARTGroup>>, ARTServiceError> {
+        let arts_storage = MongoARTStorage::new().await?;
+        let record = arts_storage
+            .get_art_in_session_in_lock(id, &mut *session).await?;
+
+        Ok(record)
+    }
+
     /// return s the art of provided `epoch`, but uncommited. 
     pub async fn get_art_by_epoch(
         &self,

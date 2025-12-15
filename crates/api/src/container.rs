@@ -168,7 +168,7 @@ impl Container {
                     .await?
             }
             None => {
-                let root_key = verification_middleware::get_input_for_send_message_in_session(
+                let root_key = verification_middleware::get_input_for_send_message_with_lock(
                     self,
                     id,
                     &mut session,

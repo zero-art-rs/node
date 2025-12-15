@@ -38,6 +38,11 @@ pub trait ARTStorage: Send + Sync {
         id: Uuid,
         session: &mut ClientSession,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+    async fn get_art_in_session_in_lock(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
 
     async fn get_initial_art_in_session(
         &self,

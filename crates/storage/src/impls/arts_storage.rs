@@ -131,6 +131,20 @@ impl ARTStorage for MongoARTStorage {
             .await
     }
 
+    async fn get_art_in_session_in_lock(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
+        self.arts_collection
+            .find_one_and_update(
+                doc! {"chat_id": id},
+                doc! { "$set": { "chat_id": id }},
+            )
+            .session(session)
+            .await
+    }
+
     /// Return the first art state in the chat
     async fn get_initial_art_in_session(
         &self,

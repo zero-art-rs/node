@@ -716,15 +716,16 @@ pub async fn get_opcode_and_input_for_send_message(
     ))
 }
 
-pub async fn get_input_for_send_message_in_session(
+pub async fn get_input_for_send_message_with_lock(
     state: &Container,
     id: Uuid,
     session: &mut ClientSession,
 ) -> Result<CortadoAffine, VerificationError> {
     let art = state
         .art_service
-        .get_art_in_session(id, None, session)
+        .get_latest_art_in_session_with_lock(id, &mut *session)
         .await?
+        .ok_or(VerificationError::NotFound)?
         .art;
 
     Ok(art.preview().root().public_key())
