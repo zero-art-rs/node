@@ -11,7 +11,10 @@ use proof_verifier::ProofVerifierSender;
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use mongodb::atlas_search::autocomplete;
+use sha3::{Digest, Sha3_256};
 use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
 use tokio::sync::{Mutex, RwLock};
 use tracing::field::debug;
@@ -22,6 +25,8 @@ use types::protos::group_operation::Operation;
 use types::utils::{decode_aggregated_change, decode_branch_change};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
+use zrt_crypto::schnorr;
+use proof_verifier::verifier_engine::{VerificationRequest, VerifierData};
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
@@ -93,20 +98,14 @@ impl Container {
     /// Handles send_frame operation.
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
+        let frame_id = BASE64_STANDARD.encode(&Sha3_256::digest(&body).to_vec());
+
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
+        let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
+        verification_middleware::send_frame(self, &tbs_frame, frame.proof.clone(), id, &frame_id)
+            .await?;
 
         let messages_collection = MongoFramesStorage::new(&id).await?;
-        let mut session = messages_collection
-            .messages_collection
-            .client()
-            .start_session()
-            .await?;
-        session.start_transaction().await?;
-
-        verification_middleware::send_frame(self, &tbs_frame, frame.proof, id)
-            .await?;
-
-        session.commit_transaction().await?;
         let mut session = messages_collection
             .messages_collection
             .client()
@@ -139,6 +138,7 @@ impl Container {
                 operation.as_ref(),
                 tbs_frame.epoch,
                 current_epoch,
+                &frame_id,
             ).await?;
         }
 
@@ -155,7 +155,7 @@ impl Container {
             | Some(Operation::RemoveMember(change))
             | Some(Operation::KeyUpdate(change))
             | Some(Operation::LeaveGroup(change)) => {
-                self.update_art(id, &change, tbs_frame.epoch, &mut session)
+                self.update_art(id, &change, tbs_frame.epoch, &frame_id, &mut session)
                     .await?
             }
             Some(Operation::DropGroup(_)) => {
@@ -167,7 +167,18 @@ impl Container {
                 self.update_art_with_aggregation(id, change, tbs_frame.epoch, &mut session)
                     .await?
             }
-            None => StatusCode::OK,
+            None => {
+                let root_key = verification_middleware::get_input_for_send_message_in_session(
+                    self,
+                    id,
+                    &mut session,
+                ).await?;
+
+                schnorr::verify(&frame.proof, &vec![root_key], &*associated_data)
+                    .map_err(|_| VerificationError::InvalidProof)?;
+
+                StatusCode::OK
+            },
         };
 
         let sequence_number = if let Some(Operation::Init(_)) = &operation {
@@ -184,12 +195,13 @@ impl Container {
                 sequence_number,
                 false,
                 operation,
+                &frame_id,
                 &mut session,
             )
             .await?;
 
         session.commit_transaction().await.inspect_err(|err| {
-            warn!("Failed to commit transaction: {}", err);
+            warn!(frame_id =? frame_id, "Failed to commit transaction: {}", err);
         })?;
 
         Ok(response)
@@ -200,12 +212,13 @@ impl Container {
         id: Uuid,
         change_bytes: &[u8],
         new_epoch: u64,
+        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<StatusCode, ServiceError> {
         let change = decode_branch_change(change_bytes).map_err(ARTServiceError::from)?;
 
         self.art_service
-            .update_art(id, &change, new_epoch, session)
+            .update_art(id, &change, new_epoch, frame_id, session)
             .await?;
 
         match change.change_type {

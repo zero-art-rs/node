@@ -5636,7 +5636,7 @@ dependencies = [
 [[package]]
 name = "zrt-client-sdk"
 version = "0.1.0"
-source = "git+https://github.com/zero-art-rs/client-sdk.git?branch=feature%2Fmerge-core#b31fd52366506d85528d9ecb4d906abf8dfff423"
+source = "git+https://github.com/zero-art-rs/client-sdk.git?branch=feature%2Fmerge-core#be5e478a92036753b3a99219d2010d43bec2c614"
 dependencies = [
  "aes-gcm",
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",

@@ -113,6 +113,10 @@ impl ClientWrapper {
         Ok((frame, invite))
     }
 
+    pub fn change_group(&mut self, name: Option<String>, picture: Option<Vec<u8>>) -> eyre::Result<Frame> {
+        Ok(self.group_context.change_group(name, picture)?)
+    }
+
     pub fn create_frame(&mut self, content: Vec<u8>) -> eyre::Result<Frame> {
         debug!(
             epoch = ?self.group_context.epoch(),

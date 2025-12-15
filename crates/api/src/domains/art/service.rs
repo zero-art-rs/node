@@ -106,7 +106,6 @@ impl ARTService {
         epoch: u64,
         session: &mut ClientSession,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-        debug!(epoch = ?epoch, id = ?id, "Retrieve ART");
 
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
@@ -143,7 +142,6 @@ impl ARTService {
         id: Uuid,
         epoch: u64,
     ) -> Result<(ARTRecord<ARTGroup>, ArtUpdate), ARTServiceError> {
-        debug!(epoch = ?epoch, id = ?id, "Retrieve ART");
 
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
@@ -302,6 +300,7 @@ impl ARTService {
         id: Uuid,
         change: &BranchChange<CortadoAffine>,
         new_epoch: u64,
+        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
@@ -314,7 +313,7 @@ impl ARTService {
 
         if new_epoch == current_epoch {
             change.apply(&mut art_record.art)?;
-            debug!("Merge was applied");
+            debug!(frame_id = ?frame_id, "Merge was applied");
         } else if new_epoch == current_epoch + 1 {
             art_record.art.commit()?;
             art_record.epoch += 1;
@@ -322,6 +321,7 @@ impl ARTService {
             change.apply(&mut art_record.art)?;
         } else {
             warn!(
+                frame_id = ?frame_id,
                 current_epoch = ?current_epoch,
                 proposed_epoch = ?new_epoch,
                 "Fail to update ART, as the epoch is invalid"

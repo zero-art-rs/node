@@ -19,6 +19,7 @@ pub(crate) mod utils;
 /// Backend url for testing.
 #[cfg(test)]
 const BACKEND_URL: &str = "http://localhost:8080";
+// const BACKEND_URL: &str = "https://veil.distributedlab.com";
 /// Centrifugo url for testing.
 #[cfg(test)]
 const CENTRIFUGO_URL: &str = "http://localhost:8000";

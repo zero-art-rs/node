@@ -38,14 +38,13 @@ impl MessengerService {
         sequence_number: u64,
         outbox_only: bool,
         operation: Option<Operation>,
+        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<(), MessageServiceError> {
-        debug!("Store and send new message");
         MongoFramesStorage::new(chat_id)
             .await?
-            .store_message(message, epoch, sequence_number, outbox_only, operation, session)
+            .store_message(message, epoch, sequence_number, outbox_only, operation, frame_id, session)
             .await?;
-        debug!("Message sent");
         Ok(())
     }
 

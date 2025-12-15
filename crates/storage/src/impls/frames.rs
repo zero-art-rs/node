@@ -11,7 +11,7 @@ use mongodb::{
 };
 use prost::Message;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
 use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
@@ -125,6 +125,7 @@ impl FrameStorage for MongoFramesStorage {
         sequence_number: u64,
         outbox_only: bool,
         operation: Option<Operation>,
+        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
@@ -150,7 +151,8 @@ impl FrameStorage for MongoFramesStorage {
             epoch.clone(),
         );
 
-        trace!(
+        info!(
+            frame_id = ?frame_id,
             content = ?outbox_message.content.get(0..8).map(|message| format!("{:?}...", message)),
             created_at = ?outbox_message.created_at,
             sequence_number = ?outbox_message.sequence_number,

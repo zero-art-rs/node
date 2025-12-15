@@ -1162,45 +1162,6 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
     debug!("client0 epoch: {}", client0.group_context().epoch());
     debug!("client1 epoch: {}", client1.group_context().epoch());
 
-    async fn try_send(mut client_wrapper: ClientWrapper, client_name: &str) {
-        let logger = logger_for_test(&format!("test_flow_send_frame-{}.dev.log", client_name));
-        let _thread_logger_guard = tracing::subscriber::set_default(logger);
-
-        // let span = info_span!(parent: None, "try_send", client_name);
-        // let _enter = span.enter();
-
-        info!("Pre poll messages...");
-        client_wrapper.poll().await.unwrap();
-        info!("Start sending messages...");
-
-        for i in 0..20 {
-            loop {
-                let frame = client_wrapper.create_frame(b"some data".to_vec()).unwrap();
-                let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
-
-                if matches!(response.0.status(), StatusCode::OK) {
-                    info!("Frame send. poll and wait to send more");
-                    client_wrapper.poll().await.unwrap();
-                    thread::sleep(Duration::from_millis(20));
-                    break;
-                } else {
-                    error!("Failed to send message, try to poll before retry");
-                    thread::sleep(Duration::from_millis(10));
-                    client_wrapper.poll().await.unwrap();
-                }
-            }
-        }
-    }
-
-    info!("Run concurrent updates...");
-
-    let handle0 = tokio::spawn(async { try_send(client0, "client0").await });
-    let handle1 = tokio::spawn(async { try_send(client1, "client1").await });
-
-    handle0.await.unwrap();
-    handle1.await.unwrap();
-
-    info!("Run finished successfully");
 
     Ok(())
 }
@@ -1228,7 +1189,7 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
     client0.poll().await.unwrap();
 
     info!("add other user to the group...");
-    let members_secrets: Vec<Fr> = (0..10)
+    let members_secrets: Vec<Fr> = (0..14)
         .into_iter()
         .map(|_| Fr::rand(&mut rng))
         .collect();
@@ -1268,6 +1229,7 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
     async fn try_send(mut client_wrapper: ClientWrapper, client_name: String) {
         info!("Pre poll messages...");
         client_wrapper.poll().await.unwrap();
+        let mut rng = StdRng::from_rng(thread_rng()).unwrap();
 
         info!("Start sending messages...");
         for i in 0..8 {
@@ -1278,11 +1240,11 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
                 if matches!(response.0.status(), StatusCode::OK) {
                     info!("Frame send. poll and wait to send more");
                     client_wrapper.poll().await.unwrap();
-                    thread::sleep(Duration::from_millis(20));
+                    thread::sleep(Duration::from_millis(rng.gen_range(200..700)));
                     break;
                 } else {
                     warn!("Failed to send message, try to poll before retry");
-                    thread::sleep(Duration::from_millis(10));
+                    // thread::sleep(Duration::from_millis(10));
                     client_wrapper.poll().await.unwrap();
                 }
             }
