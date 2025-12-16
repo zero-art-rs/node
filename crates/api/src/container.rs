@@ -9,7 +9,7 @@ use mongodb::ClientSession;
 use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
 use prost::Message;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
@@ -18,7 +18,7 @@ use sha3::{Digest, Sha3_256};
 use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
 use tokio::sync::{Mutex, RwLock};
 use tracing::field::debug;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, info_span, span, warn};
 use types::errors::{ARTServiceError, ServiceError, VerificationError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
@@ -27,23 +27,25 @@ use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
 use zrt_crypto::schnorr;
 use proof_verifier::verifier_engine::{VerificationRequest, VerifierData};
+use crate::queue::Sequencer;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
+
+type GroupId = Uuid;
 
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
     pub centrifugo_service: Arc<CentrifugoService>,
     pub art_service: Arc<ARTService>,
+    pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
 
     pub proof_verifier_sender: ProofVerifierSender,
 
-    pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
-
-    art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
     // flag, which indicates weather the merges are available
     pub(crate) merge_changes: bool,
+    art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
 
-    pub update_mutex: Arc<Mutex<bool>>,
+    pub sequencers: HashMap<GroupId, Sequencer>,
 }
 
 impl Container {
@@ -59,10 +61,10 @@ impl Container {
             centrifugo_service,
             art_service,
             proof_verifier_sender,
-            challenges: Arc::new(RwLock::new(HashSet::new())),
-            art_is_updating: Arc::new(RwLock::new(HashSet::new())),
+            challenges: Default::default(),
+            art_is_updating: Default::default(),
             merge_changes,
-            update_mutex: Arc::new(Default::default()),
+            sequencers: Default::default(),
         }
     }
 
@@ -98,11 +100,10 @@ impl Container {
     /// Handles send_frame operation.
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
-        let frame_id = BASE64_STANDARD.encode(&Sha3_256::digest(&body).to_vec());
 
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
         let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
-        verification_middleware::send_frame(self, &tbs_frame, frame.proof.clone(), id, &frame_id)
+        verification_middleware::send_frame(self, &tbs_frame, frame.proof.clone(), id)
             .await?;
 
         let messages_collection = MongoFramesStorage::new(&id).await?;
@@ -138,7 +139,6 @@ impl Container {
                 operation.as_ref(),
                 tbs_frame.epoch,
                 current_epoch,
-                &frame_id,
             ).await?;
         }
 
@@ -155,7 +155,7 @@ impl Container {
             | Some(Operation::RemoveMember(change))
             | Some(Operation::KeyUpdate(change))
             | Some(Operation::LeaveGroup(change)) => {
-                self.update_art(id, &change, tbs_frame.epoch, &frame_id, &mut session)
+                self.update_art(id, &change, tbs_frame.epoch, &mut session)
                     .await?
             }
             Some(Operation::DropGroup(_)) => {
@@ -195,13 +195,12 @@ impl Container {
                 sequence_number,
                 false,
                 operation,
-                &frame_id,
                 &mut session,
             )
             .await?;
 
         session.commit_transaction().await.inspect_err(|err| {
-            warn!(frame_id =? frame_id, "Failed to commit transaction: {}", err);
+            warn!("Failed to commit transaction: {}", err);
         })?;
 
         Ok(response)
@@ -212,13 +211,12 @@ impl Container {
         id: Uuid,
         change_bytes: &[u8],
         new_epoch: u64,
-        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<StatusCode, ServiceError> {
         let change = decode_branch_change(change_bytes).map_err(ARTServiceError::from)?;
 
         self.art_service
-            .update_art(id, &change, new_epoch, frame_id, session)
+            .update_art(id, &change, new_epoch, session)
             .await?;
 
         match change.change_type {

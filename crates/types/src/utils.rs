@@ -2,6 +2,7 @@ use crate::protos::Frame;
 use crate::protos::group_operation::Operation;
 use ark_std::iterable::Iterable;
 use cortado::CortadoAffine;
+use sha3::digest::typenum::op;
 use zrt_art::art::PublicArt;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
@@ -66,6 +67,18 @@ pub fn extract_operation(frame: Frame) -> Result<Option<Operation>, ArtError> {
     }
 
     Ok(None)
+}
+
+pub fn operation_name(operation: &Operation) -> String {
+    match operation {
+        Operation::Init(_) => "Init".to_string(),
+        Operation::AddMember(_) => "AddMember".to_string(),
+        Operation::RemoveMember(_) => "RemoveMember".to_string(),
+        Operation::KeyUpdate(_) => "KeyUpdate".to_string(),
+        Operation::LeaveGroup(_) => "LeaveGroup".to_string(),
+        Operation::DropGroup(_) => "DropGroup".to_string(),
+        Operation::Aggregated(_) => "Aggregated".to_string(),
+    }
 }
 
 pub fn extract_branch_changes(

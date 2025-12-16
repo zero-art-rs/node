@@ -312,7 +312,6 @@ impl ARTService {
         id: Uuid,
         change: &BranchChange<CortadoAffine>,
         new_epoch: u64,
-        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
@@ -323,23 +322,35 @@ impl ARTService {
             .ok_or(ARTServiceError::NotFound)?;
         let current_epoch = art_record.epoch;
 
-        if new_epoch == current_epoch {
-            change.apply(&mut art_record.art)?;
-            debug!(frame_id = ?frame_id, "Merge was applied");
+        let perform_merge = if new_epoch == current_epoch {
+            true
         } else if new_epoch == current_epoch + 1 {
-            art_record.art.commit()?;
-            art_record.epoch += 1;
-
-            change.apply(&mut art_record.art)?;
+            false
         } else {
             warn!(
-                frame_id = ?frame_id,
                 current_epoch = ?current_epoch,
                 proposed_epoch = ?new_epoch,
                 "Fail to update ART, as the epoch is invalid"
             );
             return Err(ARTServiceError::InvalidInput.into());
+        };
+
+        if perform_merge {
+            change.apply(&mut art_record.art)?;
+        } else  {
+            art_record.art.commit()?;
+            art_record.epoch += 1;
+
+            change.apply(&mut art_record.art)?;
         }
+
+        debug!(
+            epoch = ?art_record.epoch,
+            perform_merge = ?perform_merge,
+            root_key =? art_record.art.root().data().public_key(),
+            root_key_preview =? art_record.art.preview().root().public_key(),
+            "Store new art"
+        );
 
         arts_storage
             .replace_art(&mut *session, id, art_record)

@@ -1,7 +1,7 @@
 use crate::container::Container;
 use axum::{Json, extract::State};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, instrument};
 use types::centrifugo_schemas::{AuthRequest, AuthResponse};
 use types::errors::ApiError;
 
@@ -18,6 +18,7 @@ use types::errors::ApiError;
         (status = 500, description = "Internal server error"),
     )
 )]
+#[instrument(skip(container, request), err)]
 pub async fn authenticate(
     State(container): State<Arc<Container>>,
     Json(request): Json<AuthRequest>,

@@ -1,17 +1,17 @@
 use eyre::eyre;
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::{
-    EnvFilter, Layer,
-    fmt::format::{DefaultVisitor, Writer},
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-};
+use tracing_subscriber::{EnvFilter, Layer, fmt::format::{DefaultVisitor, Writer}, layer::SubscriberExt, util::SubscriberInitExt, Registry};
 
 pub fn init(level: Level) -> eyre::Result<()> {
     let stdout_filter = new_env_filter(level, "RUST_LOG")?;
 
-    tracing_subscriber::registry()
-        .with(ZkMessengerTracer.with_filter(stdout_filter))
+    // tracing_subscriber::registry()
+    //     .with(ZkMessengerTracer.with_filter(stdout_filter))
+    //     .try_init()?;
+
+    Registry::default()
+        .with(EnvFilter::from_default_env())
+        .with(tracing_subscriber::fmt::layer().compact().with_target(false).with_ansi(true))
         .try_init()?;
 
     Ok(())

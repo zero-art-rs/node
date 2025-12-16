@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace};
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
-use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
+use types::utils::{decode_aggregated_change, decode_branch_change, operation_name, ArtUpdate};
 use types::{utils, FrameRecord};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
@@ -125,7 +125,6 @@ impl FrameStorage for MongoFramesStorage {
         sequence_number: u64,
         outbox_only: bool,
         operation: Option<Operation>,
-        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
@@ -152,13 +151,12 @@ impl FrameStorage for MongoFramesStorage {
         );
 
         info!(
-            frame_id = ?frame_id,
             content = ?outbox_message.content.get(0..8).map(|message| format!("{:?}...", message)),
             created_at = ?outbox_message.created_at,
             sequence_number = ?outbox_message.sequence_number,
             chat_id = ?outbox_message.chat_id,
             epoch = ?outbox_message.epoch,
-            operation = ?operation,
+            operation = ?operation.map(|operation| operation_name(&operation)),
             "Store outbox_message"
         );
 

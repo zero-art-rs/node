@@ -25,6 +25,16 @@ pub enum ProofVerifierMessage {
     },
 }
 
+impl ProofVerifierMessage {
+    pub fn name(&self) -> String {
+        match self {
+            ProofVerifierMessage::ArtUpdate { .. } => "ArtUpdate".to_string(),
+            ProofVerifierMessage::ArtAggregation { .. } => "ArtAggregation".to_string(),
+            ProofVerifierMessage::SchnorrSignature { .. } => "SchnorrSignature".to_string(),
+        }
+    }
+}
+
 impl Debug for ProofVerifierMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -36,7 +46,6 @@ impl Debug for ProofVerifierMessage {
             } => f
                 .debug_struct("ArtUpdate")
                 .field("verification_branch", &verification_branch)
-                .field("associated_data", &associated_data)
                 .field("eligibility_requirement", &eligibility_requirement)
                 .finish(),
             ProofVerifierMessage::ArtAggregation {
@@ -47,7 +56,6 @@ impl Debug for ProofVerifierMessage {
             } => f
                 .debug_struct("ArtAggregation")
                 .field("verification_tree", &verification_tree)
-                .field("associated_data", &associated_data)
                 .field("eligibility_requirement", &eligibility_requirement)
                 .finish(),
             ProofVerifierMessage::SchnorrSignature {
@@ -56,9 +64,7 @@ impl Debug for ProofVerifierMessage {
                 msg,
             } => f
                 .debug_struct("SchnorrSignature")
-                .field("signature", &signature)
                 .field("public_keys", &public_keys)
-                .field("msg", &msg)
                 .finish(),
         }
     }

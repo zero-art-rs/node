@@ -1,6 +1,6 @@
 use crate::router::build_router;
 use axum::{
-    extract::{MatchedPath, Request},
+    extract::{Request},
     response::Response,
 };
 use std::{sync::Arc, time::Duration};
@@ -41,15 +41,10 @@ pub async fn run_server(
             .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
-                    let matched_path = request
-                        .extensions()
-                        .get::<MatchedPath>()
-                        .map(MatchedPath::as_str);
-
                     info_span!(
                         "http_request",
                         method = ?request.method(),
-                        matched_path,
+                        request_id = %uuid::Uuid::new_v4(),
                     )
                 })
                 .on_request(|request: &Request<_>, span: &Span| {

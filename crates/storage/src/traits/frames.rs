@@ -25,7 +25,6 @@ pub trait FrameStorage: Send + Sync + Sized {
         sequence_number: u64,
         outbox_only: bool,
         operation: Option<Operation>,
-        frame_id: &str,
         session: &mut ClientSession,
     ) -> Result<(), StorageError>;
 

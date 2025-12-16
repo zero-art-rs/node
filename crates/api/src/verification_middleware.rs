@@ -266,9 +266,8 @@ pub async fn send_frame(
     frame_tbs: &FrameTbs,
     proof: Vec<u8>,
     id: Uuid,
-    frame_id: &str,
 ) -> Result<(), VerificationError> {
-    debug!(frame_id =? frame_id, "Incoming send frame verification request",);
+    debug!("Incoming send frame verification request",);
 
     let current_epoch = MongoARTStorage::new()
         .await?
@@ -279,16 +278,16 @@ pub async fn send_frame(
     state.start_updating(id).await?;
 
     let verification_req =
-        match inner_send_frame(state, current_epoch, id, frame_tbs, proof, frame_id).await {
+        match inner_send_frame(state, current_epoch, id, frame_tbs, proof).await {
             Ok(verification_req) => verification_req,
             Err(err) => {
-                warn!(frame_id =? frame_id, "Verification Failed: {err}");
+                warn!("Verification Failed: {err}");
                 state.stop_updating(id).await;
                 return Err(err);
             }
         };
 
-    let response = verify_and_send(verification_req, state, frame_id).await;
+    let response = verify_and_send(verification_req, state).await;
 
     state.stop_updating(id).await;
 
@@ -302,7 +301,6 @@ async fn inner_send_frame(
     id: Uuid,
     frame_tbs: &FrameTbs,
     proof: Vec<u8>,
-    frame_id: &str,
 ) -> Result<VerificationRequest, VerificationError> {
     if let Ok(art) = state
         .art_service
@@ -310,7 +308,6 @@ async fn inner_send_frame(
         .await
     {
         info!(
-            frame_id =? frame_id,
             current_epoch = ?current_epoch,
             record_epoch = ?art.epoch,
             public_key = ?art.art.root().data().public_key(),
@@ -319,12 +316,11 @@ async fn inner_send_frame(
             "Verify send_frame request:",
         );
     } else {
-        debug!(frame_id =? frame_id, "Verify send_frame request: No art found",);
+        debug!("Verify send_frame request: No art found",);
     }
 
     if frame_tbs.group_id != id.to_string() {
         error!(
-            frame_id =? frame_id,
             "Group ID mismatch: tbs_frame.group_id is {}, while id in path is {}",
             frame_tbs.group_id, id
         );
@@ -338,11 +334,10 @@ async fn inner_send_frame(
         .as_ref()
         .and_then(|op| op.operation.as_ref());
 
-    verify_frame_applicability_by_epoch(state, id, operation, frame_tbs.epoch, current_epoch, frame_id)
+    verify_frame_applicability_by_epoch(state, id, operation, frame_tbs.epoch, current_epoch)
         .await
         .inspect_err(|err| {
             error!(
-                frame_id =? frame_id,
                 error = ?err,
                 group_id = ?id,
                 provided_epoch = ?frame_tbs.epoch,
@@ -362,7 +357,6 @@ async fn inner_send_frame(
                 id,
                 branch_changes_bytes,
                 frame_tbs.epoch - 1,
-                frame_id
             )
             .await?
         }
@@ -396,7 +390,6 @@ pub async fn verify_frame_applicability_by_epoch(
     operation: Option<&Operation>,
     proposed_epoch: u64,
     current_epoch: u64,
-    frame_id: &str,
 ) -> Result<(), VerificationError> {
     let applicable_epochs = match &operation {
         Some(Operation::AddMember(_)) | Some(Operation::Aggregated(_)) => {
@@ -415,7 +408,6 @@ pub async fn verify_frame_applicability_by_epoch(
 
     if !applicable_epochs.contains(&proposed_epoch) {
         error!(
-            frame_id =? frame_id,
             group_id = ?id,
             "Invalid epoch provided ({}), while the current one is {}",
             proposed_epoch, current_epoch
@@ -433,25 +425,17 @@ pub async fn verify_frame_applicability_by_epoch(
 pub async fn verify_and_send(
     verification_req: VerificationRequest,
     state: &Container,
-    frame_id: &str,
 ) -> Result<(), VerificationError> {
     let verification_message = verification_req.to_message().inspect_err(|err| {
         error!(
-            frame_id =? frame_id,
             "Failed to convert VerificationRequest to ProofVerifierMessage: {}",
             err
         )
     })?;
 
-    info!(
-        frame_id =? frame_id,
-        verification_message = ?verification_message,
-        "verify_and_send"
-    );
-
     verify(verification_message, &state.proof_verifier_sender).await?;
 
-    info!(frame_id =? frame_id, "Verification successful.");
+    info!("Verification successful.");
 
     Ok(())
 }
@@ -513,7 +497,6 @@ pub async fn get_opcode_and_input_for_art_update(
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
     current_epoch: u64,
-    frame_id: &str,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
@@ -535,7 +518,6 @@ pub async fn get_opcode_and_input_for_art_update(
             .await
             .inspect_err(|err| {
                 error!(
-                    frame_id =? frame_id,
                     "Failed to get changes for epoch {}: {}",
                     current_epoch + 1,
                     err
@@ -544,7 +526,6 @@ pub async fn get_opcode_and_input_for_art_update(
 
         let ArtUpdate::BranchChange(epoch_changes) = epoch_changes else {
             error!(
-                frame_id =? frame_id,
                 "Epoch {} already contain aggregated operation, so no other changes can be applied.",
                 current_epoch + 1,
             );
@@ -559,10 +540,10 @@ pub async fn get_opcode_and_input_for_art_update(
                     || matches!(change.change_type, BranchChangeType::RemoveMember)
                 {
                     if branch_changes.change_type == BranchChangeType::UpdateKey {
-                        error!(frame_id =? frame_id, "Can't update key, as the user will be removed after merge.");
+                        error!("Can't update key, as the user will be removed after merge.");
                         return Err(VerificationError::UserAlreadyRemoved);
                     } else {
-                        error!(frame_id =? frame_id, "Can't remove the user for a second time.");
+                        error!("Can't remove the user for a second time.");
                         return Err(VerificationError::MergeUserRemove);
                     }
                 }
@@ -580,13 +561,12 @@ pub async fn get_opcode_and_input_for_art_update(
         BranchChangeType::UpdateKey => {
             let leaf = art.node(&branch_changes.node_index)?;
             if !leaf.is_leaf() {
-                error!(frame_id =? frame_id, "Fail to update art, as the node isn't leaf");
+                error!("Fail to update art, as the node isn't leaf");
                 return Err(VerificationError::InvalidInput);
             }
 
             if !matches!(leaf.data().status(), Some(LeafStatus::Active)) {
                 error!(
-                    frame_id =? frame_id,
                     "Fail to perform key update as the target leaf status is: {:?}.",
                     leaf.data().status()
                 );
@@ -624,7 +604,7 @@ pub async fn get_opcode_and_input_for_art_update(
             let target_leaf = art.node(&branch_changes.node_index)?;
 
             if !target_leaf.is_leaf() {
-                error!(frame_id =? frame_id, "Target leaf for removal is not a leaf.");
+                error!("Target leaf for removal is not a leaf.");
                 return Err(VerificationError::InvalidInput);
             }
 
@@ -638,7 +618,6 @@ pub async fn get_opcode_and_input_for_art_update(
             };
 
             debug!(
-                frame_id =? frame_id,
                 "Using the next eligibility for remove member verification: {:?}",
                 eligibility
             );

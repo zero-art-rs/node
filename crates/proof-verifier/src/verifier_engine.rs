@@ -123,3 +123,19 @@ impl VerificationRequest {
         }
     }
 }
+
+pub struct PostVerificationData {
+    epoch: u64,
+    base_tk: CortadoAffine,
+    upstream_tk: CortadoAffine,
+}
+
+impl PostVerificationData {
+    pub fn new(
+        epoch: u64,
+        base_tk: CortadoAffine,
+        upstream_tk: CortadoAffine,
+    ) -> Self {
+        Self { epoch, base_tk, upstream_tk }
+    }
+}

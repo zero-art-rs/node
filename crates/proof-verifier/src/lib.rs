@@ -53,7 +53,7 @@ impl ProofVerifier {
     async fn handle_event(&self, event: ProofVerifierMessageWrapper) -> eyre::Result<()> {
         let (event, callback) = event.inner_owned();
 
-        let result = match event {
+        let result = match &event {
             ProofVerifierMessage::ArtUpdate {
                 verification_branch,
                 associated_data,
@@ -66,12 +66,7 @@ impl ProofVerifier {
                     .for_branch(&verification_branch)
                     .with_associated_data(&associated_data)
                     .verify(&proof)
-                    .inspect_err(|err| {
-                        error!(
-                            eligibility_requirement = ?eligibility_requirement,
-                            "Failed to verify: {err}",
-                        )
-                    });
+                    .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
 
                 match result {
                     Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
@@ -90,15 +85,7 @@ impl ProofVerifier {
                     .for_aggregation(&verification_tree)
                     .with_associated_data(&associated_data)
                     .verify(&proof)
-                    .inspect_err(|err| {
-                        error!(
-                            // verification_tree = verification_tree,
-                            eligibility_requirement = ?eligibility_requirement,
-                            // associated_data = ?associated_data,
-                            // proof = ?proof,
-                            "Failed to verify: {err}",
-                        )
-                    });
+                    .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
 
                 match result {
                     Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
@@ -112,6 +99,7 @@ impl ProofVerifier {
             } => {
                 self.verify_schnorr_signature(signature.as_slice(), &public_keys, msg.as_slice())
                     .await
+                    .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}",))
             }
         };
 
@@ -134,9 +122,7 @@ impl ProofVerifier {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
             Err(err) => {
                 error!(
-                    signature = ?signature,
                     public_keys = ?public_keys,
-                    msg = ?msg,
                     "Failed to verify Schnorr signature: {err}"
                 );
                 Ok(ProofVerifierResult::SchnorrSignature { verdict: false })

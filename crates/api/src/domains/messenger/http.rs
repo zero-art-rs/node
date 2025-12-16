@@ -6,6 +6,9 @@ use axum::http::StatusCode;
 use bytes::{Bytes, BytesMut};
 use mongodb::bson::doc;
 use std::sync::Arc;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use sha3::{Digest, Sha3_256};
 use tracing::instrument;
 use types::errors::ApiError;
 use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery};
@@ -30,7 +33,7 @@ use validator::Validate;
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state), err)]
+#[instrument(skip(state, body), err)]
 pub async fn send_frame(
     State(state): State<Arc<Container>>,
     Path(id): Path<Uuid>,
@@ -55,7 +58,7 @@ pub async fn send_frame(
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state), err)]
+#[instrument(skip(state, payload), err)]
 pub async fn list_messages(
     State(state): State<Arc<Container>>,
     Path(id): Path<Uuid>,
@@ -95,7 +98,7 @@ pub async fn list_messages(
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state), err)]
+#[instrument(skip(state, payload), err)]
 pub async fn count_messages(
     State(state): State<Arc<Container>>,
     Path(id): Path<Uuid>,
