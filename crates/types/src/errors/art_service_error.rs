@@ -1,4 +1,4 @@
-use crate::errors::StorageError;
+use crate::errors::{StorageError, VerificationError};
 use zrt_art::errors::ArtError;
 
 #[derive(Debug, thiserror::Error)]
@@ -29,4 +29,6 @@ pub enum ARTServiceError {
     NoPreviousRecord,
     #[error("Failed to decode payload: {0}")]
     DecodeError(#[from] prost::DecodeError),
+    #[error("Fail to perform post verification")]
+    FailedPostVerification,
 }

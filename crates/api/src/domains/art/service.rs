@@ -9,9 +9,10 @@ use types::{ARTRecord, KeyRecord};
 use uuid::Uuid;
 
 use types::errors::ARTServiceError;
-use types::utils::{decode_art, ArtUpdate};
+use types::utils::{ArtUpdate, decode_art};
 
 use mongodb::ClientSession;
+use proof_verifier::verifier_engine::PostVerificationData;
 use zrt_art::art::PublicArt;
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
@@ -57,7 +58,7 @@ impl ARTService {
                     )
                 })?,
             None => arts_storage
-                .get_art_in_session(id, &mut session)
+                .get_current_in_session(id, &mut session)
                 .await?
                 .ok_or(ARTServiceError::NotFound)
                 .inspect_err(|err| {
@@ -88,13 +89,23 @@ impl ARTService {
                     )
                 })?,
             None => arts_storage
-                .get_art_in_session(id, &mut *session)
+                .get_current_in_session(id, &mut *session)
                 .await?
                 .ok_or(ARTServiceError::NotFound)
                 .inspect_err(|err| {
                     warn!("Failed to get latest art by id {}: {}", id, err.to_string());
                 })?,
         };
+
+        Ok(record)
+    }
+
+    pub async fn get_latest_art(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ARTRecord<ARTGroup>>, ARTServiceError> {
+        let arts_storage = MongoARTStorage::new().await?;
+        let record = arts_storage.get_current_art(id).await?;
 
         Ok(record)
     }
@@ -106,19 +117,19 @@ impl ARTService {
     ) -> Result<Option<ARTRecord<ARTGroup>>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         let record = arts_storage
-            .get_art_in_session_in_lock(id, &mut *session).await?;
+            .get_current_art_in_session_in_lock(id, &mut *session)
+            .await?;
 
         Ok(record)
     }
 
-    /// return s the art of provided `epoch`, but uncommited. 
+    /// return s the art of provided `epoch`, but uncommited.
     pub async fn get_art_by_epoch(
         &self,
         id: Uuid,
         epoch: u64,
         session: &mut ClientSession,
     ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
-
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
         let mut art_record = self.get_initial_art_in_session(&id, &mut *session).await?;
@@ -154,15 +165,12 @@ impl ARTService {
         id: Uuid,
         epoch: u64,
     ) -> Result<(ARTRecord<ARTGroup>, ArtUpdate), ARTServiceError> {
-
         let frame_storage = MongoFramesStorage::new(&id).await?;
 
         let mut art_record = self.get_initial_art(&id).await?;
         // Apply other operations from remaining epochs.
         for i in 1..epoch {
-            let epoch_changes = frame_storage
-                .get_epoch_changes(id, i)
-                .await?;
+            let epoch_changes = frame_storage.get_epoch_changes(id, i).await?;
 
             if epoch_changes.is_empty() {
                 return Err(ARTServiceError::NotFound);
@@ -176,9 +184,7 @@ impl ARTService {
         let epoch_changes = if epoch == 0 {
             ArtUpdate::BranchChange(vec![])
         } else {
-            let epoch_changes = frame_storage
-                .get_epoch_changes(id, epoch)
-                .await?;
+            let epoch_changes = frame_storage.get_epoch_changes(id, epoch).await?;
 
             if epoch_changes.is_empty() {
                 return Err(ARTServiceError::NotFound);
@@ -188,7 +194,6 @@ impl ARTService {
 
             epoch_changes
         };
-
 
         art_record.epoch = epoch;
         debug!(
@@ -217,10 +222,7 @@ impl ARTService {
         Ok(record)
     }
 
-    pub async fn get_initial_art(
-        &self,
-        id: &Uuid,
-    ) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
+    pub async fn get_initial_art(&self, id: &Uuid) -> Result<ARTRecord<ARTGroup>, ARTServiceError> {
         let arts_storage = MongoARTStorage::new().await?;
         let record = arts_storage
             .get_initial_art(*id)
@@ -242,7 +244,7 @@ impl ARTService {
         let frame_storage = MongoFramesStorage::new(id).await?;
 
         if arts_storage
-            .get_art_in_session(*id, &mut *session)
+            .get_current_in_session(*id, &mut *session)
             .await?
             .is_none()
         {
@@ -251,9 +253,7 @@ impl ARTService {
         }
         arts_storage.delete_art(&mut *session, *id).await?;
         arts_storage.delete_initial_art(&mut *session, *id).await?;
-        keys_storage
-            .delete_group(*id, &mut *session)
-            .await?;
+        keys_storage.delete_group(*id, &mut *session).await?;
 
         frame_storage
             .messages_collection
@@ -280,7 +280,7 @@ impl ARTService {
 
         debug!("Check if ART for group {} already exists...", id);
         if arts_storage
-            .get_art_in_session(id, &mut *session)
+            .get_current_in_session(id, &mut *session)
             .await?
             .is_some()
         {
@@ -312,32 +312,36 @@ impl ARTService {
         id: Uuid,
         change: &BranchChange<CortadoAffine>,
         new_epoch: u64,
+        post_verification_data: PostVerificationData,
         session: &mut ClientSession,
     ) -> Result<(), ARTServiceError> {
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
 
         let mut art_record = arts_storage
-            .get_art_in_session(id, &mut *session)
+            .get_current_art_in_session_in_lock(id, &mut *session)
             .await?
             .ok_or(ARTServiceError::NotFound)?;
-        let current_epoch = art_record.epoch;
 
-        let perform_merge = if new_epoch == current_epoch {
+        let perform_merge = if new_epoch == art_record.epoch {
             true
-        } else if new_epoch == current_epoch + 1 {
+        } else if new_epoch == art_record.epoch + 1 {
             false
         } else {
             warn!(
-                current_epoch = ?current_epoch,
+                current_epoch = ?art_record.epoch,
                 proposed_epoch = ?new_epoch,
                 "Fail to update ART, as the epoch is invalid"
             );
             return Err(ARTServiceError::InvalidInput.into());
         };
 
+        post_verification_data
+            .post_verify_update(&art_record)
+            .map_err(|_| ARTServiceError::FailedPostVerification)?;
+
         if perform_merge {
             change.apply(&mut art_record.art)?;
-        } else  {
+        } else {
             art_record.art.commit()?;
             art_record.epoch += 1;
 

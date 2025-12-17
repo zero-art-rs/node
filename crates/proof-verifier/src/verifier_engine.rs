@@ -1,6 +1,7 @@
 use ark_serialize::CanonicalDeserialize;
 use cortado::CortadoAffine;
-use tracing::error;
+use tracing::{error, warn};
+use types::ARTRecord;
 use types::callback_wrappers::ProofVerifierMessage;
 use types::errors::VerificationError;
 use zrt_art::art::PublicArt;
@@ -131,11 +132,56 @@ pub struct PostVerificationData {
 }
 
 impl PostVerificationData {
-    pub fn new(
-        epoch: u64,
-        base_tk: CortadoAffine,
-        upstream_tk: CortadoAffine,
-    ) -> Self {
-        Self { epoch, base_tk, upstream_tk }
+    pub fn new(epoch: u64, base_tk: CortadoAffine, upstream_tk: CortadoAffine) -> Self {
+        Self {
+            epoch,
+            base_tk,
+            upstream_tk,
+        }
+    }
+
+    pub fn post_verify_data_frame(
+        &self,
+        art: &ARTRecord<CortadoAffine>,
+    ) -> Result<(), VerificationError> {
+        let epoch = art.epoch;
+        let upstream_tk = art.art.preview().root().public_key();
+        if self.epoch == epoch && self.upstream_tk == upstream_tk {
+            Ok(())
+        } else {
+            warn!(
+                used_epoch = ?self.epoch,
+                current_epoch = ?art.epoch,
+                used_base_tk = ?self.base_tk,
+                current_base_tk = ?art.art.root().data().public_key(),
+                "Fail to post verify, as the state already changed",
+            );
+            Err(VerificationError::FailedPostVerification)
+        }
+    }
+
+    
+    pub fn post_verify_update(
+        &self,
+        art: &ARTRecord<CortadoAffine>,
+    ) -> Result<(), VerificationError> {
+        if self.epoch == art.epoch
+            && self.base_tk == art.art.root().data().public_key()
+        {
+            Ok(())
+        } else if self.epoch == art.epoch + 1
+            && self.upstream_tk == art.art.preview().root().public_key()
+        {
+            Ok(())
+        } else {
+            warn!(
+                used_epoch = ?self.epoch,
+                current_epoch = ?art.epoch,
+                used_upstream_tk = ?self.upstream_tk,
+                current_upstream_tk = ?art.art.preview().root().public_key(),
+                "Fail to post verify, as the state already changed",
+            );
+            Err(VerificationError::FailedPostVerification)
+        }
     }
 }

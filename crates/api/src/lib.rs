@@ -1,8 +1,5 @@
 use crate::router::build_router;
-use axum::{
-    extract::{Request},
-    response::Response,
-};
+use axum::{extract::Request, response::Response};
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tower_http::{classify::ServerErrorsFailureClass, cors::CorsLayer, trace::TraceLayer};
@@ -44,11 +41,11 @@ pub async fn run_server(
                     info_span!(
                         "http_request",
                         method = ?request.method(),
-                        request_id = %uuid::Uuid::new_v4(),
+                        request_id = ?uuid::Uuid::new_v4(),
                     )
                 })
                 .on_request(|request: &Request<_>, span: &Span| {
-                    tracing::info!(parent: span, "Incoming request: {} {}", request.method(), request.uri());
+                    tracing::info!(parent: span, "Incoming request: {} {}", request.method(), request.uri().path());
                 })
                 .on_response(|response: &Response, latency: Duration, span: &Span| {
                     tracing::info!(parent: span, status = ?response.status(), latency = ?latency, "Response sent");

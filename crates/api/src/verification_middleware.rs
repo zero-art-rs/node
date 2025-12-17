@@ -10,12 +10,12 @@ use axum_core::response::Response;
 use bytes::Bytes;
 use callbacks::callback;
 use cortado::CortadoAffine;
+use mongodb::ClientSession;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
-use mongodb::ClientSession;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
 use tracing::{Level, debug, error, info, trace, warn};
 use types::art_schemas::{GetARTQuery, ProofMode};
@@ -28,8 +28,8 @@ use types::utils::ArtUpdate;
 use uuid::Uuid;
 use zrt_art::art::PublicArt;
 use zrt_art::art_node::{LeafIter, LeafStatus, TreeMethods};
-use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::ApplicableChange;
+use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_zk::EligibilityRequirement;
@@ -266,9 +266,7 @@ pub async fn send_frame(
     frame_tbs: &FrameTbs,
     proof: Vec<u8>,
     id: Uuid,
-) -> Result<(), VerificationError> {
-    debug!("Incoming send frame verification request",);
-
+) -> Result<Option<PostVerificationData>, VerificationError> {
     let current_epoch = MongoARTStorage::new()
         .await?
         .get_current_epoch(&id)
@@ -277,9 +275,9 @@ pub async fn send_frame(
 
     state.start_updating(id).await?;
 
-    let verification_req =
+    let (verification_req, post_verification_data) =
         match inner_send_frame(state, current_epoch, id, frame_tbs, proof).await {
-            Ok(verification_req) => verification_req,
+            Ok(verification_result) => verification_result,
             Err(err) => {
                 warn!("Verification Failed: {err}");
                 state.stop_updating(id).await;
@@ -291,7 +289,8 @@ pub async fn send_frame(
 
     state.stop_updating(id).await;
 
-    response
+    response?;
+    Ok(post_verification_data)
 }
 
 /// Handle send_frame verification
@@ -301,22 +300,18 @@ async fn inner_send_frame(
     id: Uuid,
     frame_tbs: &FrameTbs,
     proof: Vec<u8>,
-) -> Result<VerificationRequest, VerificationError> {
-    if let Ok(art) = state
-        .art_service
-        .get_art(id, Some(current_epoch))
-        .await
-    {
+) -> Result<(VerificationRequest, Option<PostVerificationData>), VerificationError> {
+    if let Some(art) = state.art_service.get_latest_art(id).await? {
         info!(
             current_epoch = ?current_epoch,
             record_epoch = ?art.epoch,
             public_key = ?art.art.root().data().public_key(),
             public_key_preview = ?art.art.preview().root().public_key(),
             group_id = ?id,
-            "Verify send_frame request:",
+            "Start verification",
         );
     } else {
-        debug!("Verify send_frame request: No art found",);
+        debug!("Start verification: No art found for epoch {}", current_epoch);
     }
 
     if frame_tbs.group_id != id.to_string() {
@@ -346,33 +341,46 @@ async fn inner_send_frame(
             )
         })?;
 
-    let (opcode, public_inputs) = match &operation {
-        Some(Operation::Init(_)) => get_opcode_and_input_for_init_group(&frame_tbs)?,
+    let is_current_epoch = frame_tbs.epoch == current_epoch;
+    let (opcode, public_inputs, post_verification_data) = match &operation {
+        Some(Operation::Init(_)) => {
+            let (opcode, public_inputs) = get_opcode_and_input_for_init_group(&frame_tbs)?;
+            (opcode, public_inputs, None)
+        }
         Some(Operation::AddMember(branch_changes_bytes))
         | Some(Operation::RemoveMember(branch_changes_bytes))
         | Some(Operation::KeyUpdate(branch_changes_bytes))
         | Some(Operation::LeaveGroup(branch_changes_bytes)) => {
-            get_opcode_and_input_for_art_update(
-                state,
-                id,
-                branch_changes_bytes,
-                frame_tbs.epoch - 1,
-            )
-            .await?
+            let (opcode, public_inputs, post_verification_data) =
+                get_opcode_and_input_for_art_update(
+                    state,
+                    id,
+                    branch_changes_bytes,
+                    frame_tbs.epoch,
+                    is_current_epoch,
+                )
+                .await?;
+
+            (opcode, public_inputs, Some(post_verification_data))
         }
         Some(Operation::Aggregated(change_bytes)) => {
-            get_opcode_and_input_for_aggregation(
-                state,
-                id,
-                change_bytes,
-                frame_tbs.epoch - 1,
-            )
-            .await?
+            let (opcode, public_inputs, post_verification_data) =
+                get_opcode_and_input_for_aggregation(state, id, change_bytes, frame_tbs.epoch - 1)
+                    .await?;
+
+            (opcode, public_inputs, Some(post_verification_data))
         }
         Some(Operation::DropGroup(_)) => {
-            get_opcode_and_input_for_drop_group(state, id).await?
+            let (opcode, public_inputs) = get_opcode_and_input_for_drop_group(state, id).await?;
+
+            (opcode, public_inputs, None)
         }
-        None => get_opcode_and_input_for_send_message(state, id).await?,
+        None => {
+            let (opcode, public_inputs, post_verification_data) =
+                get_opcode_and_input_for_send_message(state, id, frame_tbs.epoch - 1).await?;
+
+            (opcode, public_inputs, Some(post_verification_data))
+        }
     };
 
     let verification_req = VerificationRequest {
@@ -380,13 +388,12 @@ async fn inner_send_frame(
         data: VerifierData::new(proof, public_inputs, associated_data),
     };
 
-    Ok(verification_req)
+    Ok((verification_req, post_verification_data))
 }
 
 pub async fn verify_frame_applicability_by_epoch(
     state: &Container,
     id: Uuid,
-    // tbs_frame: &FrameTbs,
     operation: Option<&Operation>,
     proposed_epoch: u64,
     current_epoch: u64,
@@ -397,9 +404,14 @@ pub async fn verify_frame_applicability_by_epoch(
         }
         Some(Operation::RemoveMember(_))
         | Some(Operation::KeyUpdate(_))
-        | Some(Operation::LeaveGroup(_)) => match state.merge_changes {
-            true => vec![current_epoch, current_epoch + 1],
-            false => vec![current_epoch + 1],
+        | Some(Operation::LeaveGroup(_)) => {
+            let mut applicable_epochs = vec![current_epoch + 1];
+
+            if state.merge_changes {
+                applicable_epochs.push(current_epoch);
+            }
+
+            applicable_epochs
         },
         Some(Operation::Init(_)) => vec![0],
         Some(Operation::DropGroup(_)) => vec![current_epoch + 1],
@@ -458,15 +470,22 @@ pub async fn get_opcode_and_input_for_aggregation(
     id: Uuid,
     aggregation_bytes: &Vec<u8>,
     current_epoch: u64,
-) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+) -> Result<(VerificationOpcode, PublicInputs, PostVerificationData), VerificationError> {
     let aggregated_change: AggregatedChange<CortadoAffine> =
         postcard::from_bytes(aggregation_bytes)?;
 
-    let art = state
+    let mut art = state
         .art_service
-        .get_art(id, Some(current_epoch))
+        .get_latest_art(id)
         .await?
+        .ok_or(VerificationError::NotFound)?
         .art;
+    let post_verification_data = PostVerificationData::new(
+        current_epoch + 1,
+        art.root().data().public_key(),
+        art.preview().root().public_key(),
+    );
+    art.commit()?;
 
     let frame_storage = MongoFramesStorage::new(&id).await?;
     let epoch_changes = frame_storage
@@ -489,6 +508,7 @@ pub async fn get_opcode_and_input_for_aggregation(
             art,
             eligibility_requirement,
         },
+        post_verification_data,
     ))
 }
 
@@ -496,16 +516,25 @@ pub async fn get_opcode_and_input_for_art_update(
     state: &Container,
     id: Uuid,
     branch_changes_bytes: &Vec<u8>,
-    current_epoch: u64,
-) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
+    frame_epoch: u64,
+    is_current_epoch: bool,
+) -> Result<(VerificationOpcode, PublicInputs, PostVerificationData), VerificationError> {
     let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
 
     let mut art = state
         .art_service
-        .get_art(id, Some(current_epoch))
+        .get_latest_art(id)
         .await?
+        .ok_or(VerificationError::NotFound)?
         .art;
-    art.commit()?;
+    let post_verification_data = PostVerificationData::new(
+        frame_epoch,
+        art.root().data().public_key(),
+        art.preview().root().public_key(),
+    );
+    if !is_current_epoch {
+        art.commit()?;
+    }
 
     // Verify change applicability in correspondence to other epoch changes.
     if matches!(branch_changes.change_type, BranchChangeType::Leave)
@@ -514,12 +543,12 @@ pub async fn get_opcode_and_input_for_art_update(
     {
         let frame_storage = MongoFramesStorage::new(&id).await?;
         let epoch_changes = frame_storage
-            .get_epoch_changes(id, current_epoch + 1)
+            .get_epoch_changes(id, frame_epoch)
             .await
             .inspect_err(|err| {
                 error!(
                     "Failed to get changes for epoch {}: {}",
-                    current_epoch + 1,
+                    frame_epoch,
                     err
                 )
             })?;
@@ -527,10 +556,10 @@ pub async fn get_opcode_and_input_for_art_update(
         let ArtUpdate::BranchChange(epoch_changes) = epoch_changes else {
             error!(
                 "Epoch {} already contain aggregated operation, so no other changes can be applied.",
-                current_epoch + 1,
+                frame_epoch,
             );
             return Err(VerificationError::ExclusiveOperationAlreadyExists(
-                current_epoch + 1,
+                frame_epoch,
             ));
         };
 
@@ -551,7 +580,7 @@ pub async fn get_opcode_and_input_for_art_update(
 
             if matches!(change.change_type, BranchChangeType::AddMember) {
                 return Err(VerificationError::AddMemberUniqueness {
-                    epoch: current_epoch,
+                    epoch: frame_epoch,
                 });
             }
         }
@@ -633,6 +662,7 @@ pub async fn get_opcode_and_input_for_art_update(
             art,
             eligibility_requirement,
         },
+        post_verification_data,
     ))
 }
 
@@ -651,11 +681,7 @@ pub async fn get_opcode_and_input_for_drop_group(
     state: &Container,
     id: Uuid,
 ) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state
-        .art_service
-        .get_art(id, None)
-        .await?
-        .art;
+    let art = state.art_service.get_art(id, None).await?.art;
 
     let mut left_most_leaf = art.root();
     let mut path = Vec::new();
@@ -680,18 +706,21 @@ pub async fn get_opcode_and_input_for_drop_group(
 pub async fn get_opcode_and_input_for_send_message(
     state: &Container,
     id: Uuid,
-) -> Result<(VerificationOpcode, PublicInputs), VerificationError> {
-    let art = state
-        .art_service
-        .get_art(id, None)
-        .await?
-        .art;
+    current_epoch: u64,
+) -> Result<(VerificationOpcode, PublicInputs, PostVerificationData), VerificationError> {
+    let art = state.art_service.get_art(id, None).await?.art;
+    let post_verification_data = PostVerificationData::new(
+        current_epoch + 1,
+        art.root().data().public_key(),
+        art.preview().root().public_key(),
+    );
 
     Ok((
         VerificationOpcode::SendMessage,
         PublicInputs::Signature {
             public_keys: vec![art.preview().root().public_key()],
         },
+        post_verification_data,
     ))
 }
 

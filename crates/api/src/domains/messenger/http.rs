@@ -3,12 +3,12 @@ use crate::verification_middleware;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use bytes::{Bytes, BytesMut};
-use mongodb::bson::doc;
-use std::sync::Arc;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use bytes::{Bytes, BytesMut};
+use mongodb::bson::doc;
 use sha3::{Digest, Sha3_256};
+use std::sync::Arc;
 use tracing::instrument;
 use types::errors::ApiError;
 use types::messenger_schemas::{CountMessagesQuery, GetMessageQuery};
@@ -33,7 +33,7 @@ use validator::Validate;
     ),
     tag = "Messages"
 )]
-#[instrument(skip(state, body), err)]
+#[instrument(skip(state, body), err, fields(operation))]
 pub async fn send_frame(
     State(state): State<Arc<Container>>,
     Path(id): Path<Uuid>,

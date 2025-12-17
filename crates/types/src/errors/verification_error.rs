@@ -63,6 +63,8 @@ pub enum VerificationError {
     Mongo(#[from] mongodb::error::Error),
     #[error("NotFound")]
     NotFound,
+    #[error("Fail to perform post verification")]
+    FailedPostVerification,
 }
 
 impl From<serde_json::Error> for VerificationError {

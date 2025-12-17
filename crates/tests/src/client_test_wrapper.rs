@@ -1,3 +1,4 @@
+use crate::utils::ArrayLessPrinter;
 use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::CanonicalSerialize;
@@ -24,7 +25,6 @@ use zrt_client_sdk::models::invite::Invite;
 use zrt_client_sdk::zero_art_proto::SpFrames;
 use zrt_client_sdk::{models, utils};
 use zrt_crypto::schnorr::{sign, verify};
-use crate::utils::ArrayLessPrinter;
 
 pub struct InviteClientWrapper {
     group_context: InviteContext,
@@ -37,7 +37,10 @@ pub struct ClientWrapper {
 
 impl From<GroupContext<StdRng>> for ClientWrapper {
     fn from(group_context: GroupContext<StdRng>) -> Self {
-        Self { group_context, sequence_number: None }
+        Self {
+            group_context,
+            sequence_number: None,
+        }
     }
 }
 
@@ -113,7 +116,11 @@ impl ClientWrapper {
         Ok((frame, invite))
     }
 
-    pub fn change_group(&mut self, name: Option<String>, picture: Option<Vec<u8>>) -> eyre::Result<Frame> {
+    pub fn change_group(
+        &mut self,
+        name: Option<String>,
+        picture: Option<Vec<u8>>,
+    ) -> eyre::Result<Frame> {
         Ok(self.group_context.change_group(name, picture)?)
     }
 
@@ -200,11 +207,13 @@ impl ClientWrapper {
         let mut sp_frames = self
             .get_messages(DEFAULT_LIMIT, skip)
             .await
-            .inspect_err(|err| error!(
-                DEFAULT_LIMIT = ?DEFAULT_LIMIT,
-                skip = ?skip,
-                "Fail to get messages: {err}"
-            ))?
+            .inspect_err(|err| {
+                error!(
+                    DEFAULT_LIMIT = ?DEFAULT_LIMIT,
+                    skip = ?skip,
+                    "Fail to get messages: {err}"
+                )
+            })?
             .sp_frames;
 
         while !sp_frames.is_empty() {
@@ -236,12 +245,14 @@ impl ClientWrapper {
             sp_frames = self
                 .get_messages(DEFAULT_LIMIT, skip)
                 .await
-                .inspect_err(|err| error!(
-                    err = ?err,
-                    DEFAULT_LIMIT = ?DEFAULT_LIMIT,
-                    skip = ?skip,
-                    "Fail to get messages"
-                ))?
+                .inspect_err(|err| {
+                    error!(
+                        err = ?err,
+                        DEFAULT_LIMIT = ?DEFAULT_LIMIT,
+                        skip = ?skip,
+                        "Fail to get messages"
+                    )
+                })?
                 .sp_frames;
         }
 

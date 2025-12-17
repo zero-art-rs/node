@@ -96,11 +96,10 @@ impl ProofVerifier {
                 signature,
                 public_keys,
                 msg,
-            } => {
-                self.verify_schnorr_signature(signature.as_slice(), &public_keys, msg.as_slice())
-                    .await
-                    .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}",))
-            }
+            } => self
+                .verify_schnorr_signature(signature.as_slice(), &public_keys, msg.as_slice())
+                .await
+                .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}",)),
         };
 
         let eyre_result = result.map_err(|err| eyre::eyre!("{}", err));

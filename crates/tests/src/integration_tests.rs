@@ -20,8 +20,8 @@ use std::ops::Mul;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tracing::{Level, debug, debug_span, info, info_span, span, trace, warn, error_span, error};
 use tracing::instrument::WithSubscriber;
+use tracing::{Level, debug, debug_span, error, error_span, info, info_span, span, trace, warn};
 use tracing_subscriber::fmt::format;
 use types::art_schemas::ProofMode;
 use types::centrifugo_schemas::AuthRequest;
@@ -1162,10 +1162,8 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
     debug!("client0 epoch: {}", client0.group_context().epoch());
     debug!("client1 epoch: {}", client1.group_context().epoch());
 
-
     Ok(())
 }
-
 
 /// Test Flow:
 /// - Create epoch with one user
@@ -1189,10 +1187,7 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
     client0.poll().await.unwrap();
 
     info!("add other user to the group...");
-    let members_secrets: Vec<Fr> = (0..14)
-        .into_iter()
-        .map(|_| Fr::rand(&mut rng))
-        .collect();
+    let members_secrets: Vec<Fr> = (0..14).into_iter().map(|_| Fr::rand(&mut rng)).collect();
 
     let mut contexts = Vec::with_capacity(members_secrets.len());
 
@@ -1210,9 +1205,7 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
         let mut member = member.apply_join_frame().await.unwrap();
         member.process_frame(frame.clone()).unwrap();
 
-        let frame = member
-            .join_group()
-            .expect("Failed to join group");
+        let frame = member.join_group().expect("Failed to join group");
 
         let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
         assert!(
@@ -1256,15 +1249,16 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
     let mut handles = Vec::with_capacity(contexts.len());
     for (i, client) in contexts.into_iter().enumerate() {
         let client_name = format!("client{i}");
-        let logger = logger_for_test(&format!("test_flow_send_frame_in_bunch-{}.dev.log", client_name));
+        let logger = logger_for_test(&format!(
+            "test_flow_send_frame_in_bunch-{}.dev.log",
+            client_name
+        ));
 
         let span = info_span!(parent: None, "try_send", client_name);
         let _enter = span.enter();
 
         handles.push(tokio::spawn(async move {
-            try_send(client, client_name)
-                .with_subscriber(logger)
-                .await
+            try_send(client, client_name).with_subscriber(logger).await
         }));
     }
 

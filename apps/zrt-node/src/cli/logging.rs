@@ -1,6 +1,14 @@
+use std::fmt;
+use chrono::Local;
 use eyre::eyre;
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::{EnvFilter, Layer, fmt::format::{DefaultVisitor, Writer}, layer::SubscriberExt, util::SubscriberInitExt, Registry};
+use tracing_subscriber::{
+    EnvFilter, Layer, Registry,
+    fmt::format::{DefaultVisitor, Writer},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
+use tracing_subscriber::fmt::time::FormatTime;
 
 pub fn init(level: Level) -> eyre::Result<()> {
     let stdout_filter = new_env_filter(level, "RUST_LOG")?;
@@ -11,7 +19,13 @@ pub fn init(level: Level) -> eyre::Result<()> {
 
     Registry::default()
         .with(EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer().compact().with_target(false).with_ansi(true))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_timer(LocalTimer)
+                .with_target(false)
+                .with_ansi(true),
+        )
         .try_init()?;
 
     Ok(())
@@ -86,5 +100,14 @@ where
             target,
             message,
         );
+    }
+}
+
+struct LocalTimer;
+
+impl FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut Writer<'_>) -> fmt::Result {
+        let now = Local::now();
+        write!(w, "[{}]", now.format("%Y-%m-%d %H:%M:%S"))
     }
 }

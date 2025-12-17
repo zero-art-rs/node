@@ -1,5 +1,6 @@
-use bson::oid::ObjectId;
 use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
+use bson::oid::ObjectId;
+use bson::serde_helpers::uuid_1_as_binary;
 use bytes::{BufMut, BytesMut};
 use cortado::CortadoAffine;
 use futures_util::TryStreamExt;
@@ -18,7 +19,6 @@ use types::utils::{decode_aggregated_change, decode_branch_change, operation_nam
 use types::{utils, FrameRecord};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
-use bson::serde_helpers::uuid_1_as_binary;
 
 pub const GROUP_COLLECTION_NAME: &str = "group";
 pub const OUTBOX_COLLECTION_NAME: &str = "messages_outbox";
@@ -34,7 +34,10 @@ pub struct CounterRecord {
 
 impl CounterRecord {
     pub fn new(group_id: Uuid, sequence_number: u64) -> Self {
-        Self { chat_id: group_id, sequence_number }
+        Self {
+            chat_id: group_id,
+            sequence_number,
+        }
     }
 }
 
@@ -85,7 +88,8 @@ impl FrameStorage for MongoFramesStorage {
     }
 
     async fn next_sequence_number(&self, session: &mut ClientSession) -> Result<u64, StorageError> {
-        let sequence_number = self.counters_collection
+        let sequence_number = self
+            .counters_collection
             .find_one_and_update(
                 doc! { "chat_id": self.chat_id },
                 doc! { "$inc": { "sequence_number": 1 } },
@@ -99,7 +103,8 @@ impl FrameStorage for MongoFramesStorage {
     }
 
     async fn init_counter(&self, session: &mut ClientSession) -> Result<(), StorageError> {
-        let existing = self.counters_collection
+        let existing = self
+            .counters_collection
             .find_one(doc! { "chat_id": self.chat_id })
             .session(&mut *session)
             .await?;

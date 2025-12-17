@@ -116,11 +116,14 @@ impl ARTStorage for MongoARTStorage {
     }
 
     /// return the latest art
-    async fn get_art(&self, id: Uuid) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
+    async fn get_current_art(
+        &self,
+        id: Uuid,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
         self.arts_collection.find_one(doc! {"chat_id": id}).await
     }
 
-    async fn get_art_in_session(
+    async fn get_current_in_session(
         &self,
         id: Uuid,
         session: &mut ClientSession,
@@ -131,16 +134,13 @@ impl ARTStorage for MongoARTStorage {
             .await
     }
 
-    async fn get_art_in_session_in_lock(
+    async fn get_current_art_in_session_in_lock(
         &self,
         id: Uuid,
         session: &mut ClientSession,
     ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>> {
         self.arts_collection
-            .find_one_and_update(
-                doc! {"chat_id": id},
-                doc! { "$set": { "chat_id": id }},
-            )
+            .find_one_and_update(doc! {"chat_id": id}, doc! { "$set": { "chat_id": id }})
             .session(session)
             .await
     }
@@ -156,7 +156,7 @@ impl ARTStorage for MongoARTStorage {
             .session(session)
             .await
     }
-    
+
     async fn get_initial_art(
         &self,
         id: Uuid,
@@ -166,13 +166,15 @@ impl ARTStorage for MongoARTStorage {
             .await
     }
 
-    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<Option<u64>, mongodb::error::Error> {
+    async fn get_current_epoch(
+        &self,
+        chat_id: &Uuid,
+    ) -> Result<Option<u64>, mongodb::error::Error> {
         let epoch = self
             .arts_collection
             .find_one(doc! { "chat_id": chat_id })
             .await?
             .map(|record| record.epoch);
-
 
         Ok(epoch)
     }
@@ -183,12 +185,11 @@ impl ARTStorage for MongoARTStorage {
         session: &mut ClientSession,
     ) -> Result<Option<u64>, mongodb::error::Error> {
         // Remove and add the data, to create a write lock on collection
-        self
-            .arts_collection
+        self.arts_collection
             .find_one(doc! { "chat_id": chat_id })
             .session(&mut *session)
             .await
-            .map(|cursor| cursor.map(|r|r.epoch))
+            .map(|cursor| cursor.map(|r| r.epoch))
     }
 
     async fn get_current_epoch_in_session_with_lock(
@@ -196,15 +197,14 @@ impl ARTStorage for MongoARTStorage {
         chat_id: &Uuid,
         session: &mut ClientSession,
     ) -> Result<Option<u64>, mongodb::error::Error> {
-        self
-            .arts_collection
+        self.arts_collection
             .find_one_and_update(
                 doc! { "chat_id": chat_id },
-                doc! { "$set": { "chat_id": chat_id }}
+                doc! { "$set": { "chat_id": chat_id }},
             )
             .session(&mut *session)
             .await
-            .map(|cursor| cursor.map(|r|r.epoch))
+            .map(|cursor| cursor.map(|r| r.epoch))
     }
 
     async fn replace_art(

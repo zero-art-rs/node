@@ -5,29 +5,28 @@ use crate::domains::{
 use crate::verification_middleware;
 use axum::body::Bytes;
 use axum::http::StatusCode;
-use mongodb::ClientSession;
-use mongodb::bson::doc;
-use proof_verifier::ProofVerifierSender;
-use prost::Message;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use mongodb::ClientSession;
 use mongodb::atlas_search::autocomplete;
+use mongodb::bson::doc;
+use proof_verifier::ProofVerifierSender;
+use proof_verifier::verifier_engine::{PostVerificationData, VerificationRequest, VerifierData};
+use prost::Message;
 use sha3::{Digest, Sha3_256};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
 use tokio::sync::{Mutex, RwLock};
 use tracing::field::debug;
-use tracing::{debug, error, info, info_span, span, warn};
+use tracing::{debug, error, info, info_span, instrument, span, warn};
 use types::errors::{ARTServiceError, ServiceError, VerificationError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
-use types::utils::{decode_aggregated_change, decode_branch_change};
+use types::utils::{decode_aggregated_change, decode_branch_change, operation_name};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
 use zrt_crypto::schnorr;
-use proof_verifier::verifier_engine::{VerificationRequest, VerifierData};
-use crate::queue::Sequencer;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
@@ -44,8 +43,6 @@ pub struct Container {
     // flag, which indicates weather the merges are available
     pub(crate) merge_changes: bool,
     art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
-
-    pub sequencers: HashMap<GroupId, Sequencer>,
 }
 
 impl Container {
@@ -64,7 +61,6 @@ impl Container {
             challenges: Default::default(),
             art_is_updating: Default::default(),
             merge_changes,
-            sequencers: Default::default(),
         }
     }
 
@@ -98,13 +94,22 @@ impl Container {
     }
 
     /// Handles send_frame operation.
+    // #[instrument(skip(self, id, body), fields(op_name))]
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
 
+        let op_name = frame
+            .frame
+            .as_ref()
+            .and_then(|frame_tbs| frame_tbs.group_operation.as_ref())
+            .and_then(|group_operation| group_operation.operation.as_ref())
+            .map(|operation| operation_name(&operation));
+        tracing::Span::current().record("operation", &op_name);
+
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
         let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
-        verification_middleware::send_frame(self, &tbs_frame, frame.proof.clone(), id)
-            .await?;
+        let post_verification_data =
+            verification_middleware::send_frame(self, &tbs_frame, frame.proof.clone(), id).await?;
 
         let messages_collection = MongoFramesStorage::new(&id).await?;
         let mut session = messages_collection
@@ -113,7 +118,6 @@ impl Container {
             .start_session()
             .await?;
         session.start_transaction().await?;
-
 
         let operation = match &tbs_frame.group_operation {
             None => None,
@@ -126,20 +130,24 @@ impl Container {
             .await?
             .unwrap_or(0);
 
-        if matches!(operation, None | Some(
-            Operation::AddMember(_)
-            | Operation::LeaveGroup(_)
-            | Operation::RemoveMember(_)
-            | Operation::KeyUpdate(_)
-            | Operation::Aggregated(_)
-        )) {
+        if matches!(
+            operation,
+            None | Some(
+                Operation::AddMember(_)
+                    | Operation::LeaveGroup(_)
+                    | Operation::RemoveMember(_)
+                    | Operation::KeyUpdate(_)
+                    | Operation::Aggregated(_)
+            )
+        ) {
             verification_middleware::verify_frame_applicability_by_epoch(
                 self,
                 id,
                 operation.as_ref(),
                 tbs_frame.epoch,
                 current_epoch,
-            ).await?;
+            )
+            .await?;
         }
 
         // Decide, how to handle request
@@ -155,8 +163,17 @@ impl Container {
             | Some(Operation::RemoveMember(change))
             | Some(Operation::KeyUpdate(change))
             | Some(Operation::LeaveGroup(change)) => {
-                self.update_art(id, &change, tbs_frame.epoch, &mut session)
-                    .await?
+                let post_verification_data = post_verification_data.ok_or(ServiceError::from(
+                    VerificationError::FailedPostVerification,
+                ))?;
+                self.update_art(
+                    id,
+                    &change,
+                    tbs_frame.epoch,
+                    post_verification_data,
+                    &mut session,
+                )
+                .await?
             }
             Some(Operation::DropGroup(_)) => {
                 self.art_service.delete_chat(&id, &mut session).await?;
@@ -172,19 +189,22 @@ impl Container {
                     self,
                     id,
                     &mut session,
-                ).await?;
+                )
+                .await?;
 
                 schnorr::verify(&frame.proof, &vec![root_key], &*associated_data)
                     .map_err(|_| VerificationError::InvalidProof)?;
 
                 StatusCode::OK
-            },
+            }
         };
 
         let sequence_number = if let Some(Operation::Init(_)) = &operation {
             0
         } else {
-            self.messenger_service.next_sequence_number(id, &mut session).await?
+            self.messenger_service
+                .next_sequence_number(id, &mut session)
+                .await?
         };
 
         self.messenger_service
@@ -211,12 +231,13 @@ impl Container {
         id: Uuid,
         change_bytes: &[u8],
         new_epoch: u64,
+        post_verification_data: PostVerificationData,
         session: &mut ClientSession,
     ) -> Result<StatusCode, ServiceError> {
         let change = decode_branch_change(change_bytes).map_err(ARTServiceError::from)?;
 
         self.art_service
-            .update_art(id, &change, new_epoch, session)
+            .update_art(id, &change, new_epoch, post_verification_data, session)
             .await?;
 
         match change.change_type {

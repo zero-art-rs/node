@@ -1,18 +1,18 @@
 use chrono::Local;
-use std::{fmt, io};
+use regex;
 use std::fmt::{Debug, Display};
 use std::fs::{File, OpenOptions};
+use std::{fmt, io};
 use tracing::Subscriber;
-use tracing_subscriber::fmt::{MakeWriter, format::Writer, time::FormatTime, layer};
+use tracing_subscriber::fmt::{MakeWriter, format::Writer, layer, time::FormatTime};
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{filter, Layer, Registry};
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{Layer, Registry, filter};
 use {
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     std::collections::HashMap,
 };
-use regex;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -112,7 +112,7 @@ pub fn logger_for_test(file_name: &str) -> impl Subscriber {
                 // .pretty()
                 .with_ansi(false)
                 .with_writer(log_file)
-                .with_filter(filter::EnvFilter::from_default_env())
+                .with_filter(filter::EnvFilter::from_default_env()),
         )
 }
 
@@ -128,7 +128,7 @@ where
 }
 
 pub struct ArrayLessPrinter<T> {
-    inner: T
+    inner: T,
 }
 
 impl<T> From<T> for ArrayLessPrinter<T> {

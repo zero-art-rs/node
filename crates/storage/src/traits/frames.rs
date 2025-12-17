@@ -1,5 +1,5 @@
-use bson::doc;
 use crate::StorageError;
+use bson::doc;
 use cortado::CortadoAffine;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;

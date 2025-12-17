@@ -1,9 +1,9 @@
+use crate::impls::frames::CounterRecord;
 use crate::{DataStorage, DATABASE};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
 use tracing::debug;
-use uuid::Uuid;
 use types::{errors::StorageError, KeyRecord};
-use crate::impls::frames::CounterRecord;
+use uuid::Uuid;
 
 const KEYS_COLLECTION_NAME: &str = "keys";
 
@@ -34,9 +34,10 @@ impl MongoKeysStorage {
         &self,
         owner_id_pub_key: Vec<u8>,
         id: Uuid,
-        session: &mut ClientSession
+        session: &mut ClientSession,
     ) -> Result<(), StorageError> {
-        let existing = self.keys_collection
+        let existing = self
+            .keys_collection
             .find_one(doc! { "chat_id": id })
             .session(&mut *session)
             .await?;
@@ -55,9 +56,12 @@ impl MongoKeysStorage {
         Ok(())
     }
 
-    pub async fn delete_group(&self, id: Uuid, session: &mut ClientSession) -> Result<(), StorageError> {
-        self
-            .keys_collection
+    pub async fn delete_group(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> Result<(), StorageError> {
+        self.keys_collection
             .delete_one(doc! {"chat_id": id})
             .session(session)
             .await?;

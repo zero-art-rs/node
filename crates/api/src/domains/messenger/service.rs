@@ -4,6 +4,7 @@ use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
+use types::errors::StorageError;
 use types::protos::group_operation::Operation;
 use types::utils::ArtUpdate;
 use types::{
@@ -13,7 +14,6 @@ use types::{
 };
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
-use types::errors::StorageError;
 
 pub struct MessengerService {}
 
@@ -42,12 +42,23 @@ impl MessengerService {
     ) -> Result<(), MessageServiceError> {
         MongoFramesStorage::new(chat_id)
             .await?
-            .store_message(message, epoch, sequence_number, outbox_only, operation, session)
+            .store_message(
+                message,
+                epoch,
+                sequence_number,
+                outbox_only,
+                operation,
+                session,
+            )
             .await?;
         Ok(())
     }
 
-    pub async fn next_sequence_number(&self, chat_id: Uuid, session: &mut ClientSession) -> Result<u64, StorageError> {
+    pub async fn next_sequence_number(
+        &self,
+        chat_id: Uuid,
+        session: &mut ClientSession,
+    ) -> Result<u64, StorageError> {
         MongoFramesStorage::new(&chat_id)
             .await?
             .next_sequence_number(session)

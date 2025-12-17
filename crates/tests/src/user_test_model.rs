@@ -1,4 +1,4 @@
-use crate::utils::{CentrifugoTokenResponse, stringify_option, ArrayLessPrinter};
+use crate::utils::{ArrayLessPrinter, CentrifugoTokenResponse, stringify_option};
 use crate::{BACKEND_URL, DEFAULT_NONCE_LENGTH};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ed25519::EdwardsAffine as Ed25519Affine;
