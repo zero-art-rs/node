@@ -22,6 +22,7 @@ pub fn init(level: Level) -> eyre::Result<()> {
         .with(
             tracing_subscriber::fmt::layer()
                 .compact()
+                // .pretty()
                 .with_timer(LocalTimer)
                 .with_target(false)
                 .with_ansi(true),

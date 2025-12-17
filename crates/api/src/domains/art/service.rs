@@ -269,12 +269,12 @@ impl ARTService {
     pub async fn init_group(
         &self,
         id: Uuid,
-        art: Vec<u8>,
+        encoded_art: &Vec<u8>,
         is_private: bool,
         owner_id_pub_key: Vec<u8>,
         session: &mut ClientSession,
     ) -> Result<(), ARTServiceError> {
-        let art = decode_art(&art)?;
+        let art = decode_art(encoded_art)?;
 
         let arts_storage = MongoARTStorage::new().await?;
 
@@ -310,7 +310,7 @@ impl ARTService {
     pub async fn update_art(
         &self,
         id: Uuid,
-        change: &BranchChange<CortadoAffine>,
+        change: &impl ApplicableChange<PublicArt<CortadoAffine>, ()>,
         new_epoch: u64,
         post_verification_data: PostVerificationData,
         session: &mut ClientSession,

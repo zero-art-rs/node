@@ -142,18 +142,17 @@ impl PostVerificationData {
 
     pub fn post_verify_data_frame(
         &self,
-        art: &ARTRecord<CortadoAffine>,
+        current_epoch: u64,
+        upstream_tk: CortadoAffine,
     ) -> Result<(), VerificationError> {
-        let epoch = art.epoch;
-        let upstream_tk = art.art.preview().root().public_key();
-        if self.epoch == epoch && self.upstream_tk == upstream_tk {
+        if self.epoch == current_epoch && self.upstream_tk == upstream_tk {
             Ok(())
         } else {
             warn!(
                 used_epoch = ?self.epoch,
-                current_epoch = ?art.epoch,
-                used_base_tk = ?self.base_tk,
-                current_base_tk = ?art.art.root().data().public_key(),
+                current_epoch = ?current_epoch,
+                used_upstream_tk = ?self.upstream_tk,
+                current_upstream_tk = ?upstream_tk,
                 "Fail to post verify, as the state already changed",
             );
             Err(VerificationError::FailedPostVerification)

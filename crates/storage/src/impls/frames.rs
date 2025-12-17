@@ -161,7 +161,6 @@ impl FrameStorage for MongoFramesStorage {
             sequence_number = ?outbox_message.sequence_number,
             chat_id = ?outbox_message.chat_id,
             epoch = ?outbox_message.epoch,
-            operation = ?operation.map(|operation| operation_name(&operation)),
             "Store outbox_message"
         );
 

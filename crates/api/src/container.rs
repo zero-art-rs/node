@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
@@ -30,8 +31,6 @@ use zrt_crypto::schnorr;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
-type GroupId = Uuid;
-
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
     pub centrifugo_service: Arc<CentrifugoService>,
@@ -43,6 +42,8 @@ pub struct Container {
     // flag, which indicates weather the merges are available
     pub(crate) merge_changes: bool,
     art_is_updating: Arc<RwLock<HashSet<Uuid>>>,
+
+    pub(crate) db_locks: RwLock<HashMap<Uuid, Arc<RwLock<()>>>>,
 }
 
 impl Container {
@@ -61,6 +62,7 @@ impl Container {
             challenges: Default::default(),
             art_is_updating: Default::default(),
             merge_changes,
+            db_locks: Default::default(),
         }
     }
 
@@ -104,7 +106,7 @@ impl Container {
             .and_then(|frame_tbs| frame_tbs.group_operation.as_ref())
             .and_then(|group_operation| group_operation.operation.as_ref())
             .map(|operation| operation_name(&operation));
-        tracing::Span::current().record("operation", &op_name);
+        tracing::Span::current().record("operation", &op_name.unwrap_or("None".to_string()));
 
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
         let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
@@ -117,12 +119,14 @@ impl Container {
             .client()
             .start_session()
             .await?;
+
+        let group_lock = self.db_locks.write().await.entry(id).or_default().clone();
+        let _lock_guard = group_lock.write().await;
         session.start_transaction().await?;
 
-        let operation = match &tbs_frame.group_operation {
-            None => None,
-            Some(val) => val.operation.clone(),
-        };
+        let operation = tbs_frame
+            .group_operation
+            .and_then(|group_operation| group_operation.operation.clone());
 
         let current_epoch = MongoARTStorage::new()
             .await?
@@ -130,7 +134,7 @@ impl Container {
             .await?
             .unwrap_or(0);
 
-        if matches!(
+        let must_post_verify_epoch = matches!(
             operation,
             None | Some(
                 Operation::AddMember(_)
@@ -139,10 +143,11 @@ impl Container {
                     | Operation::KeyUpdate(_)
                     | Operation::Aggregated(_)
             )
-        ) {
+        );
+
+        if must_post_verify_epoch {
             verification_middleware::verify_frame_applicability_by_epoch(
                 self,
-                id,
                 operation.as_ref(),
                 tbs_frame.epoch,
                 current_epoch,
@@ -151,7 +156,7 @@ impl Container {
         }
 
         // Decide, how to handle request
-        let response = match operation.clone() {
+        let response = match &operation {
             Some(Operation::Init(public_art)) => {
                 self.art_service
                     .init_group(id, public_art, false, tbs_frame.nonce, &mut session)
@@ -181,7 +186,11 @@ impl Container {
                 StatusCode::NO_CONTENT
             }
             Some(Operation::Aggregated(change)) => {
-                self.update_art_with_aggregation(id, change, tbs_frame.epoch, &mut session)
+                let post_verification_data = post_verification_data.ok_or(ServiceError::from(
+                    VerificationError::FailedPostVerification,
+                ))?;
+
+                self.update_art_with_aggregation(id, change, tbs_frame.epoch, post_verification_data, &mut session)
                     .await?
             }
             None => {
@@ -192,8 +201,11 @@ impl Container {
                 )
                 .await?;
 
-                schnorr::verify(&frame.proof, &vec![root_key], &*associated_data)
-                    .map_err(|_| VerificationError::InvalidProof)?;
+                let post_verification_data = post_verification_data.ok_or(ServiceError::from(
+                    VerificationError::FailedPostVerification,
+                ))?;
+
+                post_verification_data.post_verify_data_frame(current_epoch, root_key)?;
 
                 StatusCode::OK
             }
@@ -251,15 +263,16 @@ impl Container {
     pub async fn update_art_with_aggregation(
         &self,
         id: Uuid,
-        aggregated_change_bytes: Vec<u8>,
+        aggregation_bytes: &Vec<u8>,
         new_epoch: u64,
+        post_verification_data: PostVerificationData,
         session: &mut ClientSession,
     ) -> Result<StatusCode, ServiceError> {
         let branch_changes =
-            decode_aggregated_change(&aggregated_change_bytes).map_err(ARTServiceError::from)?;
+            decode_aggregated_change(aggregation_bytes).map_err(ARTServiceError::from)?;
 
         self.art_service
-            .apply_aggregation(id, branch_changes.clone(), new_epoch, session)
+            .update_art(id, &branch_changes, new_epoch, post_verification_data, session)
             .await?;
 
         Ok(StatusCode::OK)

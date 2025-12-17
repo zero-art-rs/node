@@ -36,10 +36,10 @@ use validator::Validate;
 #[instrument(skip(state, body), err, fields(operation))]
 pub async fn send_frame(
     State(state): State<Arc<Container>>,
-    Path(id): Path<Uuid>,
+    Path(group_id): Path<Uuid>,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    state.send_frame(id, body).await.map_err(ApiError::from)
+    state.send_frame(group_id, body).await.map_err(ApiError::from)
 }
 
 /// Endpoint for requesting messages from the group
@@ -61,7 +61,7 @@ pub async fn send_frame(
 #[instrument(skip(state, payload), err)]
 pub async fn list_messages(
     State(state): State<Arc<Container>>,
-    Path(id): Path<Uuid>,
+    Path(group_id): Path<Uuid>,
     Query(payload): Query<GetMessageQuery>,
 ) -> Result<(StatusCode, BytesMut), ApiError> {
     payload.validate()?;
@@ -78,7 +78,7 @@ pub async fn list_messages(
 
     let messages = state
         .messenger_service
-        .list_messages(&id, filter.clone(), payload.limit, payload.skip)
+        .list_messages(&group_id, filter.clone(), payload.limit, payload.skip)
         .await
         .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
@@ -101,7 +101,7 @@ pub async fn list_messages(
 #[instrument(skip(state, payload), err)]
 pub async fn count_messages(
     State(state): State<Arc<Container>>,
-    Path(id): Path<Uuid>,
+    Path(group_id): Path<Uuid>,
     Query(payload): Query<CountMessagesQuery>,
 ) -> Result<(StatusCode, Json<u64>), ApiError> {
     payload.validate()?;
@@ -118,7 +118,7 @@ pub async fn count_messages(
 
     let count = state
         .messenger_service
-        .count_messages(id, filter.clone(), payload.limit, payload.skip)
+        .count_messages(group_id, filter.clone(), payload.limit, payload.skip)
         .await?;
 
     Ok((StatusCode::ACCEPTED, Json(count)))

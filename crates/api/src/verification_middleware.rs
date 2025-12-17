@@ -329,12 +329,11 @@ async fn inner_send_frame(
         .as_ref()
         .and_then(|op| op.operation.as_ref());
 
-    verify_frame_applicability_by_epoch(state, id, operation, frame_tbs.epoch, current_epoch)
+    verify_frame_applicability_by_epoch(state, operation, frame_tbs.epoch, current_epoch)
         .await
         .inspect_err(|err| {
             error!(
                 error = ?err,
-                group_id = ?id,
                 provided_epoch = ?frame_tbs.epoch,
                 current_epoch = ?current_epoch,
                 "Error verifying frame applicability by epoch"
@@ -393,7 +392,6 @@ async fn inner_send_frame(
 
 pub async fn verify_frame_applicability_by_epoch(
     state: &Container,
-    id: Uuid,
     operation: Option<&Operation>,
     proposed_epoch: u64,
     current_epoch: u64,
@@ -420,7 +418,6 @@ pub async fn verify_frame_applicability_by_epoch(
 
     if !applicable_epochs.contains(&proposed_epoch) {
         error!(
-            group_id = ?id,
             "Invalid epoch provided ({}), while the current one is {}",
             proposed_epoch, current_epoch
         );
