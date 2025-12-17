@@ -39,14 +39,14 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes![messenger_transport::list_messages])
         .route_layer(middleware::from_fn_with_state(
             container.clone(),
-            verification_middleware::list_messages,
+            verification_middleware::verify_list_messages,
         ));
 
     let count_messages_route = OpenApiRouter::new()
         .routes(routes![messenger_transport::count_messages])
         .route_layer(middleware::from_fn_with_state(
             container.clone(),
-            verification_middleware::list_messages,
+            verification_middleware::verify_list_messages,
         ));
 
     // Centrifugo:
@@ -54,7 +54,7 @@ pub fn build_router(container: Arc<Container>) -> Router<Arc<Container>> {
         .routes(routes![centrifugo_transport::authenticate])
         .route_layer(middleware::from_fn_with_state(
             container.clone(),
-            verification_middleware::authenticate,
+            verification_middleware::verify_authentication,
         ));
 
     // Group management:

@@ -1,14 +1,14 @@
-use std::fmt;
 use chrono::Local;
 use eyre::eyre;
+use std::fmt;
 use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::{
     EnvFilter, Layer, Registry,
     fmt::format::{DefaultVisitor, Writer},
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
-use tracing_subscriber::fmt::time::FormatTime;
 
 pub fn init(level: Level) -> eyre::Result<()> {
     let stdout_filter = new_env_filter(level, "RUST_LOG")?;

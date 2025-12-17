@@ -1,13 +1,9 @@
 use crate::container::Container;
-use crate::verification_middleware;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 use bytes::{Bytes, BytesMut};
 use mongodb::bson::doc;
-use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use tracing::instrument;
 use types::errors::ApiError;
@@ -39,7 +35,10 @@ pub async fn send_frame(
     Path(group_id): Path<Uuid>,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    state.send_frame(group_id, body).await.map_err(ApiError::from)
+    state
+        .send_frame(group_id, body)
+        .await
+        .map_err(ApiError::from)
 }
 
 /// Endpoint for requesting messages from the group

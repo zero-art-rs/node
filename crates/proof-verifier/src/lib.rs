@@ -1,7 +1,7 @@
 use cortado::CortadoAffine;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };

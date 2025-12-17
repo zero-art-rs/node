@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use crate::domains::{
     art::service::ARTService, centrifugo::service::CentrifugoService,
     messenger::service::MessengerService,
@@ -15,6 +14,7 @@ use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::{PostVerificationData, VerificationRequest, VerifierData};
 use prost::Message;
 use sha3::{Digest, Sha3_256};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
@@ -96,7 +96,6 @@ impl Container {
     }
 
     /// Handles send_frame operation.
-    // #[instrument(skip(self, id, body), fields(op_name))]
     pub async fn send_frame(&self, id: Uuid, body: Bytes) -> Result<StatusCode, ServiceError> {
         let frame = Frame::decode(body.clone())?;
 
@@ -105,11 +104,11 @@ impl Container {
             .as_ref()
             .and_then(|frame_tbs| frame_tbs.group_operation.as_ref())
             .and_then(|group_operation| group_operation.operation.as_ref())
-            .map(|operation| operation_name(&operation));
-        tracing::Span::current().record("operation", &op_name.unwrap_or("None".to_string()));
+            .map(|operation| operation_name(&operation))
+            .unwrap_or("None".to_string());
+        tracing::Span::current().record("operation", &op_name);
 
         let tbs_frame = frame.frame.ok_or_else(|| ARTServiceError::InvalidInput)?;
-        let associated_data = Sha3_256::digest(tbs_frame.encode_to_vec()).to_vec();
         let post_verification_data =
             verification_middleware::send_frame(self, &tbs_frame, frame.proof.clone(), id).await?;
 
@@ -190,8 +189,14 @@ impl Container {
                     VerificationError::FailedPostVerification,
                 ))?;
 
-                self.update_art_with_aggregation(id, change, tbs_frame.epoch, post_verification_data, &mut session)
-                    .await?
+                self.update_art_with_aggregation(
+                    id,
+                    change,
+                    tbs_frame.epoch,
+                    post_verification_data,
+                    &mut session,
+                )
+                .await?
             }
             None => {
                 let root_key = verification_middleware::get_input_for_send_message_with_lock(
@@ -272,7 +277,13 @@ impl Container {
             decode_aggregated_change(aggregation_bytes).map_err(ARTServiceError::from)?;
 
         self.art_service
-            .update_art(id, &branch_changes, new_epoch, post_verification_data, session)
+            .update_art(
+                id,
+                &branch_changes,
+                new_epoch,
+                post_verification_data,
+                session,
+            )
             .await?;
 
         Ok(StatusCode::OK)

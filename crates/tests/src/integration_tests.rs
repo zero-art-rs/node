@@ -243,12 +243,11 @@ async fn test_add_member_after_removal() -> eyre::Result<()> {
 }
 
 /// Six users try to update the same epoch at the same time.
-// TODO: fix test: transactions are run for the whole send_frame handling.
 #[tokio::test]
 async fn test_concurrent_art_update() -> eyre::Result<()> {
     init_tracing_for_test();
 
-    let mut context = UserTestModel::new(GROUP_SIZE).await.0;
+    let context = UserTestModel::new(GROUP_SIZE).await.0;
 
     info!("{:?}", context.chat_uuid);
 
@@ -1170,7 +1169,7 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
 /// - Join with the second user
 /// - Cyclic key update with two users
 #[cfg(feature = "merge_changes")]
-// #[tokio::test]
+#[tokio::test]
 async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
     init_tracing_for_test();
     let seed = 42;

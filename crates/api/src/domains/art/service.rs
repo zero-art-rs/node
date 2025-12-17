@@ -53,7 +53,8 @@ impl ARTService {
                 .await
                 .inspect_err(|err| {
                     warn!(
-                        "Failed to get art by id {id} and epoch {epoch}: {}",
+                        epoch = ?epoch,
+                        "Failed to get art: {}",
                         err.to_string()
                     )
                 })?,
@@ -62,7 +63,7 @@ impl ARTService {
                 .await?
                 .ok_or(ARTServiceError::NotFound)
                 .inspect_err(|err| {
-                    warn!("Failed to get latest art by id {}: {}", id, err.to_string());
+                    warn!("Failed to get latest art: {}", err.to_string());
                 })?,
         };
 
@@ -84,7 +85,8 @@ impl ARTService {
                 .await
                 .inspect_err(|err| {
                     warn!(
-                        "Failed to get art by id {id} and epoch {epoch}: {}",
+                        epoch = ?epoch,
+                        "Failed to get art: {}",
                         err.to_string()
                     )
                 })?,
@@ -93,7 +95,7 @@ impl ARTService {
                 .await?
                 .ok_or(ARTServiceError::NotFound)
                 .inspect_err(|err| {
-                    warn!("Failed to get latest art by id {}: {}", id, err.to_string());
+                    warn!("Failed to get latest art: {}", err.to_string());
                 })?,
         };
 
@@ -216,7 +218,7 @@ impl ARTService {
         let record = arts_storage
             .get_initial_art_in_session(*id, session)
             .await
-            .inspect_err(|_| error!("Failed to retrieve initial art for group: {}", id))?
+            .inspect_err(|_| error!("Failed to retrieve initial art"))?
             .ok_or(ARTServiceError::NotFound)?;
 
         Ok(record)
@@ -227,7 +229,7 @@ impl ARTService {
         let record = arts_storage
             .get_initial_art(*id)
             .await
-            .inspect_err(|_| error!("Failed to retrieve initial art for group: {}", id))?
+            .inspect_err(|_| error!("Failed to retrieve initial art"))?
             .ok_or(ARTServiceError::NotFound)?;
 
         Ok(record)
@@ -238,7 +240,7 @@ impl ARTService {
         id: &Uuid,
         session: &mut ClientSession,
     ) -> Result<(), ARTServiceError> {
-        debug!("Deleting group: {}...", id);
+        debug!("Deleting group...");
         let arts_storage = MongoARTStorage::get_existing_storage().await?;
         let keys_storage = MongoKeysStorage::new().await?;
         let frame_storage = MongoFramesStorage::new(id).await?;
@@ -278,7 +280,7 @@ impl ARTService {
 
         let arts_storage = MongoARTStorage::new().await?;
 
-        debug!("Check if ART for group {} already exists...", id);
+        debug!("Check if ART already exists...");
         if arts_storage
             .get_current_in_session(id, &mut *session)
             .await?
@@ -286,7 +288,7 @@ impl ARTService {
         {
             return Err(ARTServiceError::AlreadyExists);
         }
-        debug!("Group {} isn't created yet.", id);
+        debug!("Group isn't created yet");
 
         MongoKeysStorage::new()
             .await?
@@ -302,7 +304,7 @@ impl ARTService {
             .init_counter(&mut *session)
             .await?;
 
-        debug!(id = ?id, "Successfully created new group");
+        debug!("Successfully created new group");
 
         Ok(())
     }
@@ -350,7 +352,7 @@ impl ARTService {
 
         debug!(
             epoch = ?art_record.epoch,
-            perform_merge = ?perform_merge,
+            merge_was_performed = ?perform_merge,
             root_key =? art_record.art.root().data().public_key(),
             root_key_preview =? art_record.art.preview().root().public_key(),
             "Store new art"

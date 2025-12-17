@@ -23,12 +23,10 @@ pub async fn authenticate(
     State(container): State<Arc<Container>>,
     Json(request): Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
-    debug!("Centrifugo auth request received");
     let centrifugo_service = &container.centrifugo_service;
 
     debug!("Generate new token..");
     let token = centrifugo_service.generate_token(&request).await?;
-    debug!("Token generated successfully");
 
     let response = AuthResponse { token };
 

@@ -17,17 +17,17 @@ use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
-use tracing::{Level, debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
-use types::errors::{ARTServiceError, VerificationError};
+use types::errors::VerificationError;
 use types::messenger_schemas::GetMessageQuery;
-use types::protos::{Frame, FrameTbs, group_operation::Operation};
+use types::protos::{FrameTbs, group_operation::Operation};
 use types::utils::ArtUpdate;
 use uuid::Uuid;
 use zrt_art::art::PublicArt;
-use zrt_art::art_node::{LeafIter, LeafStatus, TreeMethods};
+use zrt_art::art_node::{LeafIter, LeafStatus};
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
 use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
@@ -35,17 +35,12 @@ use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_zk::EligibilityRequirement;
 
 /// Handle authentication request verification.
-pub async fn authenticate(
+#[instrument(skip(state, request, next), err)]
+pub async fn verify_authentication(
     State(state): State<Arc<Container>>,
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
-    debug!(
-        "Incoming authenticate verification request: {} {}.",
-        request.method(),
-        request.uri(),
-    );
-
     let (parts, body) = request.into_parts();
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
     let Json(auth_request) = Json::<AuthRequest>::from_bytes(&bytes)?;
@@ -93,17 +88,12 @@ pub async fn authenticate(
 }
 
 /// Handle list messages request verification
-pub async fn list_messages(
+#[instrument(skip(state, request, next), err)]
+pub async fn verify_list_messages(
     State(state): State<Arc<Container>>,
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
-    debug!(
-        "Incoming verification request: {} {}.",
-        request.method(),
-        request.uri(),
-    );
-
     let (parts, body) = request.into_parts();
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
 
@@ -112,12 +102,6 @@ pub async fn list_messages(
 
     let Path(chat_id) = Path::<Uuid>::from_request_parts(&mut parts.clone(), &state).await?;
     let payload = serde_urlencoded::from_bytes::<GetMessageQuery>(query_bytes)?;
-
-    // let art = state
-    //     .art_service
-    //     .get_art(chat_id, Some(payload.epoch.unwrap_or(0)))
-    //     .await?
-    //     .art;
 
     let (art, art_change) = state
         .art_service
@@ -177,17 +161,12 @@ pub async fn list_messages(
 }
 
 /// Handle get_art request verification.
+#[instrument(skip(state, request, next), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
     request: Request,
     next: Next,
 ) -> Result<Response, VerificationError> {
-    debug!(
-        "Incoming verification for get art request: {} {}.",
-        request.method(),
-        request.uri(),
-    );
-
     let (parts, body) = request.into_parts();
     let bytes = axum::body::to_bytes(body, usize::MAX).await?;
 
@@ -311,7 +290,7 @@ async fn inner_send_frame(
             "Start verification",
         );
     } else {
-        debug!("Start verification: No art found for epoch {}", current_epoch);
+        debug!(current_epoch = ?current_epoch, "Art not exist");
     }
 
     if frame_tbs.group_id != id.to_string() {
@@ -410,7 +389,7 @@ pub async fn verify_frame_applicability_by_epoch(
             }
 
             applicable_epochs
-        },
+        }
         Some(Operation::Init(_)) => vec![0],
         Some(Operation::DropGroup(_)) => vec![current_epoch + 1],
         None => vec![current_epoch],
@@ -436,15 +415,12 @@ pub async fn verify_and_send(
     state: &Container,
 ) -> Result<(), VerificationError> {
     let verification_message = verification_req.to_message().inspect_err(|err| {
-        error!(
-            "Failed to convert VerificationRequest to ProofVerifierMessage: {}",
-            err
-        )
+        error!("Failed to convert VerificationRequest to ProofVerifierMessage: {err}")
     })?;
 
     verify(verification_message, &state.proof_verifier_sender).await?;
 
-    info!("Verification successful.");
+    info!("Verification successful");
 
     Ok(())
 }
@@ -543,11 +519,7 @@ pub async fn get_opcode_and_input_for_art_update(
             .get_epoch_changes(id, frame_epoch)
             .await
             .inspect_err(|err| {
-                error!(
-                    "Failed to get changes for epoch {}: {}",
-                    frame_epoch,
-                    err
-                )
+                error!("Failed to get changes for epoch {}: {}", frame_epoch, err)
             })?;
 
         let ArtUpdate::BranchChange(epoch_changes) = epoch_changes else {
@@ -576,9 +548,7 @@ pub async fn get_opcode_and_input_for_art_update(
             }
 
             if matches!(change.change_type, BranchChangeType::AddMember) {
-                return Err(VerificationError::AddMemberUniqueness {
-                    epoch: frame_epoch,
-                });
+                return Err(VerificationError::AddMemberUniqueness { epoch: frame_epoch });
             }
         }
     }
@@ -642,11 +612,6 @@ pub async fn get_opcode_and_input_for_art_update(
             } else {
                 EligibilityRequirement::Member(art.root().data().public_key())
             };
-
-            debug!(
-                "Using the next eligibility for remove member verification: {:?}",
-                eligibility
-            );
 
             (VerificationOpcode::RemoveMember, eligibility)
         }

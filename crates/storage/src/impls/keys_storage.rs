@@ -51,8 +51,6 @@ impl MongoKeysStorage {
             .session(&mut *session)
             .await?;
 
-        debug!("Inserted new key record");
-
         Ok(())
     }
 

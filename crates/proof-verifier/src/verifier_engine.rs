@@ -159,14 +159,11 @@ impl PostVerificationData {
         }
     }
 
-    
     pub fn post_verify_update(
         &self,
         art: &ARTRecord<CortadoAffine>,
     ) -> Result<(), VerificationError> {
-        if self.epoch == art.epoch
-            && self.base_tk == art.art.root().data().public_key()
-        {
+        if self.epoch == art.epoch && self.base_tk == art.art.root().data().public_key() {
             Ok(())
         } else if self.epoch == art.epoch + 1
             && self.upstream_tk == art.art.preview().root().public_key()
