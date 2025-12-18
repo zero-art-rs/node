@@ -1,6 +1,6 @@
 use crate::impls::frames::CounterRecord;
 use crate::{DataStorage, DATABASE};
-use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
+use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Database, IndexModel};
 use tracing::debug;
 use types::{errors::StorageError, KeyRecord};
 use uuid::Uuid;
@@ -13,12 +13,8 @@ pub struct MongoKeysStorage {
 }
 
 impl MongoKeysStorage {
-    pub async fn new() -> Result<Self, StorageError> {
-        let db = DATABASE.get().ok_or_else(|| {
-            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
-        })?;
-
-        let keys_collection = db.collection(KEYS_COLLECTION_NAME);
+    pub async fn init_key_collection(db: &Database) -> Result<(), StorageError> {
+        let keys_collection = db.collection::<KeyRecord>(KEYS_COLLECTION_NAME);
 
         let index_model = IndexModel::builder()
             .keys(doc! { "chat_id": -1})
@@ -26,6 +22,16 @@ impl MongoKeysStorage {
             .build();
 
         keys_collection.create_index(index_model.clone()).await?;
+
+        Ok(())
+    }
+
+    pub async fn new() -> Result<Self, StorageError> {
+        let db = DATABASE.get().ok_or_else(|| {
+            mongodb::error::Error::from(std::io::Error::other("DATABASE is not initialized"))
+        })?;
+
+        let keys_collection = db.collection(KEYS_COLLECTION_NAME);
 
         Ok(Self { keys_collection })
     }
