@@ -2,15 +2,9 @@ use crate::StorageError;
 use crate::{ARTStorage, DATABASE};
 use cortado::CortadoAffine;
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, IndexModel};
-use tracing::{debug, error, trace, warn};
+use tracing::error;
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::art::PublicArt;
-use zrt_art::art_node::{ArtNode, TreeMethods};
-use zrt_art::changes::branch_change::BranchChange;
-use zrt_art::changes::ApplicableChange;
-use zrt_art::errors::ArtError;
-use zrt_art::node_index::NodeIndex;
 
 pub const ARTS_COLLECTION_NAME: &str = "arts";
 pub const INITIAL_ARTS_COLLECTION_NAME: &str = "initial_arts";

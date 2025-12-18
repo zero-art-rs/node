@@ -8,8 +8,6 @@ use ark_std::UniformRand;
 use ark_std::rand::prelude::StdRng;
 use ark_std::rand::{Rng, SeedableRng};
 use axum::http::StatusCode;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 use bytes::{Bytes, BytesMut};
 use cortado::{CortadoAffine, Fr};
 use eventsource_stream::Eventsource;
@@ -17,30 +15,24 @@ use futures::StreamExt;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 use std::thread;
 use std::time::Duration;
 use tracing::instrument::WithSubscriber;
-use tracing::{Level, debug, debug_span, error, error_span, info, info_span, span, trace, warn};
-use tracing_subscriber::fmt::format;
+use tracing::{debug, debug_span, error, error_span, info, info_span, span, trace, warn};
 use types::art_schemas::ProofMode;
 use types::centrifugo_schemas::AuthRequest;
 use types::protos::{Frame, FrameTbs, SpFrame, group_operation::Operation};
 use zkp::rand::thread_rng;
-use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt, PublicArt};
+use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt};
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::branch_change::BranchChange;
-use zrt_client_sdk::contexts::group::GroupContext;
-use zrt_client_sdk::contexts::invite::InviteContext;
-use zrt_client_sdk::models;
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
 async fn test_send_message() -> eyre::Result<()> {
     init_tracing_for_test();
-
-    // let sender = get_integration_test_sender();
 
     let (context, init_message) = UserTestModel::new(GROUP_SIZE).await;
     info!("chat_uuid: {:?}", context.chat_uuid);
@@ -1168,8 +1160,9 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
 /// - Create epoch with one user
 /// - Join with the second user
 /// - Cyclic key update with two users
+/// NOTE: tests is too heavy to run. Use separately.
 #[cfg(feature = "merge_changes")]
-#[tokio::test]
+// #[tokio::test]
 async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
     init_tracing_for_test();
     let seed = 42;
@@ -1218,13 +1211,13 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
 
     contexts.insert(0, client0);
 
-    async fn try_send(mut client_wrapper: ClientWrapper, client_name: String) {
+    async fn try_send(mut client_wrapper: ClientWrapper) {
         info!("Pre poll messages...");
         client_wrapper.poll().await.unwrap();
         let mut rng = StdRng::from_rng(thread_rng()).unwrap();
 
         info!("Start sending messages...");
-        for i in 0..8 {
+        for _ in 0..8 {
             loop {
                 let frame = client_wrapper.create_frame(b"some data".to_vec()).unwrap();
                 let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
@@ -1257,7 +1250,7 @@ async fn test_flow_send_frame_in_bunch() -> eyre::Result<()> {
         let _enter = span.enter();
 
         handles.push(tokio::spawn(async move {
-            try_send(client, client_name).with_subscriber(logger).await
+            try_send(client).with_subscriber(logger).await
         }));
     }
 

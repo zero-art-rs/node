@@ -2,12 +2,10 @@ use crate::Container;
 use ark_serialize::CanonicalDeserialize;
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::request::Parts;
 use axum::middleware::Next;
 use axum_core::body::Body;
 use axum_core::extract::{FromRequestParts, Request};
 use axum_core::response::Response;
-use bytes::Bytes;
 use callbacks::callback;
 use cortado::CortadoAffine;
 use mongodb::ClientSession;
@@ -17,7 +15,7 @@ use prost::Message;
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, warn};
 use types::art_schemas::{GetARTQuery, ProofMode};
 use types::callback_wrappers::{ProofVerifierMessage, ProofVerifierResult};
 use types::centrifugo_schemas::AuthRequest;
@@ -322,7 +320,7 @@ async fn inner_send_frame(
     let is_current_epoch = frame_tbs.epoch == current_epoch;
     let (opcode, public_inputs, post_verification_data) = match &operation {
         Some(Operation::Init(_)) => {
-            let (opcode, public_inputs) = get_opcode_and_input_for_init_group(&frame_tbs)?;
+            let (opcode, public_inputs) = get_opcode_and_input_for_init_group(frame_tbs)?;
             (opcode, public_inputs, None)
         }
         Some(Operation::AddMember(branch_changes_bytes))
@@ -441,7 +439,7 @@ pub fn get_opcode_and_input_for_init_group(
 pub async fn get_opcode_and_input_for_aggregation(
     state: &Container,
     id: Uuid,
-    aggregation_bytes: &Vec<u8>,
+    aggregation_bytes: &[u8],
     current_epoch: u64,
 ) -> Result<(VerificationOpcode, PublicInputs, PostVerificationData), VerificationError> {
     let aggregated_change: AggregatedChange<CortadoAffine> =
@@ -488,11 +486,11 @@ pub async fn get_opcode_and_input_for_aggregation(
 pub async fn get_opcode_and_input_for_art_update(
     state: &Container,
     id: Uuid,
-    branch_changes_bytes: &Vec<u8>,
+    branch_changes_bytes: &[u8],
     frame_epoch: u64,
     is_current_epoch: bool,
 ) -> Result<(VerificationOpcode, PublicInputs, PostVerificationData), VerificationError> {
-    let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(&branch_changes_bytes)?;
+    let branch_changes: BranchChange<CortadoAffine> = postcard::from_bytes(branch_changes_bytes)?;
 
     let mut art = state
         .art_service
@@ -533,18 +531,20 @@ pub async fn get_opcode_and_input_for_art_update(
         };
 
         for change in epoch_changes {
-            if change.node_index.as_index()? == branch_changes.node_index.as_index()? {
-                if matches!(change.change_type, BranchChangeType::Leave)
-                    || matches!(change.change_type, BranchChangeType::RemoveMember)
-                {
-                    if branch_changes.change_type == BranchChangeType::UpdateKey {
-                        error!("Can't update key, as the user will be removed after merge.");
-                        return Err(VerificationError::UserAlreadyRemoved);
-                    } else {
-                        error!("Can't remove the user for a second time.");
-                        return Err(VerificationError::MergeUserRemove);
-                    }
-                }
+            let is_leave_or_removal = matches!(
+                change.change_type,
+                BranchChangeType::Leave | BranchChangeType::RemoveMember
+            );
+            if change.node_index.as_index()? == branch_changes.node_index.as_index()?
+                && is_leave_or_removal
+            {
+                return if branch_changes.change_type == BranchChangeType::UpdateKey {
+                    error!("Can't update key, as the user will be removed after merge.");
+                    Err(VerificationError::UserAlreadyRemoved)
+                } else {
+                    error!("Can't remove the user for a second time.");
+                    Err(VerificationError::MergeUserRemove)
+                };
             }
 
             if matches!(change.change_type, BranchChangeType::AddMember) {
@@ -686,7 +686,7 @@ pub async fn get_opcode_and_input_for_send_message(
     ))
 }
 
-pub async fn get_input_for_send_message_with_lock(
+pub async fn get_current_preview_tk_with_lock(
     state: &Container,
     id: Uuid,
     session: &mut ClientSession,

@@ -1,8 +1,10 @@
 use crate::protos::Frame;
 use crate::protos::group_operation::Operation;
-use ark_std::iterable::Iterable;
+use chrono::Local;
 use cortado::CortadoAffine;
-use sha3::digest::typenum::op;
+use std::fmt;
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::time::FormatTime;
 use zrt_art::art::PublicArt;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
@@ -100,4 +102,13 @@ pub fn extract_branch_changes(
     }
 
     Ok(None)
+}
+
+pub struct LocalTimer;
+
+impl FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut Writer<'_>) -> fmt::Result {
+        let now = Local::now();
+        write!(w, "[{}]", now.format("%Y-%m-%d %H:%M:%S"))
+    }
 }

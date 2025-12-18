@@ -1,4 +1,4 @@
-use crate::errors::{StorageError, VerificationError};
+use crate::errors::StorageError;
 use zrt_art::errors::ArtError;
 
 #[derive(Debug, thiserror::Error)]

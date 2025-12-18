@@ -1,7 +1,7 @@
 use cortado::CortadoAffine;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
@@ -63,9 +63,9 @@ impl ProofVerifier {
                 let result = self
                     .verifier_engine
                     .new_context(eligibility_requirement.clone())
-                    .for_branch(&verification_branch)
-                    .with_associated_data(&associated_data)
-                    .verify(&proof)
+                    .for_branch(verification_branch)
+                    .with_associated_data(associated_data)
+                    .verify(proof)
                     .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
 
                 match result {
@@ -82,9 +82,9 @@ impl ProofVerifier {
                 let result = self
                     .verifier_engine
                     .new_context(eligibility_requirement.clone())
-                    .for_aggregation(&verification_tree)
-                    .with_associated_data(&associated_data)
-                    .verify(&proof)
+                    .for_aggregation(verification_tree)
+                    .with_associated_data(associated_data)
+                    .verify(proof)
                     .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
 
                 match result {
@@ -97,7 +97,7 @@ impl ProofVerifier {
                 public_keys,
                 msg,
             } => self
-                .verify_schnorr_signature(signature.as_slice(), &public_keys, msg.as_slice())
+                .verify_schnorr_signature(signature.as_slice(), public_keys, msg.as_slice())
                 .await
                 .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}",)),
         };

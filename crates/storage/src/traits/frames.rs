@@ -1,9 +1,7 @@
 use crate::StorageError;
-use bson::doc;
 use cortado::CortadoAffine;
 use mongodb::change_stream::{event::ChangeStreamEvent, ChangeStream};
 use mongodb::ClientSession;
-use types::protos::group_operation::Operation;
 use types::utils::ArtUpdate;
 use types::FrameRecord;
 use uuid::Uuid;
@@ -24,7 +22,6 @@ pub trait FrameStorage: Send + Sync + Sized {
         epoch: i64,
         sequence_number: u64,
         outbox_only: bool,
-        operation: Option<Operation>,
         session: &mut ClientSession,
     ) -> Result<(), StorageError>;
 

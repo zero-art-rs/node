@@ -9,9 +9,6 @@ pub use api::ApiConfig;
 mod storage;
 pub use storage::StorageConfig;
 
-mod logger;
-pub use logger::LoggerConfig;
-
 mod centrifugo;
 pub use centrifugo::CentrifugoConfig;
 
@@ -24,9 +21,6 @@ pub struct NodeConfig {
     pub storage: StorageConfig,
     pub centrifugo: CentrifugoConfig,
     pub nats: NatsConfig,
-
-    #[serde(default)]
-    pub logger: LoggerConfig,
 }
 
 impl NodeConfig {

@@ -40,7 +40,6 @@ impl Debug for ProofVerifierMessage {
         match self {
             ProofVerifierMessage::ArtUpdate {
                 verification_branch,
-                associated_data,
                 eligibility_requirement,
                 ..
             } => f
@@ -50,7 +49,6 @@ impl Debug for ProofVerifierMessage {
                 .finish(),
             ProofVerifierMessage::ArtAggregation {
                 verification_tree,
-                associated_data,
                 eligibility_requirement,
                 ..
             } => f
@@ -58,11 +56,7 @@ impl Debug for ProofVerifierMessage {
                 .field("verification_tree", &verification_tree)
                 .field("eligibility_requirement", &eligibility_requirement)
                 .finish(),
-            ProofVerifierMessage::SchnorrSignature {
-                signature,
-                public_keys,
-                msg,
-            } => f
+            ProofVerifierMessage::SchnorrSignature { public_keys, .. } => f
                 .debug_struct("SchnorrSignature")
                 .field("public_keys", &public_keys)
                 .finish(),

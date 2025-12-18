@@ -1,23 +1,16 @@
 use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
+use mongodb::ClientSession;
 use mongodb::bson::doc;
-use storage::{
-    ARTStorage, DATABASE, DataStorage, FrameStorage, MongoARTStorage, MongoFramesStorage,
-    MongoKeysStorage, StorageError,
-};
+use proof_verifier::verifier_engine::PostVerificationData;
+use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage, MongoKeysStorage};
 use tracing::{debug, error, warn};
-use types::{ARTRecord, KeyRecord};
-use uuid::Uuid;
-
+use types::ARTRecord;
 use types::errors::ARTServiceError;
 use types::utils::{ArtUpdate, decode_art};
-
-use mongodb::ClientSession;
-use proof_verifier::verifier_engine::PostVerificationData;
+use uuid::Uuid;
 use zrt_art::art::PublicArt;
-use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::aggregations::AggregatedChange;
-use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 
 pub struct ARTService {}
 
@@ -271,7 +264,7 @@ impl ARTService {
     pub async fn init_group(
         &self,
         id: Uuid,
-        encoded_art: &Vec<u8>,
+        encoded_art: &[u8],
         is_private: bool,
         owner_id_pub_key: Vec<u8>,
         session: &mut ClientSession,
@@ -334,7 +327,7 @@ impl ARTService {
                 proposed_epoch = ?new_epoch,
                 "Fail to update ART, as the epoch is invalid"
             );
-            return Err(ARTServiceError::InvalidInput.into());
+            return Err(ARTServiceError::InvalidInput);
         };
 
         post_verification_data

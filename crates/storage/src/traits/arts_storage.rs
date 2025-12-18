@@ -1,12 +1,8 @@
 use crate::StorageError;
-use bson::doc;
 use cortado::CortadoAffine;
 use mongodb::ClientSession;
-use tracing::error;
 use types::ARTRecord;
 use uuid::Uuid;
-use zrt_art::art::PublicArt;
-use zrt_art::changes::branch_change::BranchChange;
 
 /// Storage for art full states
 #[async_trait::async_trait]

@@ -3,31 +3,24 @@ use crate::domains::{
     messenger::service::MessengerService,
 };
 use crate::verification_middleware;
+use crate::verification_middleware::get_current_preview_tk_with_lock;
 use axum::body::Bytes;
 use axum::http::StatusCode;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 use mongodb::ClientSession;
-use mongodb::atlas_search::autocomplete;
-use mongodb::bson::doc;
 use proof_verifier::ProofVerifierSender;
-use proof_verifier::verifier_engine::{PostVerificationData, VerificationRequest, VerifierData};
+use proof_verifier::verifier_engine::PostVerificationData;
 use prost::Message;
-use sha3::{Digest, Sha3_256};
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
-use tokio::sync::{Mutex, RwLock};
-use tracing::field::debug;
-use tracing::{debug, error, info, info_span, instrument, span, warn};
+use tokio::sync::RwLock;
+use tracing::{debug, error, warn};
 use types::errors::{ARTServiceError, ServiceError, VerificationError};
 use types::protos::Frame;
 use types::protos::group_operation::Operation;
 use types::utils::{decode_aggregated_change, decode_branch_change, operation_name};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChangeType;
-use zrt_crypto::schnorr;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
@@ -104,7 +97,7 @@ impl Container {
             .as_ref()
             .and_then(|frame_tbs| frame_tbs.group_operation.as_ref())
             .and_then(|group_operation| group_operation.operation.as_ref())
-            .map(|operation| operation_name(&operation))
+            .map(operation_name)
             .unwrap_or("None".to_string());
         tracing::Span::current().record("operation", &op_name);
 
@@ -172,7 +165,7 @@ impl Container {
                 ))?;
                 self.update_art(
                     id,
-                    &change,
+                    change,
                     tbs_frame.epoch,
                     post_verification_data,
                     &mut session,
@@ -199,12 +192,7 @@ impl Container {
                 .await?
             }
             None => {
-                let root_key = verification_middleware::get_input_for_send_message_with_lock(
-                    self,
-                    id,
-                    &mut session,
-                )
-                .await?;
+                let root_key = get_current_preview_tk_with_lock(self, id, &mut session).await?;
 
                 let post_verification_data = post_verification_data.ok_or(ServiceError::from(
                     VerificationError::FailedPostVerification,
@@ -216,12 +204,13 @@ impl Container {
             }
         };
 
-        let sequence_number = if let Some(Operation::Init(_)) = &operation {
-            0
-        } else {
-            self.messenger_service
-                .next_sequence_number(id, &mut session)
-                .await?
+        let sequence_number = match &operation {
+            Some(Operation::Init(_)) => 0,
+            _ => {
+                self.messenger_service
+                    .next_sequence_number(id, &mut session)
+                    .await?
+            }
         };
 
         self.messenger_service
@@ -231,7 +220,6 @@ impl Container {
                 tbs_frame.epoch as i64,
                 sequence_number,
                 false,
-                operation,
                 &mut session,
             )
             .await?;
@@ -268,7 +256,7 @@ impl Container {
     pub async fn update_art_with_aggregation(
         &self,
         id: Uuid,
-        aggregation_bytes: &Vec<u8>,
+        aggregation_bytes: &[u8],
         new_epoch: u64,
         post_verification_data: PostVerificationData,
         session: &mut ClientSession,

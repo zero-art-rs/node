@@ -1,4 +1,4 @@
-use crate::errors::{ARTServiceError, ApiError, MessageServiceError, ServiceError, StorageError};
+use crate::errors::{ARTServiceError, ApiError, MessageServiceError, StorageError};
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
 use eyre::Report;

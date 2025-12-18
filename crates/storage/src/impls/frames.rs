@@ -1,5 +1,4 @@
 use crate::{DataStorage, FrameStorage, StorageError, DATABASE};
-use bson::oid::ObjectId;
 use bson::serde_helpers::uuid_1_as_binary;
 use bytes::{BufMut, BytesMut};
 use cortado::CortadoAffine;
@@ -12,10 +11,10 @@ use mongodb::{
 };
 use prost::Message;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, trace};
+use tracing::{debug, info};
 use types::protos::group_operation::Operation;
 use types::protos::Frame;
-use types::utils::{decode_aggregated_change, decode_branch_change, operation_name, ArtUpdate};
+use types::utils::{decode_aggregated_change, decode_branch_change, ArtUpdate};
 use types::{utils, FrameRecord};
 use uuid::Uuid;
 use zrt_art::changes::branch_change::BranchChange;
@@ -129,16 +128,10 @@ impl FrameStorage for MongoFramesStorage {
         epoch: i64,
         sequence_number: u64,
         outbox_only: bool,
-        operation: Option<Operation>,
         session: &mut ClientSession,
     ) -> Result<(), StorageError> {
         let message_collection = &self.messages_collection;
-        let message = FrameRecord::new(
-            content.clone(),
-            sequence_number.clone(),
-            None,
-            epoch.clone(),
-        );
+        let message = FrameRecord::new(content.clone(), sequence_number, None, epoch);
 
         if !outbox_only {
             message_collection
@@ -148,12 +141,8 @@ impl FrameStorage for MongoFramesStorage {
         }
 
         // change message for outbox_collection
-        let outbox_message = FrameRecord::new(
-            content.clone(),
-            sequence_number.clone(),
-            Some(self.chat_id),
-            epoch.clone(),
-        );
+        let outbox_message =
+            FrameRecord::new(content.clone(), sequence_number, Some(self.chat_id), epoch);
 
         info!(
             content = ?outbox_message.content.get(0..8).map(|message| format!("{:?}...", message)),

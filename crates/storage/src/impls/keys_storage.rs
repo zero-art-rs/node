@@ -1,7 +1,5 @@
-use crate::impls::frames::CounterRecord;
 use crate::{DataStorage, DATABASE};
 use mongodb::{bson::doc, options::IndexOptions, ClientSession, Collection, Database, IndexModel};
-use tracing::debug;
 use types::{errors::StorageError, KeyRecord};
 use uuid::Uuid;
 

@@ -5,7 +5,6 @@ use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
 use types::errors::StorageError;
-use types::protos::group_operation::Operation;
 use types::utils::ArtUpdate;
 use types::{
     FrameRecord,
@@ -37,19 +36,11 @@ impl MessengerService {
         epoch: i64,
         sequence_number: u64,
         outbox_only: bool,
-        operation: Option<Operation>,
         session: &mut ClientSession,
     ) -> Result<(), MessageServiceError> {
         MongoFramesStorage::new(chat_id)
             .await?
-            .store_message(
-                message,
-                epoch,
-                sequence_number,
-                outbox_only,
-                operation,
-                session,
-            )
+            .store_message(message, epoch, sequence_number, outbox_only, session)
             .await?;
         Ok(())
     }

@@ -1,5 +1,4 @@
 use ark_ec::AffineRepr;
-use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
