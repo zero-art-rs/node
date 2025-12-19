@@ -1,14 +1,22 @@
 use callbacks::{CallbackSender, CallbackWrapper};
 use cortado::CortadoAffine;
+use std::fmt::Debug;
+use zrt_zk::EligibilityRequirement;
+use zrt_zk::aggregated_art::VerifierAggregationTree;
+use zrt_zk::art::{ArtProof, VerifierNodeData};
 
-#[derive(Debug, Clone)]
 pub enum ProofVerifierMessage {
     ArtUpdate {
+        verification_branch: Vec<VerifierNodeData<CortadoAffine>>,
         associated_data: Vec<u8>,
-        aux_public_keys: Vec<CortadoAffine>,
-        path: Vec<CortadoAffine>,
-        co_path: Vec<CortadoAffine>,
-        proof: Vec<u8>,
+        eligibility_requirement: EligibilityRequirement,
+        proof: ArtProof,
+    },
+    ArtAggregation {
+        verification_tree: VerifierAggregationTree<CortadoAffine>,
+        associated_data: Vec<u8>,
+        eligibility_requirement: EligibilityRequirement,
+        proof: ArtProof,
     },
     SchnorrSignature {
         signature: Vec<u8>,
@@ -17,9 +25,49 @@ pub enum ProofVerifierMessage {
     },
 }
 
+impl ProofVerifierMessage {
+    pub fn name(&self) -> String {
+        match self {
+            ProofVerifierMessage::ArtUpdate { .. } => "ArtUpdate".to_string(),
+            ProofVerifierMessage::ArtAggregation { .. } => "ArtAggregation".to_string(),
+            ProofVerifierMessage::SchnorrSignature { .. } => "SchnorrSignature".to_string(),
+        }
+    }
+}
+
+impl Debug for ProofVerifierMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProofVerifierMessage::ArtUpdate {
+                verification_branch,
+                eligibility_requirement,
+                ..
+            } => f
+                .debug_struct("ArtUpdate")
+                .field("verification_branch", &verification_branch)
+                .field("eligibility_requirement", &eligibility_requirement)
+                .finish(),
+            ProofVerifierMessage::ArtAggregation {
+                verification_tree,
+                eligibility_requirement,
+                ..
+            } => f
+                .debug_struct("ArtAggregation")
+                .field("verification_tree", &verification_tree)
+                .field("eligibility_requirement", &eligibility_requirement)
+                .finish(),
+            ProofVerifierMessage::SchnorrSignature { public_keys, .. } => f
+                .debug_struct("SchnorrSignature")
+                .field("public_keys", &public_keys)
+                .finish(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ProofVerifierResult {
     ArtUpdate { verdict: bool },
+    ArtAggregation { verdict: bool },
     SchnorrSignature { verdict: bool },
 }
 

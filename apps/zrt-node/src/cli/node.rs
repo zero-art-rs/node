@@ -4,7 +4,7 @@ use mongodb::{Client, bson::doc, options::ClientOptions};
 use proof_verifier::{ProofVerifier, ProofVerifierReceiver, ProofVerifierSender};
 use std::sync::Arc;
 use std::time::Duration;
-use storage::DATABASE;
+use storage::{DATABASE, MongoKeysStorage};
 use tokio::time::sleep;
 use tokio::{select, sync::mpsc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -49,12 +49,12 @@ impl Node {
                     .unwrap_or(client.database(&database_name)),
             )
             .unwrap();
-        DATABASE
-            .get()
-            .unwrap()
-            .run_command(doc! { "ping": 1 })
-            .await?;
+        let db = DATABASE.get().unwrap();
+        db.run_command(doc! { "ping": 1 }).await?;
         info!("Connected to database {}", database_name);
+
+        // create collection for keys
+        MongoKeysStorage::init_key_collection(db).await?;
 
         let (proof_verifier_tx, proof_verifier_rx) = mpsc::channel(1000);
 

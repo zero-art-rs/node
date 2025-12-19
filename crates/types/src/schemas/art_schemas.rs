@@ -2,6 +2,7 @@ use crate::ARTRecord;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use mongodb::bson::doc;
+use postcard;
 use serde::{Deserialize, Serialize};
 use serde_with::{
     base64::{Base64, UrlSafe},
@@ -10,7 +11,7 @@ use serde_with::{
 use std::fmt::Display;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
-use zrt_art::errors::ARTError;
+use zrt_art::errors::ArtError;
 
 pub const USE_ROOT_KEY: &str = "use_root_key";
 pub const USE_LEAF_KEY: &str = "use_leaf_key";
@@ -75,11 +76,11 @@ where
     G: AffineRepr,
     G::BaseField: PrimeField,
 {
-    type Error = ARTError;
+    type Error = ArtError;
 
     fn try_from(record: ARTRecord<G>) -> Result<Self, Self::Error> {
         Ok(Self {
-            art: record.art.serialize()?,
+            art: postcard::to_allocvec(&record.art)?,
             is_private: record.is_private,
         })
     }

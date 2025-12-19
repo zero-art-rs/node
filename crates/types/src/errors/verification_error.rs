@@ -1,9 +1,9 @@
-use crate::errors::{ARTServiceError, ApiError, MessageServiceError, ServiceError, StorageError};
+use crate::errors::{ARTServiceError, ApiError, MessageServiceError, StorageError};
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::response::IntoResponse;
 use eyre::Report;
 use tracing::{debug, error};
-use zrt_art::errors::ARTError;
+use zrt_art::errors::ArtError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
@@ -11,8 +11,8 @@ pub enum VerificationError {
     InvalidEpoch { current: u64, provided: u64 },
     #[error("Invalid input Provided")]
     InvalidInput,
-    #[error("Failed to use zrt_art {0}")]
-    ArtError(#[from] ARTError),
+    #[error("ArtError: {0}")]
+    ArtError(#[from] ArtError),
     #[error("ARTServiceError error: {0}")]
     ArtServiceError(#[from] ARTServiceError),
     #[error("Missing query string")]
@@ -41,22 +41,30 @@ pub enum VerificationError {
     DecodeError(#[from] prost::DecodeError),
     #[error("Failed to retrieve data from the storage: {0}")]
     StorageError(#[from] StorageError),
-    #[error("Service error occurred: {0}")]
-    ServiceError(#[from] ServiceError),
-    #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has some.")]
+    #[error("AddMember operation must be unique for epoch, but epoch {epoch} already has one.")]
     AddMemberUniqueness { epoch: u64 },
-    #[error("Can't leave the group, because the node is already marked as blank")]
+    #[error("Exclusive operation for epoch: {0} already exists.")]
+    ExclusiveOperationAlreadyExists(u64),
+    #[error("Can't perform operation as the user is already removed.")]
     UserAlreadyRemoved,
     #[error("Aggregation isn't supported yet.")]
     UnsupportedAggregation,
-    #[error("Can't remove the same user several times at the same epoch.")]
+    #[error("Cant merge change to increase epoch {0}, as there are changes for this epoch.")]
+    UnsupportedMerge(u64),
+    #[error("Can't remove the same user several times at the same epoch or cant update his key.")]
     MergeUserRemove,
-}
-
-impl From<MessageServiceError> for VerificationError {
-    fn from(err: MessageServiceError) -> Self {
-        Self::ServiceError(ServiceError::from(err))
-    }
+    #[error("Can't remove the same user several times at the same epoch.")]
+    Postcard(#[from] postcard::Error),
+    #[error("MessageServiceError: {0}")]
+    MessageService(#[from] MessageServiceError),
+    #[error("Fail to update ART. I is changing now.")]
+    ArtIsUpdating,
+    #[error("MongoDB error: {0}.")]
+    Mongo(#[from] mongodb::error::Error),
+    #[error("NotFound")]
+    NotFound,
+    #[error("Fail to perform post verification")]
+    FailedPostVerification,
 }
 
 impl From<serde_json::Error> for VerificationError {

@@ -65,3 +65,7 @@ thiserror = { workspace = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+regex = { workspace = true }
+zrt-client-sdk = { workspace = true }

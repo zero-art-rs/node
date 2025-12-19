@@ -1,4 +1,4 @@
-use zrt_art::errors::ARTError;
+use zrt_art::errors::ArtError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
@@ -7,11 +7,13 @@ pub enum StorageError {
     #[error("Failed to retrieve database")]
     DatabaseRetrieval,
     #[error("Failed to update art")]
-    ARTError(#[from] ARTError),
+    ArtError(#[from] ArtError),
     #[error("Record Not Found")]
     NotFound,
     #[error("Failed to decode payload: {0}")]
     DecodeError(#[from] prost::DecodeError),
     #[error("Failed to encode payload: {0}")]
     EncodeError(#[from] prost::EncodeError),
+    #[error("Failed to add new record, as it it already exists")]
+    RecordAlreadyExists,
 }

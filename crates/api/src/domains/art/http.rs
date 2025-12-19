@@ -29,15 +29,15 @@ use validator::Validate;
     ),
     tag = "Group operations"
 )]
-#[instrument(skip(state), err)]
+#[instrument(skip(state, payload), err)]
 pub async fn get_art(
     State(state): State<Arc<Container>>,
-    Path((chat_id, epoch)): Path<(Uuid, u64)>,
+    Path((group_id, epoch)): Path<(Uuid, u64)>,
     Query(payload): Query<GetARTQuery>,
 ) -> Result<Json<GetARTResponse>, ApiError> {
     payload.validate()?;
 
-    let art_record = state.art_service.get_art(chat_id, Some(epoch)).await?;
+    let art_record = state.art_service.get_art(group_id, Some(epoch)).await?;
 
     Ok(Json(GetARTResponse::try_from(art_record)?))
 }

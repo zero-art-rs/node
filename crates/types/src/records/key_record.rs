@@ -29,3 +29,12 @@ impl fmt::Display for KeyRecord {
         write!(f, "chat_id: {} }}", BASE64_STANDARD.encode(self.chat_id))
     }
 }
+
+impl KeyRecord {
+    pub fn new(owner_public_key: Vec<u8>, chat_id: Uuid) -> Self {
+        Self {
+            owner_public_key,
+            chat_id,
+        }
+    }
+}

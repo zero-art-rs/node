@@ -23,11 +23,37 @@ pub trait DataStorage: Send + Sync {
             .find(filter)
             .skip(skip as u64)
             .limit(limit)
+            .sort(doc! {"_id": 1})
             .await?;
 
         let mut records = Vec::new();
         while cursor.advance().await? {
             records.push(cursor.deserialize_current()?);
+        }
+
+        Ok(records)
+    }
+
+    async fn list_in_session(
+        &self,
+        filter: Document,
+        limit: i64,
+        skip: i64,
+        session: &mut ClientSession,
+    ) -> Result<Vec<Self::Data>, StorageError> {
+        let mut cursor = self
+            .get_collection()
+            .await
+            .find(filter)
+            .skip(skip as u64)
+            .limit(limit)
+            .sort(doc! {"_id": 1})
+            .session(&mut *session)
+            .await?;
+
+        let mut records = Vec::new();
+        while let Some(record) = cursor.next(&mut *session).await {
+            records.push(record?);
         }
 
         Ok(records)
@@ -52,6 +78,20 @@ pub trait DataStorage: Send + Sync {
 
     async fn insert_one(&self, record: Self::Data) -> Result<(), StorageError> {
         self.get_collection().await.insert_one(record).await?;
+
+        Ok(())
+    }
+
+    async fn insert_one_in_session(
+        &self,
+        record: Self::Data,
+        session: &mut ClientSession,
+    ) -> Result<(), StorageError> {
+        self.get_collection()
+            .await
+            .insert_one(record)
+            .session(session)
+            .await?;
 
         Ok(())
     }

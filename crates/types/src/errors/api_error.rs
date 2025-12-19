@@ -1,6 +1,6 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use core::fmt;
-use zrt_art::errors::ARTError;
+use zrt_art::errors::ArtError;
 
 use crate::errors::{ARTServiceError, MessageServiceError, ServiceError};
 use serde_json::json;
@@ -25,8 +25,11 @@ impl From<ServiceError> for ApiError {
             ServiceError::ARTServiceError(art_err) => Self::from(art_err),
             ServiceError::MessageServiceError(msg_err) => Self::from(msg_err),
             ServiceError::DecodeError(_) => ApiError::BadRequest(String::from("Invalid request")),
-            ServiceError::ArtIsUpdating => ApiError::InternalServerError(value.to_string()),
             ServiceError::NotImplemented => ApiError::BadRequest(String::from("Invalid request")),
+            ServiceError::Mongo(value) => ApiError::InternalServerError(value.to_string()),
+            ServiceError::Storage(value) => ApiError::InternalServerError(value.to_string()),
+            ServiceError::InvalidInput => ApiError::BadRequest(String::from("Invalid request")),
+            ServiceError::Verification(value) => ApiError::Unauthorized(value.to_string()),
         }
     }
 }
@@ -37,8 +40,8 @@ impl From<ark_serialize::SerializationError> for ApiError {
     }
 }
 
-impl From<ARTError> for ApiError {
-    fn from(value: ARTError) -> Self {
+impl From<ArtError> for ApiError {
+    fn from(value: ArtError) -> Self {
         Self::InternalServerError(value.to_string())
     }
 }

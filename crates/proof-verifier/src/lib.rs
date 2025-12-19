@@ -1,35 +1,32 @@
-use ark_ed25519::EdwardsAffine as Ed25519Affine;
-use ark_serialize::CanonicalDeserialize;
-use bulletproofs::PedersenGens;
-use cortado::{ALT_GENERATOR_X, ALT_GENERATOR_Y, CortadoAffine};
+use cortado::CortadoAffine;
 use tokio::sync::mpsc;
-use tokio_util::bytes::Buf;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use types::callback_wrappers::{
     ProofVerifierMessage, ProofVerifierMessageWrapper, ProofVerifierResult,
 };
-use zkp::ark_ec::AffineRepr;
-use zkp::toolbox::{cross_dleq::PedersenBasis, dalek_ark::ristretto255_to_ark};
 use zrt_crypto::schnorr;
-use zrt_zk::art::{ARTProof, art_verify};
+use zrt_zk::engine::ZeroArtVerifierEngine;
 
 pub mod verifier_engine;
-
 pub use types::errors::VerificationError;
 
 pub type ProofVerifierSender = mpsc::Sender<ProofVerifierMessageWrapper>;
-
 pub type ProofVerifierReceiver = mpsc::Receiver<ProofVerifierMessageWrapper>;
 
-#[derive(Debug)]
 pub struct ProofVerifier {
     listener: ProofVerifierReceiver,
+    verifier_engine: ZeroArtVerifierEngine,
 }
 
 impl ProofVerifier {
     pub fn new(listener: ProofVerifierReceiver) -> Self {
-        Self { listener }
+        let verifier_engine = ZeroArtVerifierEngine::default();
+
+        Self {
+            listener,
+            verifier_engine,
+        }
     }
 
     pub async fn run(mut self, cancellation_token: CancellationToken) {
@@ -56,25 +53,53 @@ impl ProofVerifier {
     async fn handle_event(&self, event: ProofVerifierMessageWrapper) -> eyre::Result<()> {
         let (event, callback) = event.inner_owned();
 
-        let result = match event {
+        let result = match &event {
             ProofVerifierMessage::ArtUpdate {
+                verification_branch,
                 associated_data,
-                aux_public_keys,
-                path,
-                co_path,
+                eligibility_requirement,
                 proof,
             } => {
-                self.verify_art_update_proof(associated_data, aux_public_keys, path, co_path, proof)
-                    .await
+                let result = self
+                    .verifier_engine
+                    .new_context(eligibility_requirement.clone())
+                    .for_branch(verification_branch)
+                    .with_associated_data(associated_data)
+                    .verify(proof)
+                    .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
+
+                match result {
+                    Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
+                    Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false }),
+                }
+            }
+            ProofVerifierMessage::ArtAggregation {
+                verification_tree,
+                associated_data,
+                eligibility_requirement,
+                proof,
+            } => {
+                let result = self
+                    .verifier_engine
+                    .new_context(eligibility_requirement.clone())
+                    .for_aggregation(verification_tree)
+                    .with_associated_data(associated_data)
+                    .verify(proof)
+                    .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
+
+                match result {
+                    Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
+                    Err(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: false }),
+                }
             }
             ProofVerifierMessage::SchnorrSignature {
                 signature,
                 public_keys,
                 msg,
-            } => {
-                self.verify_schnorr_signature(signature.as_slice(), &public_keys, msg.as_slice())
-                    .await
-            }
+            } => self
+                .verify_schnorr_signature(signature.as_slice(), public_keys, msg.as_slice())
+                .await
+                .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}",)),
         };
 
         let eyre_result = result.map_err(|err| eyre::eyre!("{}", err));
@@ -86,32 +111,6 @@ impl ProofVerifier {
         Ok(())
     }
 
-    async fn verify_art_update_proof(
-        &self,
-        associated_data: Vec<u8>,
-        aux_public_keys: Vec<CortadoAffine>,
-        path: Vec<CortadoAffine>,
-        co_path: Vec<CortadoAffine>,
-        proof: Vec<u8>,
-    ) -> eyre::Result<ProofVerifierResult> {
-        let verification_result = art_verify(
-            get_pedersen_basis(),
-            associated_data.as_slice(),
-            aux_public_keys,
-            path,
-            co_path,
-            ARTProof::deserialize_compressed(proof.reader())?,
-        );
-
-        match verification_result {
-            Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
-            Err(e) => {
-                error!("Failed to verify art update proof: {}", e);
-                Ok(ProofVerifierResult::ArtUpdate { verdict: false })
-            }
-        }
-    }
-
     async fn verify_schnorr_signature(
         &self,
         signature: &[u8],
@@ -120,23 +119,13 @@ impl ProofVerifier {
     ) -> eyre::Result<ProofVerifierResult> {
         match schnorr::verify(signature, public_keys, msg) {
             Ok(_) => Ok(ProofVerifierResult::SchnorrSignature { verdict: true }),
-            Err(e) => {
-                warn!("Failed to verify schnorr signature: {}", e);
+            Err(err) => {
+                error!(
+                    public_keys = ?public_keys,
+                    "Failed to verify Schnorr signature: {err}"
+                );
                 Ok(ProofVerifierResult::SchnorrSignature { verdict: false })
             }
         }
     }
-}
-
-fn get_pedersen_basis() -> PedersenBasis<CortadoAffine, Ed25519Affine> {
-    let g_1 = CortadoAffine::generator();
-    let h_1 = CortadoAffine::new_unchecked(ALT_GENERATOR_X, ALT_GENERATOR_Y);
-
-    let gens = PedersenGens::default();
-    PedersenBasis::<CortadoAffine, Ed25519Affine>::new(
-        g_1,
-        h_1,
-        ristretto255_to_ark(gens.B).unwrap(),
-        ristretto255_to_ark(gens.B_blinding).unwrap(),
-    )
 }

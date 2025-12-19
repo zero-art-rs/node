@@ -1,15 +1,18 @@
 use bytes::{BufMut, BytesMut};
+use mongodb::ClientSession;
 use mongodb::bson::Document;
 use prost::Message;
 use storage::{DataStorage, FrameStorage, MongoFramesStorage};
 use tracing::debug;
+use types::errors::StorageError;
+use types::utils::ArtUpdate;
 use types::{
     FrameRecord,
     errors::MessageServiceError,
     protos::{Frame, SpFrame, SpFrames},
 };
 use uuid::Uuid;
-use zrt_art::types::BranchChangesType;
+use zrt_art::changes::branch_change::BranchChangeType;
 
 pub struct MessengerService {}
 
@@ -31,15 +34,26 @@ impl MessengerService {
         message: Vec<u8>,
         chat_id: &Uuid,
         epoch: i64,
+        sequence_number: u64,
         outbox_only: bool,
+        session: &mut ClientSession,
     ) -> Result<(), MessageServiceError> {
-        debug!("Store and send new message");
         MongoFramesStorage::new(chat_id)
             .await?
-            .store_message(message, epoch, outbox_only)
+            .store_message(message, epoch, sequence_number, outbox_only, session)
             .await?;
-        debug!("Message sent");
         Ok(())
+    }
+
+    pub async fn next_sequence_number(
+        &self,
+        chat_id: Uuid,
+        session: &mut ClientSession,
+    ) -> Result<u64, StorageError> {
+        MongoFramesStorage::new(&chat_id)
+            .await?
+            .next_sequence_number(session)
+            .await
     }
 
     pub async fn list_messages(
@@ -113,10 +127,13 @@ impl MessengerService {
         epoch: u64,
     ) -> Result<bool, MessageServiceError> {
         let frame_storage = MongoFramesStorage::new(&id).await?;
-        let changes = frame_storage.get_epoch_changes(id, epoch).await?;
+        let ArtUpdate::BranchChange(changes) = frame_storage.get_epoch_changes(id, epoch).await?
+        else {
+            return Ok(false);
+        };
 
         for applied_change in &changes {
-            if let BranchChangesType::AppendNode = applied_change.change_type {
+            if let BranchChangeType::AddMember = applied_change.change_type {
                 return Ok(true);
             }
         }

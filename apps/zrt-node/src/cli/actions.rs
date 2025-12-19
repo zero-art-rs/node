@@ -11,7 +11,7 @@ use crate::{
 pub async fn run(args: arguments::Run) -> eyre::Result<()> {
     let config = NodeConfig::from_path(args.config)?;
 
-    logging::init(config.logger.level)?;
+    logging::init()?;
 
     let node = Arc::new(Node::new(config).await?);
     let node_clone = node.clone();

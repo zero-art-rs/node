@@ -1,22 +1,16 @@
-use bson::doc;
-use uuid::Uuid;
-
 use crate::StorageError;
-use cortado::{CortadoAffine as ARTGroup, CortadoAffine};
+use cortado::CortadoAffine;
 use mongodb::ClientSession;
-use tracing::{debug, error};
 use types::ARTRecord;
-use zrt_art::types::{BranchChanges, PublicART};
+use uuid::Uuid;
 
 /// Storage for art full states
 #[async_trait::async_trait]
 pub trait ARTStorage: Send + Sync {
-    async fn new_chat(
+    async fn new_group(
         &self,
+        initial_art_record: ARTRecord<CortadoAffine>,
         session: &mut ClientSession,
-        art: PublicART<ARTGroup>,
-        chat_id: Uuid,
-        is_private: bool,
     ) -> Result<(), mongodb::error::Error>;
 
     async fn delete_art(
@@ -31,30 +25,50 @@ pub trait ARTStorage: Send + Sync {
         chat_id: Uuid,
     ) -> Result<(), mongodb::error::Error>;
 
-    async fn get_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError>;
-    async fn get_initial_art(&self, chat_id: Uuid) -> Result<ARTRecord<ARTGroup>, StorageError>;
-    async fn update_art(
-        &self,
-        changes: BranchChanges<ARTGroup>,
-        chat_id: Uuid,
-    ) -> Result<(), StorageError>;
-
-    /// Drop initial_arts_collection and/or arts_collection if empty
-    async fn drop_collection_if_empty(&self) -> Result<(), mongodb::error::Error>;
-
-    /// Get the sequence number of the art
-    async fn get_current_epoch(&self, chat_id: &Uuid) -> Result<u64, mongodb::error::Error>;
-
-    async fn update_metadata(
+    async fn get_current_art(
         &self,
         chat_id: Uuid,
-        new_metadata: Vec<u8>,
-        node_index: u64,
-    ) -> Result<(), StorageError>;
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+    async fn get_current_in_session(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+    async fn get_current_art_in_session_in_lock(
+        &self,
+        id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+
+    async fn get_initial_art_in_session(
+        &self,
+        chat_id: Uuid,
+        session: &mut ClientSession,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+    async fn get_initial_art(
+        &self,
+        id: Uuid,
+    ) -> mongodb::error::Result<Option<ARTRecord<CortadoAffine>>>;
+
+    async fn get_current_epoch(&self, chat_id: &Uuid)
+        -> Result<Option<u64>, mongodb::error::Error>;
+
+    async fn get_current_epoch_in_session(
+        &self,
+        chat_id: &Uuid,
+        session: &mut ClientSession,
+    ) -> Result<Option<u64>, mongodb::error::Error>;
+
+    async fn get_current_epoch_in_session_with_lock(
+        &self,
+        chat_id: &Uuid,
+        session: &mut ClientSession,
+    ) -> Result<Option<u64>, mongodb::error::Error>;
 
     async fn replace_art(
         &self,
+        session: &mut ClientSession,
         chat_id: Uuid,
-        new_art: ARTRecord<ARTGroup>,
+        new_art: ARTRecord<CortadoAffine>,
     ) -> Result<(), StorageError>;
 }
