@@ -116,6 +116,12 @@ impl ClientWrapper {
         Ok((frame, invite))
     }
 
+    pub fn leave_group(&mut self) -> eyre::Result<Frame> {
+        let frame = self.group_context.leave_group()?;
+
+        Ok(frame)
+    }
+
     pub fn change_group(
         &mut self,
         name: Option<String>,
@@ -226,9 +232,10 @@ impl ClientWrapper {
                         .process_frame(Frame::try_from(frame).expect("Failed to parse frame"))
                         .inspect_err(|err| {
                             error!(
-                                "fail to process frame: {:?}. Art preview:\n{}",
+                                "fail to process frame: {:?}, art:\n{}\nArt preview:\n{}",
                                 err,
-                                self.group_context.tree().preview().root()
+                                self.group_context.tree().root(),
+                                self.group_context.tree().preview().root(),
                             )
                         })?;
 

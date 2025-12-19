@@ -18,6 +18,8 @@ use std::ops::Mul;
 use std::sync::{Mutex};
 use std::thread;
 use std::time::Duration;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use tracing::instrument::WithSubscriber;
 use tracing::{debug, debug_span, error, error_span, info, info_span, span, trace, warn};
 use types::art_schemas::ProofMode;
@@ -28,6 +30,7 @@ use zrt_art::art::{AggregationContext, ArtAdvancedOps, PrivateArt};
 use zrt_art::art_node::TreeMethods;
 use zrt_art::changes::ApplicableChange;
 use zrt_art::changes::branch_change::BranchChange;
+use zrt_client_sdk::models::frame::GroupOperation;
 use zrt_crypto::schnorr::{sign, verify};
 
 #[tokio::test]
@@ -1152,6 +1155,96 @@ async fn test_flow_send_frame() -> eyre::Result<()> {
 
     debug!("client0 epoch: {}", client0.group_context().epoch());
     debug!("client1 epoch: {}", client1.group_context().epoch());
+
+    Ok(())
+}
+
+/// Test Flow:
+/// - Create epoch with one user
+/// - Join with the second user
+/// - Cyclic key update with two users
+#[cfg(feature = "merge_changes")]
+#[tokio::test]
+async fn test_add_leve_add() -> eyre::Result<()> {
+    init_tracing_for_test();
+    let seed = 42;
+
+    let err_span = error_span!(
+        "test_send_frame",
+        seed = ?seed,
+    );
+    let _ = err_span.enter();
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    let (mut client0, frame0) = ClientWrapper::new_group(&mut rng);
+    let response = ClientWrapper::send_frame(frame0.clone()).await.unwrap();
+    assert!(
+        matches!(response.0.status(), StatusCode::CREATED),
+        "expected StatusCode::CREATED, while got {}",
+        response.0.status()
+    );
+    client0.process_frame(frame0).unwrap();
+
+    info!("Add Member...");
+    let sk = Fr::rand(&mut rng);
+    let (frame, invite) = client0.add_member(sk)?;
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(
+        matches!(response.0.status(), StatusCode::OK),
+        "expected StatusCode::OK, while got {}",
+        response.0.status()
+    );
+
+    info!("Join group...");
+    let client1 = InviteClientWrapper::new(sk, invite);
+    let mut client1 = client1.apply_join_frame().await.unwrap();
+    client1.process_frame(frame.clone()).unwrap();
+    client0.process_frame(frame).unwrap();
+
+    let frame = client1.join_group().unwrap();
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(
+        matches!(response.0.status(), StatusCode::OK),
+        "expected StatusCode::OK, while got {}",
+        response.0.status()
+    );
+
+    client0.poll().await.unwrap();
+
+    info!("Leve group...");
+    let frame = client1.leave_group().unwrap();
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(
+        matches!(response.0.status(), StatusCode::OK),
+        "expected StatusCode::OK, while got {}",
+        response.0.status()
+    );
+    client0.poll().await.unwrap();
+
+    info!("Add Member...");
+    let sk = Fr::rand(&mut rng);
+    let (frame, invite) = client0.add_member(sk)?;
+    let operation = frame.frame_tbs().group_operation().unwrap().clone();
+    let change = match operation {
+        GroupOperation::AddMember(change) => change,
+        _ => unreachable!(),
+    };
+
+
+    let response = ClientWrapper::send_frame(frame.clone()).await.unwrap();
+    assert!(
+        matches!(response.0.status(), StatusCode::OK),
+        "expected StatusCode::OK, while got {}",
+        response.0.status()
+    );
+
+    info!("Add Member change: {:#?}", change);
+    let mut tmp = client0.group_context().tree().clone();
+    tmp.commit().unwrap();
+
+    client0.poll().await.unwrap();
+
 
     Ok(())
 }
