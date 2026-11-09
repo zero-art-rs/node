@@ -6,6 +6,7 @@ use axum::middleware::Next;
 use axum_core::body::Body;
 use axum_core::extract::{FromRequestParts, Request};
 use axum_core::response::Response;
+use futures_util::FutureExt as _;
 use callbacks::callback;
 use cortado::CortadoAffine;
 use mongodb::ClientSession;
@@ -13,6 +14,7 @@ use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::*;
 use prost::Message;
 use sha3::{Digest, Sha3_256};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use storage::{ARTStorage, FrameStorage, MongoARTStorage, MongoFramesStorage};
 use tracing::{debug, error, info, instrument, warn};
@@ -32,6 +34,11 @@ use zrt_art::changes::branch_change::{BranchChange, BranchChangeType};
 use zrt_art::node_index::{Direction, NodeIndex};
 use zrt_zk::EligibilityRequirement;
 
+/// The largest request body the verification middlewares read, as axum's default body limit
+/// (which applies to extractors, not to `to_bytes`): without one, a client could stream an
+/// unbounded body into memory.
+const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+
 /// Handle authentication request verification.
 #[instrument(skip(state, request, next), err)]
 pub async fn verify_authentication(
@@ -40,7 +47,7 @@ pub async fn verify_authentication(
     next: Next,
 ) -> Result<Response, VerificationError> {
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+    let bytes = axum::body::to_bytes(body, MAX_BODY_BYTES).await?;
     let Json(auth_request) = Json::<AuthRequest>::from_bytes(&bytes)?;
 
     if !state.contains_challenge(&auth_request.challenge).await {
@@ -93,7 +100,7 @@ pub async fn verify_list_messages(
     next: Next,
 ) -> Result<Response, VerificationError> {
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+    let bytes = axum::body::to_bytes(body, MAX_BODY_BYTES).await?;
 
     let query = parts.uri.query();
     let query_bytes = query.ok_or(VerificationError::MissingQuery)?.as_bytes();
@@ -166,7 +173,7 @@ pub async fn get_art(
     next: Next,
 ) -> Result<Response, VerificationError> {
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX).await?;
+    let bytes = axum::body::to_bytes(body, MAX_BODY_BYTES).await?;
 
     let Path((chat_id, epoch)) =
         Path::<(Uuid, u64)>::from_request_parts(&mut parts.clone(), &state).await?;
@@ -252,22 +259,25 @@ pub async fn send_frame(
 
     state.start_updating(id).await?;
 
-    let (verification_req, post_verification_data) =
-        match inner_send_frame(state, current_epoch, id, frame_tbs, proof).await {
-            Ok(verification_result) => verification_result,
-            Err(err) => {
-                warn!("Verification Failed: {err}");
-                state.stop_updating(id).await;
-                return Err(err);
-            }
-        };
-
-    let response = verify_and_send(verification_req, state).await;
+    // Release the group on every path, a panic included: the mark is kept in memory, and a group
+    // left marked rejects every later change with ArtIsUpdating until the node restarts.
+    let result = AssertUnwindSafe(async {
+        let (verification_req, post_verification_data) =
+            inner_send_frame(state, current_epoch, id, frame_tbs, proof)
+                .await
+                .inspect_err(|err| warn!("Verification Failed: {err}"))?;
+        verify_and_send(verification_req, state).await?;
+        Ok::<_, VerificationError>(post_verification_data)
+    })
+    .catch_unwind()
+    .await;
 
     state.stop_updating(id).await;
 
-    response?;
-    Ok(post_verification_data)
+    result.unwrap_or_else(|_| {
+        error!(group_id = ?id, "Frame verification panicked");
+        Err(VerificationError::InvalidInput)
+    })
 }
 
 /// Handle send_frame verification
@@ -353,7 +363,7 @@ async fn inner_send_frame(
         }
         None => {
             let (opcode, public_inputs, post_verification_data) =
-                get_opcode_and_input_for_send_message(state, id, frame_tbs.epoch - 1).await?;
+                get_opcode_and_input_for_send_message(state, id, frame_tbs.epoch).await?;
 
             (opcode, public_inputs, Some(post_verification_data))
         }
@@ -668,11 +678,11 @@ pub async fn get_opcode_and_input_for_drop_group(
 pub async fn get_opcode_and_input_for_send_message(
     state: &Container,
     id: Uuid,
-    current_epoch: u64,
+    frame_epoch: u64,
 ) -> Result<(VerificationOpcode, PublicInputs, PostVerificationData), VerificationError> {
     let art = state.art_service.get_art(id, None).await?.art;
     let post_verification_data = PostVerificationData::new(
-        current_epoch + 1,
+        frame_epoch,
         art.root().data().public_key(),
         art.preview().root().public_key(),
     );

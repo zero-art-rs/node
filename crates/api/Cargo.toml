@@ -35,7 +35,7 @@ ark-ec = { workspace = true }
 ark-serialize = { workspace = true }
 ark-std = { workspace = true }
 rand = { workspace = true, features = ["thread_rng"] }
-futures-util = { workspace = true }
+futures-util = { workspace = true, features = ["std"] }
 hex = { workspace = true }
 base64 = { workspace = true }
 postcard = { workspace = true }
