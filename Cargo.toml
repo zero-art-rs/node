@@ -62,11 +62,11 @@ bulletproofs = { version = "5.0.0", git="https://github.com/zero-art-rs/bulletpr
 zkp = { version = "0.10.0", git = "https://github.com/juja256/zkp", features = ["rangeproof", "rangeproof_batchable"]}
 # One ref for every core crate: cargo treats each git ref as a separate source, and the node
 # passes cortado and zrt-zk types between these crates. Keep it equal to client-sdk's.
-zrt-zk = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.4.0" }
-zrt-art = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.4.0" }
-zrt-crypto = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.4.0" }
-cortado = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.4.0" }
-zrt-client-sdk = { git = "https://github.com/zero-art-rs/client-sdk.git", tag = "v0.2.0" }
+zrt-zk = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.5.0" }
+zrt-art = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.5.0" }
+zrt-crypto = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.5.0" }
+cortado = { git = "https://github.com/zero-art-rs/core.git", tag = "zrt-zk-v0.5.0" }
+zrt-client-sdk = { git = "https://github.com/zero-art-rs/client-sdk.git", tag = "v0.3.0" }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

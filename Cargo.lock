@@ -1032,7 +1032,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cortado"
 version = "0.2.0"
-source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.4.0#9c9f1c514d6d80a523068ef2c65a896121a4a275"
+source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.5.0#b08318350de9a13ab518921158ec913a4ae08a3f"
 dependencies = [
  "ark-algebra-test-templates",
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
@@ -5607,8 +5607,8 @@ dependencies = [
 
 [[package]]
 name = "zrt-art"
-version = "0.4.0"
-source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.4.0#9c9f1c514d6d80a523068ef2c65a896121a4a275"
+version = "0.5.0"
+source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.5.0#b08318350de9a13ab518921158ec913a4ae08a3f"
 dependencies = [
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-ed25519",
@@ -5636,8 +5636,8 @@ dependencies = [
 
 [[package]]
 name = "zrt-client-sdk"
-version = "0.2.0"
-source = "git+https://github.com/zero-art-rs/client-sdk.git?tag=v0.2.0#f896a67887c686fba0304ca13821f99adb59750b"
+version = "0.3.0"
+source = "git+https://github.com/zero-art-rs/client-sdk.git?tag=v0.3.0#722acbbc2e7d686a840619e7f347c750ca72cdc0"
 dependencies = [
  "aes-gcm",
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
@@ -5677,7 +5677,7 @@ dependencies = [
 [[package]]
 name = "zrt-crypto"
 version = "0.1.1"
-source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.4.0#9c9f1c514d6d80a523068ef2c65a896121a4a275"
+source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.5.0#b08318350de9a13ab518921158ec913a4ae08a3f"
 dependencies = [
  "ark-serialize 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "cortado",
@@ -5691,7 +5691,7 @@ dependencies = [
 
 [[package]]
 name = "zrt-node"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "api",
  "chrono",
@@ -5711,8 +5711,8 @@ dependencies = [
 
 [[package]]
 name = "zrt-zk"
-version = "0.4.0"
-source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.4.0#9c9f1c514d6d80a523068ef2c65a896121a4a275"
+version = "0.5.0"
+source = "git+https://github.com/zero-art-rs/core.git?tag=zrt-zk-v0.5.0#b08318350de9a13ab518921158ec913a4ae08a3f"
 dependencies = [
  "ark-ec 0.5.0 (git+https://github.com/arkworks-rs/algebra?rev=7601bf9)",
  "ark-ed25519",
