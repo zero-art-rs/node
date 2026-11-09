@@ -26,7 +26,7 @@ pub async fn run_server(
 ) -> eyre::Result<()> {
     #[cfg(not(feature = "verification"))]
     {
-        warn!("Verification middleware is disabled.");
+        tracing::warn!("Verification middleware is disabled.");
     }
     info!("Starting API server on {}", address);
     let listener = tokio::net::TcpListener::bind(address).await?;
