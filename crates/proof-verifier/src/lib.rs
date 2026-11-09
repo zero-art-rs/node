@@ -1,4 +1,5 @@
 use cortado::CortadoAffine;
+use std::panic::{self, AssertUnwindSafe};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -53,7 +54,25 @@ impl ProofVerifier {
     async fn handle_event(&self, event: ProofVerifierMessageWrapper) -> eyre::Result<()> {
         let (event, callback) = event.inner_owned();
 
-        let result = match &event {
+        // The proofs and public inputs come from requests. A panic while verifying them must
+        // reject this request, not end this task: every later request waits on it.
+        let result = panic::catch_unwind(AssertUnwindSafe(|| self.verify_event(&event)))
+            .unwrap_or_else(|_| {
+                error!(event = ?event, "Verification panicked, rejecting");
+                Ok(rejected(&event))
+            });
+
+        let eyre_result = result.map_err(|err| eyre::eyre!("{}", err));
+
+        if callback.send(eyre_result).is_err() {
+            error!("Failed to send response: receiver dropped");
+        }
+
+        Ok(())
+    }
+
+    fn verify_event(&self, event: &ProofVerifierMessage) -> eyre::Result<ProofVerifierResult> {
+        match event {
             ProofVerifierMessage::ArtUpdate {
                 verification_branch,
                 associated_data,
@@ -68,10 +87,9 @@ impl ProofVerifier {
                     .verify(proof)
                     .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
 
-                match result {
-                    Ok(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: true }),
-                    Err(_) => Ok(ProofVerifierResult::ArtUpdate { verdict: false }),
-                }
+                Ok(ProofVerifierResult::ArtUpdate {
+                    verdict: result.is_ok(),
+                })
             }
             ProofVerifierMessage::ArtAggregation {
                 verification_tree,
@@ -87,10 +105,9 @@ impl ProofVerifier {
                     .verify(proof)
                     .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}"));
 
-                match result {
-                    Ok(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: true }),
-                    Err(_) => Ok(ProofVerifierResult::ArtAggregation { verdict: false }),
-                }
+                Ok(ProofVerifierResult::ArtAggregation {
+                    verdict: result.is_ok(),
+                })
             }
             ProofVerifierMessage::SchnorrSignature {
                 signature,
@@ -98,20 +115,11 @@ impl ProofVerifier {
                 msg,
             } => self
                 .verify_schnorr_signature(signature.as_slice(), public_keys, msg.as_slice())
-                .await
                 .inspect_err(|err| error!(event = ?event, "Failed to verify: {err}",)),
-        };
-
-        let eyre_result = result.map_err(|err| eyre::eyre!("{}", err));
-
-        if callback.send(eyre_result).is_err() {
-            error!("Failed to send response: receiver dropped");
         }
-
-        Ok(())
     }
 
-    async fn verify_schnorr_signature(
+    fn verify_schnorr_signature(
         &self,
         signature: &[u8],
         public_keys: &Vec<CortadoAffine>,
@@ -126,6 +134,19 @@ impl ProofVerifier {
                 );
                 Ok(ProofVerifierResult::SchnorrSignature { verdict: false })
             }
+        }
+    }
+}
+
+/// A negative verdict of the kind `event` asks for.
+fn rejected(event: &ProofVerifierMessage) -> ProofVerifierResult {
+    match event {
+        ProofVerifierMessage::ArtUpdate { .. } => ProofVerifierResult::ArtUpdate { verdict: false },
+        ProofVerifierMessage::ArtAggregation { .. } => {
+            ProofVerifierResult::ArtAggregation { verdict: false }
+        }
+        ProofVerifierMessage::SchnorrSignature { .. } => {
+            ProofVerifierResult::SchnorrSignature { verdict: false }
         }
     }
 }

@@ -10,8 +10,9 @@ use mongodb::ClientSession;
 use proof_verifier::ProofVerifierSender;
 use proof_verifier::verifier_engine::PostVerificationData;
 use prost::Message;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use storage::{ARTStorage, MongoARTStorage, MongoFramesStorage};
 use tokio::sync::RwLock;
 use tracing::{debug, error, warn};
@@ -24,11 +25,49 @@ use zrt_art::changes::branch_change::BranchChangeType;
 
 const DEFAULT_CHALLENGE_LENGTH: u32 = 16; // 16 bytes
 
+/// How long a challenge stays valid after it was handed out.
+const CHALLENGE_TTL: Duration = Duration::from_secs(5 * 60);
+
+/// The most challenges kept at once; the oldest go first. `GET /challenge` needs no
+/// authentication, so without a bound every call would grow the node's memory.
+const MAX_CHALLENGES: usize = 100_000;
+
+/// Challenges handed out by the node, each valid for `CHALLENGE_TTL`.
+#[derive(Default)]
+pub struct Challenges {
+    issued_at: HashMap<Vec<u8>, Instant>,
+    /// the same challenges, oldest first
+    order: VecDeque<(Vec<u8>, Instant)>,
+}
+
+impl Challenges {
+    fn insert(&mut self, challenge: Vec<u8>, now: Instant) {
+        // drop expired challenges, and the oldest ones while there is no room
+        while self.order.front().is_some_and(|(_, issued_at)| {
+            self.order.len() >= MAX_CHALLENGES || now.duration_since(*issued_at) >= CHALLENGE_TTL
+        }) {
+            if let Some((old, issued_at)) = self.order.pop_front()
+                && self.issued_at.get(&old) == Some(&issued_at)
+            {
+                self.issued_at.remove(&old);
+            }
+        }
+        self.issued_at.insert(challenge.clone(), now);
+        self.order.push_back((challenge, now));
+    }
+
+    fn contains(&self, challenge: &[u8], now: Instant) -> bool {
+        self.issued_at
+            .get(challenge)
+            .is_some_and(|issued_at| now.duration_since(*issued_at) < CHALLENGE_TTL)
+    }
+}
+
 pub struct Container {
     pub messenger_service: Arc<MessengerService>,
     pub centrifugo_service: Arc<CentrifugoService>,
     pub art_service: Arc<ARTService>,
-    pub challenges: Arc<RwLock<HashSet<Vec<u8>>>>,
+    pub challenges: Arc<RwLock<Challenges>>,
 
     pub proof_verifier_sender: ProofVerifierSender,
 
@@ -281,8 +320,8 @@ impl Container {
     pub async fn contains_challenge(&self, challenge: &Vec<u8>) -> bool {
         let lock = self.challenges.read().await;
 
-        if !lock.contains(challenge) {
-            error!("Provided challenge isn't in the state.");
+        if !lock.contains(challenge, Instant::now()) {
+            error!("Provided challenge isn't in the state or has expired.");
             return false;
         }
 
@@ -296,8 +335,42 @@ impl Container {
             .map(|_| rand::random::<u8>())
             .collect::<Vec<u8>>();
 
-        lock.insert(challenge.clone());
+        lock.insert(challenge.clone(), Instant::now());
 
         challenge
+    }
+}
+
+#[cfg(test)]
+mod challenge_tests {
+    use super::*;
+
+    #[test]
+    fn challenges_expire() {
+        let start = Instant::now();
+        let mut challenges = Challenges::default();
+        challenges.insert(vec![1], start);
+        assert!(challenges.contains(&[1], start + CHALLENGE_TTL - Duration::from_secs(1)));
+        assert!(!challenges.contains(&[1], start + CHALLENGE_TTL));
+        assert!(!challenges.contains(&[2], start));
+
+        // expired challenges are dropped when a new one is handed out
+        challenges.insert(vec![2], start + CHALLENGE_TTL);
+        assert_eq!(challenges.issued_at.len(), 1);
+        assert_eq!(challenges.order.len(), 1);
+    }
+
+    #[test]
+    fn challenges_are_bounded() {
+        let now = Instant::now();
+        let mut challenges = Challenges::default();
+        for i in 0..MAX_CHALLENGES + 10 {
+            challenges.insert((i as u64).to_le_bytes().to_vec(), now);
+        }
+        assert_eq!(challenges.issued_at.len(), MAX_CHALLENGES);
+        assert_eq!(challenges.order.len(), MAX_CHALLENGES);
+        // the oldest went first
+        assert!(!challenges.contains(&0u64.to_le_bytes(), now));
+        assert!(challenges.contains(&((MAX_CHALLENGES + 9) as u64).to_le_bytes(), now));
     }
 }
